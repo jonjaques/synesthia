@@ -20,7 +20,7 @@ Everything pending lives in `src/consts.ts` and `astro.config.mjs`:
 | Google Analytics 4 ID | `PUBLIC_GA_ID` env var, or `GA_MEASUREMENT_ID` in `src/consts.ts` | `G-XXXXXXXXXX` |
 | Production domain | `site` in `astro.config.mjs`, and the `Sitemap:` line in `public/robots.txt` | `https://synesthia.app` |
 | Twitter/X handle | `SITE.social` in `src/consts.ts` | `@synesthia_app` |
-| Version, size, requirements | `RELEASE` in `src/consts.ts` | 1.0 / 4.2 MB / macOS 26.5 |
+| Version, size, requirements | `RELEASE` in `src/consts.ts` | 1.0 / 4.2 MB / macOS 26 |
 
 The analytics snippet is only emitted once the measurement ID differs from the
 placeholder, so dev and preview builds write no cookie and load no script. Set
@@ -35,28 +35,22 @@ has to be right before deploying.
 
 ## How the page works
 
-The hero is a live visualizer, not a video. `src/scripts/signal.ts` produces the
-same shape of data the app itself analyses — 64 log-spaced bands from 30 Hz to
-16 kHz, a 256-sample waveform, bass/mid/treble/level, and a beat envelope — and
-every canvas on the page reads from it through one shared `requestAnimationFrame`
-loop.
+It is a business card, not a manual: hero, visualizers, sources, pipeline, and a
+download. Every image is a real capture produced by `make screenshots` in the
+repo root, which drives the shipping build — there is no re-creation of the app
+anywhere on the page. (There used to be: a canvas re-implementation of the
+visualizers and a microphone demo. Both are gone.)
 
-Two producers feed that signal:
+`src/scripts/boot.ts` is the whole of the page's JavaScript and does two things:
 
-- **Synthetic** (default) — a plausible piece of music at 104 BPM. No permission
-  prompt, so the page is alive on arrival.
-- **Microphone** — the *Use your mic* button opens an `AnalyserNode` and the page
-  visualizes the room. Nothing is recorded or transmitted. The two producers
-  crossfade, so toggling is never a jump cut.
+- **Reveal** — one `IntersectionObserver` fades `[data-reveal]` sections in once.
+- **Carousel** — `src/components/ShotCarousel.astro` crossfades the three
+  windowed captures in the hero. It autoplays only while it is on screen, the
+  tab is in front, the pointer is elsewhere, and the visitor hasn't clicked a
+  tab themselves; `prefers-reduced-motion` disables autoplay entirely.
 
-`src/scripts/visuals.ts` holds the renderers: the hero comet (the app icon,
-animated), the 64-bar analyser strip, and miniatures of the three shipping
-visualizers. `src/scripts/boot.ts` wires them up and keeps offscreen canvases
-from drawing.
-
-Under `prefers-reduced-motion` the clock never starts — each canvas renders one
-composed still frame instead. Turning the mic on is an explicit choice, so it
-starts the loop even then.
+Both degrade to nothing: without JS every section is visible, the first slide
+stays put, and the carousel tabs are hidden rather than dead.
 
 ## Assets
 
@@ -72,8 +66,13 @@ an indigo gradient, with the wordmark set in the system grotesque.
 
 ## Design tokens
 
-Colors and type live in `src/styles/global.css` under `@theme`. Every color is
-sampled from the app icon: an indigo field (`--color-void`, `--color-field`) and
-the comet's dispersion (`--color-spec-blue` through `--color-spec-red`). Type is
-Archivo for display, IBM Plex Sans for body, IBM Plex Mono for specs and labels,
-self-hosted and preloaded through Astro's fonts API.
+Colors and type live in `src/styles/global.css` under `@theme`. The screenshots
+are the only saturated thing on the page, so the chrome stays nearly achromatic
+— but not neutral grey: every surface is pulled a few degrees toward the icon's
+indigo (`--color-accent`), and `body::before` lays a soft wash of it over the
+top of the document. That tint is what the plates read against; their own
+backgrounds are pure black, so a page that isn't pure black makes each one a
+distinct object instead of a hole. Nothing exceeds 14% saturation.
+
+Type is Familjen Grotesk for display, IBM Plex Sans for body, IBM Plex Mono for
+specs and labels, self-hosted and preloaded through Astro's fonts API.

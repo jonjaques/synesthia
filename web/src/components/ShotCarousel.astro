@@ -1,0 +1,86 @@
+---
+/**
+ * The hero shot: the three visualizers in the same window, crossfading.
+ *
+ * Every frame is a real capture taken by `make screenshots` off the shipping
+ * build — the carousel is the only reason the visualizers don't need a wall of
+ * plates further down the page. All three captures are 2048 × 1536, so the
+ * stage can hold a fixed 4:3 box and nothing reflows between slides.
+ *
+ * Without JavaScript the first slide stays visible (it carries `data-active`
+ * from the server) and the tabs are hidden, so the hero is still a screenshot.
+ */
+import { Picture } from 'astro:assets';
+
+import auroraWindow from '../assets/screenshots/aurora-windowed.png';
+import nebulaWindow from '../assets/screenshots/nebula-windowed.png';
+import tunnelWindow from '../assets/screenshots/tunnel-windowed.png';
+
+const shots = [
+	{
+		id: 'nebula',
+		name: 'Nebula',
+		image: nebulaWindow,
+		alt: 'Synesthia in a window on macOS running Nebula: a dense sphere of violet, blue and green particles on black, with the now-playing badge and playback controls along the bottom.',
+	},
+	{
+		id: 'tunnel',
+		name: 'Spectrum Tunnel',
+		image: tunnelWindow,
+		alt: 'Synesthia in a window running Spectrum Tunnel: concentric rings of magenta, cyan and gold receding toward a vanishing point.',
+	},
+	{
+		id: 'aurora',
+		name: 'Aurora',
+		image: auroraWindow,
+		alt: 'Synesthia in a window running Aurora: stacked ribbons of magenta, gold, green and blue rippling horizontally like northern lights.',
+	},
+];
+---
+
+<div class="carousel" data-carousel data-interval="4600">
+	<div class="carousel-stage">
+		{
+			shots.map((shot, i) => (
+				<div
+					class="carousel-slide"
+					id={`shot-${shot.id}`}
+					role="tabpanel"
+					aria-label={shot.name}
+					data-active={i === 0 ? '' : undefined}
+					aria-hidden={i === 0 ? undefined : 'true'}
+				>
+					<Picture
+						src={shot.image}
+						formats={['avif']}
+						fallbackFormat="webp"
+						widths={[640, 900, 1200, 1600, 2048]}
+						sizes="(min-width: 1024px) 54vw, 100vw"
+						alt={shot.alt}
+						loading={i === 0 ? 'eager' : 'lazy'}
+						fetchpriority={i === 0 ? 'high' : 'auto'}
+						class="shot-shadow w-full"
+					/>
+				</div>
+			))
+		}
+	</div>
+
+	<div class="carousel-tabs" role="tablist" aria-label="Visualizer">
+		{
+			shots.map((shot, i) => (
+				<button
+					type="button"
+					class="tab"
+					role="tab"
+					data-tab
+					aria-controls={`shot-${shot.id}`}
+					aria-selected={i === 0 ? 'true' : 'false'}
+					tabindex={i === 0 ? 0 : -1}
+				>
+					{shot.name}
+				</button>
+			))
+		}
+	</div>
+</div>

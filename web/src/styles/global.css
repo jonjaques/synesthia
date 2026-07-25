@@ -4,25 +4,31 @@
    Design tokens.
 
    The app's own output is the most saturated thing on any page it appears on:
-   six real screenshots of rainbow spectra on black. So the chrome around them
-   is deliberately achromatic — a neutral near-black, warm off-white type, and
-   hairline rules. The only colour on the page comes from the product, with one
-   exception: the indigo lifted out of the app icon, used for focus rings and
-   nothing else.
+   real screenshots of rainbow spectra on black. So the chrome around them stays
+   nearly achromatic — but not neutral: every surface is pulled a few degrees
+   toward the indigo of the app icon, and the hero sits in a soft wash of it.
+   That tint is what the screenshots read against. Their own backgrounds are
+   pure black, so a page that is *not* pure black makes each plate a distinct
+   object rather than a hole in the page.
+
+   Nothing here is saturated enough to compete: the strongest value below is a
+   14% indigo at the top of the page. Colour on this site belongs to the
+   product.
    --------------------------------------------------------------------------- */
 @theme {
-	/* Surfaces, darkest to lightest */
-	--color-ink: #0b0b0f;
-	--color-raised: #131319;
-	--color-line: #22212b;
-	--color-line-soft: #17161e;
+	/* Surfaces, darkest to lightest. Indigo-tinted, never neutral grey. */
+	--color-ink: #0a0912;
+	--color-raised: #161421;
+	--color-line: #272338;
+	--color-line-soft: #1a1727;
 
 	/* Ink */
-	--color-paper: #f3f2f7;
-	--color-dim: #a3a1af;
-	--color-mute: #85838f;
+	--color-paper: #f4f2f9;
+	--color-dim: #a5a2b4;
+	--color-mute: #878396;
 
-	/* The icon's field colour. Focus rings only — it fails contrast as text. */
+	/* The icon's field colour. Focus rings and the hero wash — it fails
+	   contrast as text, so it is never used for type. */
 	--color-accent: #6e4bff;
 
 	/* Type */
@@ -45,6 +51,7 @@
 	}
 
 	body {
+		position: relative;
 		background-color: var(--color-ink);
 		color: var(--color-paper);
 		font-family: var(--font-body);
@@ -53,6 +60,27 @@
 		overflow-x: hidden;
 		-webkit-font-smoothing: antialiased;
 		text-rendering: optimizeLegibility;
+	}
+
+	/* The wash behind the hero. Absolute, not fixed: it belongs to the top of
+	   the document and fades out by the time the first section ends, so the
+	   rest of the page is flat. Two lobes — indigo from the icon, a colder blue
+	   under the copy — kept under 15% so the screenshots stay the brightest
+	   thing in view. */
+	body::before {
+		content: '';
+		position: absolute;
+		inset: 0 0 auto;
+		height: min(96rem, 190vh);
+		pointer-events: none;
+		z-index: -1;
+		background:
+			radial-gradient(
+				60rem 38rem at 82% -6%,
+				color-mix(in oklab, var(--color-accent) 14%, transparent),
+				transparent 62%
+			),
+			radial-gradient(46rem 30rem at 4% 14%, color-mix(in oklab, #2e9bff 7%, transparent), transparent 66%);
 	}
 
 	::selection {
@@ -138,6 +166,9 @@
 		overflow: hidden;
 		border: 1px solid var(--color-line);
 		background: #000;
+		box-shadow:
+			0 18px 44px rgba(0, 0, 0, 0.5),
+			0 4px 30px color-mix(in oklab, var(--color-accent) 12%, transparent);
 	}
 
 	.plate img {
@@ -145,8 +176,71 @@
 		height: auto;
 	}
 
+	/* Windowed captures carry their own alpha corners, so they get shadow
+	   rather than a frame. The second, indigo pass is what lifts a black
+	   screenshot off a nearly-black page. */
 	.shot-shadow {
-		filter: drop-shadow(0 24px 60px rgba(0, 0, 0, 0.7));
+		filter: drop-shadow(0 24px 60px rgba(0, 0, 0, 0.7))
+			drop-shadow(0 6px 44px color-mix(in oklab, var(--color-accent) 20%, transparent));
+	}
+
+	/* ---------------------------------------------------------------- carousel
+
+	   Three captures of the same window, crossfading in a fixed 4:3 box. All
+	   the source frames are 2048 × 1536, so the aspect ratio holds the layout
+	   still and nothing jumps between slides. */
+	.carousel-stage {
+		position: relative;
+		aspect-ratio: 4 / 3;
+	}
+
+	.carousel-slide {
+		position: absolute;
+		inset: 0;
+		opacity: 0;
+		transition: opacity 0.7s var(--ease-out-quart);
+	}
+
+	.carousel-slide[data-active] {
+		opacity: 1;
+	}
+
+	/* The tabs do nothing without JS, so they only exist with it. */
+	.carousel-tabs {
+		display: none;
+		gap: 0.25rem;
+		margin-top: 1.25rem;
+	}
+
+	.js .carousel-tabs {
+		display: flex;
+	}
+
+	.tab {
+		font-family: var(--font-mono);
+		font-size: 0.6875rem;
+		font-weight: 500;
+		letter-spacing: 0.1em;
+		text-transform: uppercase;
+		color: var(--color-mute);
+		padding: 0.4rem 0.7rem;
+		border-radius: 0.4rem;
+		border: 1px solid transparent;
+		cursor: pointer;
+		transition:
+			color 0.18s ease,
+			border-color 0.18s ease,
+			background-color 0.18s ease;
+	}
+
+	.tab:hover {
+		color: var(--color-dim);
+	}
+
+	.tab[aria-selected='true'] {
+		color: var(--color-paper);
+		border-color: var(--color-line);
+		background: var(--color-raised);
 	}
 
 	/* Buttons are rounded rects, not pills — this is a Mac app, and the page

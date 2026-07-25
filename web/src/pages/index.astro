@@ -2,38 +2,38 @@
 import { Picture } from 'astro:assets';
 import Base from '../layouts/Base.astro';
 import Mark from '../components/Mark.astro';
+import ShotCarousel from '../components/ShotCarousel.astro';
 import StoreButton from '../components/StoreButton.astro';
 import { RELEASE, SITE } from '../consts';
 
 import auroraFull from '../assets/screenshots/aurora-fullscreen.png';
-import auroraWindow from '../assets/screenshots/aurora-windowed.png';
 import nebulaFull from '../assets/screenshots/nebula-fullscreen.png';
-import nebulaWindow from '../assets/screenshots/nebula-windowed.png';
 import tunnelFull from '../assets/screenshots/tunnel-fullscreen.png';
-import tunnelWindow from '../assets/screenshots/tunnel-windowed.png';
 
-// Every plate below is a real capture, taken by `make screenshots` straight off
-// the shipping build. Nothing on this page is a re-creation of the app.
+// This page is a business card, not a manual: one screen of pitch, one screen
+// of proof, and the parts of the README a buyer actually needs. Every plate is
+// a real capture taken by `make screenshots` off the shipping build — nothing
+// here is a re-creation of the app.
 const visualizers = [
 	{
 		name: 'Nebula',
 		image: nebulaFull,
-		alt: 'The Nebula visualizer: a dense sphere of violet, blue and green particles suspended on black, with the now-playing badge and playback controls along the bottom.',
-		options: ['Density', 'Glow', 'Swirl'],
-		line: 'A particle cloud in orbit. Every particle is bound to one frequency band and flares when its band hits.',
+		alt: 'The Nebula visualizer: a dense sphere of violet, blue and green particles suspended on black.',
+		options: 'Density · Glow · Swirl',
+		line: 'A particle cloud in orbit. Each particle is bound to one frequency band and flares when its band hits.',
 	},
 	{
 		name: 'Spectrum Tunnel',
 		image: tunnelFull,
-		alt: 'The Spectrum Tunnel visualizer: concentric rings of magenta, cyan and gold receding toward a vanishing point, with spokes radiating outward.',
-		options: ['Twist', 'Glow'],
+		alt: 'The Spectrum Tunnel visualizer: concentric rings of magenta, cyan and gold receding toward a vanishing point.',
+		options: 'Twist · Glow',
 		line: 'Flight through a tube whose angular slices are the live spectrum. Loud frequencies push the walls out.',
 	},
 	{
 		name: 'Aurora',
 		image: auroraFull,
-		alt: 'The Aurora visualizer: stacked ribbons of magenta, gold, green and blue rippling horizontally across the screen like northern lights.',
-		options: ['Ribbons', 'Wave height'],
+		alt: 'The Aurora visualizer: stacked ribbons of magenta, gold, green and blue rippling horizontally like northern lights.',
+		options: 'Ribbons · Wave height',
 		line: 'Layered ribbons riding the waveform, each one glowing with its own slice of the spectrum.',
 	},
 ];
@@ -47,48 +47,32 @@ const palettes = [
 ];
 
 const sources = [
-	{
-		name: 'Music app',
-		does: 'Controls Music.app and taps the system audio it produces.',
-		shows: 'Title, artist, album, artwork',
-	},
-	{
-		name: 'System audio',
-		does: 'Whatever the Mac is playing — Spotify, a browser tab, a game.',
-		shows: '—',
-	},
-	{
-		name: 'Audio input',
-		does: 'A microphone, line-in, or any other input device.',
-		shows: 'Device name',
-	},
-	{
-		name: 'Audio file',
-		does: 'Plays a file from disk inside the app, on loop.',
-		shows: 'File name',
-	},
+	{ name: 'Music app', does: 'Drives Music.app and shows the title, artist and artwork while it plays.' },
+	{ name: 'System audio', does: 'Whatever the Mac is playing — Spotify, a browser tab, a game.' },
+	{ name: 'Audio input', does: 'A microphone, line-in, or any other input device.' },
+	{ name: 'Audio file', does: 'Plays a file from disk inside the app, on loop.' },
 ];
 
 const chain = [
 	{
 		stage: 'Capture',
 		spec: 'ScreenCaptureKit · AVAudioEngine',
-		line: 'System audio arrives through ScreenCaptureKit; a mic or a file arrives through an AVAudioEngine tap. Both end up as one mono stream.',
+		line: 'System audio, a mic or a file — all of them arrive as one mono stream.',
 	},
 	{
 		stage: 'Analyse',
 		spec: '2048-point FFT · vDSP',
-		line: 'A Hann-windowed 2048-point FFT runs on Accelerate, off the main thread, allocating nothing on the audio thread.',
+		line: 'A Hann-windowed FFT on Accelerate, off the main thread, allocating nothing on the audio thread.',
 	},
 	{
 		stage: 'Snapshot',
 		spec: '64 bands · 30 Hz – 16 kHz',
-		line: '64 log-spaced bands, a 256-sample waveform, bass, mid, treble and level scalars, plus a beat envelope from bass transients.',
+		line: 'Log-spaced bands, a waveform, bass, mid, treble and level, plus a beat envelope.',
 	},
 	{
 		stage: 'Render',
 		spec: '60 fps · Metal',
-		line: 'The render loop pulls the newest snapshot each frame and hands it straight to a Metal shader. Audio never publishes into the UI.',
+		line: 'The newest snapshot goes straight to a Metal shader. Audio never publishes into the UI.',
 	},
 ];
 
@@ -102,16 +86,8 @@ const shortcuts = [
 
 const native = [
 	{
-		title: 'Real fullscreen',
-		body: 'The green button or ⌃⌘F, with the menu bar gone and nothing but the visualizer left.',
-	},
-	{
 		title: 'Controls that get out of the way',
-		body: 'The bottom bar fades after a few seconds of stillness and comes back the moment you move the mouse.',
-	},
-	{
-		title: 'Now playing',
-		body: 'Title, artist and the track’s own artwork, pulled straight from Music while it plays.',
+		body: 'The bottom bar fades after a few seconds of stillness, and real fullscreen leaves nothing but the visualizer.',
 	},
 	{
 		title: 'Open to new visualizers',
@@ -124,14 +100,11 @@ const navLinks = [
 	['Sources', '#sources'],
 	['How it works', '#pipeline'],
 ];
-
-const plateWidths = [720, 1000, 1400, 1800];
-const plateSizes = '(min-width: 1280px) 1216px, 100vw';
 ---
 
 <Base>
 	<!-- ================================================================ nav -->
-	<header class="sticky top-0 z-40 border-b border-line bg-ink">
+	<header class="sticky top-0 z-40 border-b border-line bg-ink/70 backdrop-blur-xl">
 		<div class="rail flex h-14 items-center justify-between gap-6">
 			<a href="/" class="flex items-center gap-2.5" aria-label={`${SITE.name} home`}>
 				<Mark size={26} class="h-[26px] w-[26px]" />
@@ -154,46 +127,36 @@ const plateSizes = '(min-width: 1280px) 1216px, 100vw';
 
 	<main id="main">
 		<!-- ============================================================ hero -->
-		<section class="rail pt-16 pb-14 sm:pt-24 md:pt-28">
-			<div class="max-w-[46rem]">
-				<p class="eyebrow">{SITE.tagline}</p>
+		<!-- The pitch and the proof on one screen: the carousel cycles the three
+		     visualizers in the same window, which is why the section below can be
+		     three small plates instead of three full-width ones. -->
+		<section class="rail pt-14 pb-24 sm:pt-20 md:pt-24 md:pb-32">
+			<div class="grid items-center gap-12 lg:grid-cols-2 lg:gap-14">
+				<div>
+					<p class="eyebrow">{SITE.tagline}</p>
 
-				<h1 class="display h1 mt-5">Music you can see.</h1>
+					<h1 class="display h1 mt-5">Music you can see.</h1>
 
-				<p class="mt-6 max-w-[42ch] text-lg text-dim">
-					Synesthia turns whatever your Mac is playing into light. A 64-band FFT reads the signal
-					sixty times a second, so bass, mids and treble each shape the picture differently.
-				</p>
+					<p class="mt-6 max-w-[42ch] text-lg text-dim">
+						Synesthia turns whatever your Mac is playing into light. A 64-band FFT reads the signal
+						sixty times a second, so bass, mids and treble each shape the picture differently.
+					</p>
 
-				<div class="mt-8 flex flex-wrap items-center gap-3">
-					<StoreButton />
-					<a href="#visualizers" class="btn btn-secondary text-[0.9375rem]">See it running</a>
+					<div class="mt-8 flex flex-wrap items-center gap-3">
+						<StoreButton />
+						<a href="#visualizers" class="btn btn-secondary text-[0.9375rem]">See it running</a>
+					</div>
+
+					<p class="spec mt-6">
+						Free · {RELEASE.requires} · {RELEASE.chip} · {RELEASE.size}
+					</p>
 				</div>
 
-				<p class="spec mt-6">
-					Free · {RELEASE.requires} · {RELEASE.chip} · {RELEASE.size}
-				</p>
+				<div>
+					<ShotCarousel />
+				</div>
 			</div>
 		</section>
-
-		<!-- The app as you first meet it: a plain window on a plain desktop. The
-		     capture carries its own corners and traffic lights in its alpha, so
-		     it only needs a shadow under it. -->
-		<div class="rail pb-24 md:pb-32">
-			<div class="mx-auto max-w-[64rem]">
-				<Picture
-					src={nebulaWindow}
-					formats={['avif']}
-					fallbackFormat="webp"
-					widths={[640, 900, 1200, 1600, 2048]}
-					sizes="(min-width: 1024px) 1024px, 100vw"
-					alt="Synesthia in a window on macOS, running the Nebula visualizer. A cloud of coloured particles fills the frame, with the track name and playback controls in a floating bar along the bottom."
-					loading="eager"
-					fetchpriority="high"
-					class="shot-shadow w-full"
-				/>
-			</div>
-		</div>
 
 		<!-- ===================================================== visualizers -->
 		<section id="visualizers" class="rail scroll-mt-20 pb-24 md:pb-32">
@@ -201,15 +164,14 @@ const plateSizes = '(min-width: 1280px) 1216px, 100vw';
 				<p class="eyebrow">Visualizers</p>
 				<h2 class="display h2 mt-4">Three ways to draw the same 64 bands.</h2>
 				<p class="mt-5 text-dim">
-					Each one reads the same analysis and interprets it differently. Switch between them with
-					<kbd>⌘1</kbd> <kbd>⌘2</kbd> <kbd>⌘3</kbd> without stopping the music.
+					Each reads the same analysis and interprets it differently. Switch with <kbd>⌘1</kbd>
+					<kbd>⌘2</kbd> <kbd>⌘3</kbd> without stopping the music. All three share{' '}
+					<span class="text-paper">Sensitivity</span>, <span class="text-paper">Speed</span> and five
+					palettes, and the app remembers whatever you set.
 				</p>
 			</div>
 
-			<!-- Each visualizer gets a full-width plate and a placard, like prints
-			     on a wall. The screenshots are the argument; the text just labels
-			     them. -->
-			<div class="mt-12 space-y-14">
+			<div class="mt-12 grid gap-8 md:grid-cols-3 md:gap-6">
 				{
 					visualizers.map((v, i) => (
 						<figure data-reveal>
@@ -218,88 +180,63 @@ const plateSizes = '(min-width: 1280px) 1216px, 100vw';
 									src={v.image}
 									formats={['avif']}
 									fallbackFormat="webp"
-									widths={plateWidths}
-									sizes={plateSizes}
+									widths={[480, 720, 1000, 1400]}
+									sizes="(min-width: 768px) 32vw, 100vw"
 									alt={v.alt}
 									loading={i === 0 ? 'eager' : 'lazy'}
 								/>
 							</div>
-							<figcaption class="mt-5 grid gap-x-10 gap-y-3 border-t border-line pt-5 md:grid-cols-12">
-								<div class="md:col-span-4">
-									<h3 class="h3">{v.name}</h3>
-									<p class="spec mt-1.5">{v.options.join(' · ')}</p>
-								</div>
-								<p class="text-[0.95rem] text-dim md:col-span-7 md:col-start-6">{v.line}</p>
+							<figcaption class="mt-4">
+								<h3 class="h3">{v.name}</h3>
+								<p class="spec mt-1.5">{v.options}</p>
+								<p class="mt-3 text-[0.95rem] text-dim">{v.line}</p>
 							</figcaption>
 						</figure>
 					))
 				}
 			</div>
 
-			<div class="surface mt-14 flex flex-col gap-8 p-6 sm:p-7 lg:flex-row lg:items-center lg:gap-14" data-reveal>
-				<p class="max-w-sm text-[0.95rem] text-dim">
-					All three share <span class="text-paper">Sensitivity</span>,
-					<span class="text-paper">Speed</span> and five palettes. Whatever you set, the app remembers
-					for next time.
-				</p>
-				<ul class="grid flex-1 grid-cols-3 gap-x-6 gap-y-4 sm:grid-cols-5">
-					{
-						palettes.map((p) => (
-							<li>
-								<span class="flex overflow-hidden rounded-sm" aria-hidden="true">
-									{p.colors.map((c) => (
-										<span class="h-2 flex-1" style={`background:${c}`} />
-									))}
-								</span>
-								<span class="eyebrow mt-2 block">{p.name}</span>
-							</li>
-						))
-					}
-				</ul>
-			</div>
+			<ul class="mt-12 grid grid-cols-3 gap-x-6 gap-y-4 sm:grid-cols-5" data-reveal>
+				{
+					palettes.map((p) => (
+						<li>
+							<span class="flex overflow-hidden rounded-sm" aria-hidden="true">
+								{p.colors.map((c) => (
+									<span class="h-2 flex-1" style={`background:${c}`} />
+								))}
+							</span>
+							<span class="eyebrow mt-2 block">{p.name}</span>
+						</li>
+					))
+				}
+			</ul>
 		</section>
 
 		<!-- ========================================================= sources -->
 		<section id="sources" class="rail scroll-mt-20 pb-24 md:pb-32">
-			<div class="max-w-[42rem]" data-reveal>
-				<p class="eyebrow">Sources</p>
-				<h2 class="display h2 mt-4">It listens to anything your Mac plays.</h2>
-			</div>
-
-			<div class="mt-10" data-reveal>
-				<div
-					class="hidden grid-cols-[minmax(0,1fr)_minmax(0,2fr)_minmax(0,1.2fr)] gap-8 border-b border-line pb-3 md:grid"
-				>
-					<span class="eyebrow">Source</span>
-					<span class="eyebrow">What it does</span>
-					<span class="eyebrow">Now playing shows</span>
+			<div class="grid gap-10 md:grid-cols-12 md:gap-12">
+				<div class="md:col-span-5" data-reveal>
+					<p class="eyebrow">Sources</p>
+					<h2 class="display h2 mt-4">It listens to anything your Mac plays.</h2>
+					<p class="mt-5 text-sm text-mute">
+						macOS asks once for Screen &amp; System Audio Recording so the app can hear other apps,
+						and once for Automation so it can drive Music. The video half of the screen recording
+						API is never read. Music control ships in the build downloaded from this site; in the
+						App Store build, System audio hears Music.app just as well.
+					</p>
 				</div>
 
-				<ul>
+				<ul class="md:col-span-6 md:col-start-7" data-reveal>
 					{
 						sources.map((s) => (
-							<li class="grid gap-1.5 border-b border-line-soft py-5 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_minmax(0,1.2fr)] md:items-baseline md:gap-8">
+							<li class="grid gap-1 border-b border-line-soft py-4 first:pt-0 last:border-0 last:pb-0 sm:grid-cols-[minmax(0,9rem)_minmax(0,1fr)] sm:items-baseline sm:gap-6">
 								<h3 class="h3">{s.name}</h3>
 								<p class="text-[0.95rem] text-dim">{s.does}</p>
-								<p class="spec">{s.shows}</p>
 							</li>
 						))
 					}
 				</ul>
 			</div>
-
-			<p class="mt-8 max-w-[52rem] text-sm text-mute" data-reveal>
-				The Music app source is in the build downloaded directly from this site, not the Mac App
-				Store one. In the App Store build, choose System audio — it hears Music.app perfectly; only
-				the on-screen track name and transport buttons are missing.
-			</p>
-
-			<p class="mt-4 max-w-[52rem] text-sm text-mute" data-reveal>
-				Capture attaches on launch for system audio, and latches onto Music if a track is already
-				playing when you open the app. macOS asks once for Screen &amp; System Audio Recording so the
-				app can hear other apps, and once for Automation so it can drive Music. The video half of the
-				screen recording API is never read.
-			</p>
 		</section>
 
 		<!-- ======================================================== pipeline -->
@@ -307,20 +244,15 @@ const plateSizes = '(min-width: 1280px) 1216px, 100vw';
 			<div class="max-w-[42rem]" data-reveal>
 				<p class="eyebrow">How it works</p>
 				<h2 class="display h2 mt-4">Sound to light, sixty times a second.</h2>
-				<p class="mt-5 text-dim">
-					Four stages, in this order, every frame. None of them block the main thread.
-				</p>
 			</div>
 
-			<ol class="mt-10 border-t border-line" data-reveal>
+			<ol class="mt-10 grid gap-8 sm:grid-cols-2 lg:grid-cols-4 lg:gap-6" data-reveal>
 				{
 					chain.map((step) => (
-						<li class="grid gap-2 border-b border-line-soft py-6 md:grid-cols-12 md:gap-8">
-							<div class="md:col-span-3">
-								<h3 class="h3">{step.stage}</h3>
-								<p class="spec mt-1.5">{step.spec}</p>
-							</div>
-							<p class="text-[0.95rem] text-dim md:col-span-8 md:col-start-5">{step.line}</p>
+						<li class="border-t border-line pt-4">
+							<h3 class="h3">{step.stage}</h3>
+							<p class="spec mt-1.5">{step.spec}</p>
+							<p class="mt-3 text-[0.95rem] text-dim">{step.line}</p>
 						</li>
 					))
 				}
@@ -329,7 +261,7 @@ const plateSizes = '(min-width: 1280px) 1216px, 100vw';
 
 		<!-- =========================================================== macOS -->
 		<section class="rail pb-24 md:pb-32">
-			<div class="grid gap-12 md:grid-cols-12 md:gap-10">
+			<div class="grid gap-12 md:grid-cols-12 md:gap-12">
 				<div class="md:col-span-6" data-reveal>
 					<p class="eyebrow">Native</p>
 					<h2 class="display h2 mt-4">Built like a Mac app.</h2>
@@ -364,37 +296,6 @@ const plateSizes = '(min-width: 1280px) 1216px, 100vw';
 						</dl>
 					</div>
 				</div>
-			</div>
-
-			<!-- The same three visualizers at window size — the point being that
-			     nothing is reserved for fullscreen. -->
-			<div class="mt-16 grid gap-6 sm:grid-cols-2" data-reveal>
-				<figure>
-					<Picture
-						src={tunnelWindow}
-						formats={['avif']}
-						fallbackFormat="webp"
-						widths={[480, 640, 900, 1200]}
-						sizes="(min-width: 768px) 46vw, 100vw"
-						alt="Synesthia in a 1024 by 768 window running Spectrum Tunnel, with the visualizer picker in the lower right corner."
-						loading="lazy"
-						class="shot-shadow w-full"
-					/>
-					<figcaption class="spec mt-4">Spectrum Tunnel · windowed, 1024 × 768</figcaption>
-				</figure>
-				<figure>
-					<Picture
-						src={auroraWindow}
-						formats={['avif']}
-						fallbackFormat="webp"
-						widths={[480, 640, 900, 1200]}
-						sizes="(min-width: 768px) 46vw, 100vw"
-						alt="Synesthia in a 1024 by 768 window running Aurora, showing the now-playing badge with album artwork in the lower left."
-						loading="lazy"
-						class="shot-shadow w-full"
-					/>
-					<figcaption class="spec mt-4">Aurora · windowed, 1024 × 768</figcaption>
-				</figure>
 			</div>
 		</section>
 
