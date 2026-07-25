@@ -284,29 +284,68 @@ is signed with the key only you hold, and Sparkle checks it against the
 `SUPublicEDKey` in the bundle. Someone who took over the bucket still could not
 ship code to an installed copy.
 
-### Cloudflare setup (one-time)
+### Cloudflare setup (one-time — done 2026-07-25)
 
 ```bash
 npx wrangler r2 bucket create synesthia-releases
 ```
 
-Then, in the Cloudflare dashboard, attach the binding to the **Pages** project —
-Workers & Pages → your project → Settings → Bindings → R2 bucket, variable name
-`RELEASES`, bucket `synesthia-releases`. Add it for **both** Production and
-Preview.
+**That is the whole setup. Do not add the binding in the dashboard.** Because
+`web/wrangler.jsonc` exists, it is the source of truth for the Pages project and
+those fields are read-only in the dashboard; the `RELEASES` binding is applied
+from the config file's `env.production` / `env.preview` blocks on every build.
 
-Two things to check before the first deploy:
+This is not a subtle distinction — it is how the first deploy of the Functions
+failed:
 
-1. **`name` in `web/wrangler.jsonc` must match the existing Pages project.**
-   Confirm with `npx wrangler pages project list`. If it doesn't match, the
-   git-integrated build deploys to a project that isn't the one serving
-   synesthia.app.
-2. **Once a Pages project has a Wrangler config file, that file becomes the
-   source of truth** and the same fields go read-only in the dashboard. Bindings
-   added by hand there stop being applied.
+```
+Error: Failed to publish your Function. Got error: R2 bucket
+'synesthia-releases' not found.
+```
+
+The binding was already being applied *from the config file*; the bucket just
+didn't exist yet. A dashboard binding would not have helped, and adding one now
+would be ignored.
+
+Verify the wiring at any time with:
+
+```bash
+npx wrangler pages project list                  # `name` must match wrangler.jsonc
+npx wrangler pages download config synesthia     # writes wrangler.toml — DELETE IT
+```
+
+Beware that second command: it writes a `wrangler.toml` into `web/`, and having
+both a `.toml` and a `.jsonc` there is an error. Read it, then delete it.
 
 The bucket stays private. It is reached only through the Functions' binding —
-there is no public r2.dev URL and no custom domain on it.
+there is no public r2.dev URL and no custom domain on it. Nothing needs a secret
+or an environment variable: an R2 binding is a capability handed to the Worker,
+not a credential it presents.
+
+### Which download the site offers
+
+Two independent switches in `web/src/consts.ts`, because the two channels go
+live at different times and either can be the only one available:
+
+| | Current | Turn on when |
+|---|---|---|
+| `DIRECT_DOWNLOAD_AVAILABLE` | **`true`** | — |
+| `APP_STORE_AVAILABLE` | **`false`** | the app passes review and `APP_STORE_URL` is a real product page |
+
+`DownloadOptions.astro` reads both and renders whichever are on — the header
+takes the primary one, the hero and the closing call to action take all of them.
+When both are on the App Store is the filled button and the direct download the
+outlined one. Two pieces of copy follow the same flags: the closing heading
+("Free on the Mac App Store." vs "Free for your Mac.") and the Sources note that
+contrasts the two builds, which reads as a broken promise when only one exists.
+
+All four combinations render, including neither-enabled, which produces a page
+with no download button — the honest state before either channel exists.
+
+**`/download` answers 503 until `make publish-release` has put a DMG and a
+`latest.json` in the bucket.** The buttons are live now regardless, by choice;
+the 503 carries a plain-text explanation. Nothing else needs changing when the
+first release lands — that is the point of serving the artifacts from R2.
 
 ### Local testing
 
@@ -353,6 +392,12 @@ deliberate trade rather than an oversight.
 - [ ] `xcrun notarytool history --keychain-profile SYNESTHIA_NOTARY` works
 - [ ] `make sparkle-keys` run, public key pasted into `Synesthia-Direct-Info.plist`
 - [ ] private Sparkle key exported and backed up off this machine
-- [ ] R2 bucket created and bound to the Pages project as `RELEASES`
-- [ ] `name` in `web/wrangler.jsonc` matches the real Pages project
+- [x] R2 bucket `synesthia-releases` created (2026-07-25)
+- [x] `name` in `web/wrangler.jsonc` matches the real Pages project (`synesthia`)
 - [ ] `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION` bumped on **both** targets
+
+### After the first successful publish
+
+- [ ] confirm `curl -sI https://synesthia.app/download` returns 302 (it 503s until then)
+- [ ] confirm `https://synesthia.app/appcast.xml` returns the signed feed
+- [ ] flip `APP_STORE_AVAILABLE` to `true` only once review has actually passed

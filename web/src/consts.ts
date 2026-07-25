@@ -34,6 +34,32 @@ export const APP_STORE_URL = 'https://apps.apple.com/app/id0000000000';
  */
 export const DIRECT_DOWNLOAD_URL = '/download';
 
+/**
+ * Whether to advertise the direct download on the site.
+ *
+ * `/download` answers 503 until scripts/publish-release.sh has put a DMG and a
+ * latest.json in the R2 bucket, and that cannot happen until the Developer ID
+ * certificate exists and a build has been notarized. Until then a visible link
+ * is a dead end, so it stays hidden.
+ *
+ * FLIP THIS TO `true` once `make publish-release` has succeeded — it is the one
+ * part of shipping a release that still needs a site rebuild.
+ */
+export const DIRECT_DOWNLOAD_AVAILABLE = true;
+
+/**
+ * Whether to advertise the Mac App Store listing.
+ *
+ * `false` until the app has actually passed review and APP_STORE_URL points at
+ * a real product page — the placeholder ID above resolves to nothing.
+ *
+ * The two channels are independent on purpose: they go live at different times,
+ * and for a while one is the only way to get the app. Turning both off leaves
+ * the page with no download button at all, which is intentional and handled —
+ * it is the honest state before either exists.
+ */
+export const APP_STORE_AVAILABLE = false;
+
 /** Shown next to the download button. */
 export const RELEASE = {
 	version: '1.0',

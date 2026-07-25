@@ -1,0 +1,45 @@
+---
+/**
+ * Renders whichever download channels are currently offered.
+ *
+ * Both are independently switchable in consts.ts, because they go live at
+ * different times: the direct download needs a Developer ID certificate and a
+ * notarized DMG, the App Store one needs a review to pass. Either can be the
+ * only one available, and for a while neither is.
+ *
+ * Emits a Fragment rather than a wrapper element, so the caller's flex container
+ * spaces the buttons alongside whatever else it holds.
+ */
+import DownloadButton from './DownloadButton.astro';
+import { APP_STORE_AVAILABLE, DIRECT_DOWNLOAD_AVAILABLE } from '../consts';
+
+interface Props {
+	/** `compact` is the header button; `full` is the download call to action. */
+	size?: 'compact' | 'full';
+	class?: string;
+}
+
+const { size = 'full', class: className = '' } = Astro.props;
+
+// When both are offered the App Store is the filled button: it is the path most
+// people should take, and the one that updates without them thinking about it.
+// Order follows emphasis, so the primary action reads first.
+const channels = [
+	APP_STORE_AVAILABLE ? ('app-store' as const) : null,
+	DIRECT_DOWNLOAD_AVAILABLE ? ('direct' as const) : null,
+].filter((channel) => channel !== null);
+
+// The header has room for exactly one button.
+const shown = size === 'compact' ? channels.slice(0, 1) : channels;
+---
+
+{
+	shown.map((variant, index) => (
+		<DownloadButton
+			variant={variant}
+			size={size}
+			emphasis={index === 0 ? 'primary' : 'secondary'}
+			class={className}
+		/>
+	))
+}

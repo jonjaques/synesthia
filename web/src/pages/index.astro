@@ -3,8 +3,15 @@ import { Picture } from 'astro:assets';
 import Base from '../layouts/Base.astro';
 import Mark from '../components/Mark.astro';
 import ShotCarousel from '../components/ShotCarousel.astro';
-import StoreButton from '../components/StoreButton.astro';
-import { DIRECT_DOWNLOAD_URL, RELEASE, SITE } from '../consts';
+import DownloadOptions from '../components/DownloadOptions.astro';
+import { APP_STORE_AVAILABLE, DIRECT_DOWNLOAD_AVAILABLE, RELEASE, SITE } from '../consts';
+
+// Copy that only makes sense when a given channel is on the page. The closing
+// heading named the App Store outright, and the Sources note drew a contrast
+// between the two builds — both read as broken promises when only one is
+// offered, so they follow the flags too.
+const BOTH_CHANNELS = APP_STORE_AVAILABLE && DIRECT_DOWNLOAD_AVAILABLE;
+const ctaHeading = APP_STORE_AVAILABLE ? 'Free on the Mac App Store.' : 'Free for your Mac.';
 
 import auroraFull from '../assets/screenshots/aurora-fullscreen.png';
 import nebulaFull from '../assets/screenshots/nebula-fullscreen.png';
@@ -121,7 +128,7 @@ const navLinks = [
 				}
 			</nav>
 
-			<StoreButton size="compact" class="hidden sm:inline-flex" />
+			<DownloadOptions size="compact" class="hidden sm:inline-flex" />
 		</div>
 	</header>
 
@@ -143,7 +150,7 @@ const navLinks = [
 					</p>
 
 					<div class="mt-8 flex flex-wrap items-center gap-3">
-						<StoreButton />
+						<DownloadOptions />
 						<a href="#visualizers" class="btn btn-secondary text-[0.9375rem]">See it running</a>
 					</div>
 
@@ -221,8 +228,11 @@ const navLinks = [
 					<p class="mt-5 text-sm text-mute">
 						macOS asks once for Screen &amp; System Audio Recording so the app can hear other apps,
 						and once for Automation so it can drive Music. The video half of the screen recording
-						API is never read. Music control ships in the build downloaded from this site; in the
-						App Store build, System audio hears Music.app just as well.
+						API is never read.{' '}
+						{
+							BOTH_CHANNELS &&
+								'Music control ships in the build downloaded from this site; in the App Store build, System audio hears Music.app just as well.'
+						}
 					</p>
 				</div>
 
@@ -315,26 +325,24 @@ const navLinks = [
 					class="h-[72px] w-[72px]"
 				/>
 
-				<h2 class="display h2 mt-7 max-w-[18ch]">Free on the Mac App Store.</h2>
+				<h2 class="display h2 mt-7 max-w-[18ch]">{ctaHeading}</h2>
 
-				<div class="mt-8">
-					<StoreButton />
+				<div class="mt-8 flex flex-wrap items-center justify-center gap-3">
+					<DownloadOptions />
 				</div>
 
 				<p class="spec mt-6">
 					Version {RELEASE.version} · {RELEASE.requires} · {RELEASE.size}
 				</p>
 
-				<!-- The direct build is the one the Sources section refers to when it
-				     says Music control ships in the build downloaded from this site,
-				     so it needs somewhere to actually be downloaded from. -->
-				<p class="mt-4 text-sm text-mute">
-					Or <a
-						href={DIRECT_DOWNLOAD_URL}
-						class="underline underline-offset-4 transition-colors hover:text-paper">download it
-						directly</a
-					> to get Music.app controls and automatic updates.
-				</p>
+				<!-- Only worth saying when there is a choice to explain. -->
+				{
+					BOTH_CHANNELS && (
+						<p class="mt-4 text-sm text-mute">
+							The direct download adds Music.app controls and updates itself.
+						</p>
+					)
+				}
 			</div>
 		</section>
 	</main>

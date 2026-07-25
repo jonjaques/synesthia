@@ -1,0 +1,77 @@
+---
+/**
+ * One download call to action, for one distribution channel.
+ *
+ * Which channels are actually offered is not decided here — see
+ * DownloadOptions.astro, which reads the availability flags in consts.ts. This
+ * component only knows how to render one.
+ */
+import { APP_STORE_URL, DIRECT_DOWNLOAD_URL } from '../consts';
+
+interface Props {
+	/** Mac App Store listing, or the notarized DMG served from this site. */
+	variant: 'app-store' | 'direct';
+	/** `compact` is the header button; `full` is the download call to action. */
+	size?: 'compact' | 'full';
+	/** Filled or outlined. Only one channel is ever filled — see DownloadOptions. */
+	emphasis?: 'primary' | 'secondary';
+	class?: string;
+}
+
+const {
+	variant,
+	size = 'full',
+	emphasis = 'primary',
+	class: className = '',
+} = Astro.props;
+
+const isAppStore = variant === 'app-store';
+const href = isAppStore ? APP_STORE_URL : DIRECT_DOWNLOAD_URL;
+
+// At compact size only one button is ever shown, so the bare verb is unambiguous.
+const label = size === 'compact'
+	? 'Download'
+	: isAppStore
+		? 'Download on the Mac App Store'
+		: 'Download for macOS';
+---
+
+<a
+	href={href}
+	class:list={[
+		'btn',
+		emphasis === 'primary' ? 'btn-primary' : 'btn-secondary',
+		size === 'compact' ? 'px-3.5 py-2 text-[0.8125rem]' : 'text-[0.9375rem]',
+		className,
+	]}
+	data-download-link={variant}
+>
+	{
+		isAppStore ? (
+			<svg
+				viewBox="0 0 22 24"
+				class:list={[
+					'shrink-0 fill-current',
+					size === 'compact' ? 'h-4 w-4' : 'h-[1.125rem] w-[1.125rem]',
+				]}
+				aria-hidden="true"
+				focusable="false"
+			>
+				<path d="M16.365 1.43c0 1.14-.47 2.24-1.24 3.04-.83.87-2.19 1.54-3.3 1.45-.13-1.1.42-2.27 1.17-3.02.83-.87 2.29-1.5 3.37-1.47zM20.9 17.2c-.55 1.27-.81 1.84-1.52 2.96-.99 1.56-2.38 3.5-4.11 3.51-1.53.02-1.93-1-4.01-.99-2.08.01-2.51 1.01-4.05.99-1.72-.02-3.04-1.77-4.03-3.33C.4 15.98-.05 10.85 1.74 8.13c1.27-1.93 3.28-3.06 5.16-3.06 1.92 0 3.12 1.05 4.71 1.05 1.54 0 2.48-1.05 4.7-1.05 1.67 0 3.45.91 4.71 2.48-4.14 2.27-3.47 8.19.88 9.65z" />
+			</svg>
+		) : (
+			<svg
+				viewBox="0 0 24 24"
+				class:list={[
+					'shrink-0 fill-current',
+					size === 'compact' ? 'h-4 w-4' : 'h-[1.125rem] w-[1.125rem]',
+				]}
+				aria-hidden="true"
+				focusable="false"
+			>
+				<path d="M11 3h2v9.6l3.3-3.3 1.4 1.4-5.7 5.7-5.7-5.7 1.4-1.4L11 12.6V3zM4 18h16v2H4v-2z" />
+			</svg>
+		)
+	}
+	<span>{label}</span>
+</a>
