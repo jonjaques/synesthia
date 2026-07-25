@@ -49,8 +49,13 @@ Synesthia/
     └── AuroraVisualizer.swift    Waveform-ribbon visualizer
 
 SynesthiaTests/                   Swift Testing bundle; AudioAnalyzer coverage
-scripts/                          Demo-track generator and release pipelines
+Makefile                          Every build/asset/release command in one place
+scripts/                          Demo-track generator, screenshot capture, release pipelines
+web/                              Astro marketing site
 ```
+
+Run `make` for the list of tasks; `CLAUDE.md` at the repo root documents each
+one and the constraints behind them.
 
 ## Shipping
 

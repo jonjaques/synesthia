@@ -20,11 +20,11 @@ const { title, description, heading, standfirst, updated } = Astro.props;
 ---
 
 <Base title={`${title} — ${SITE.name}`} description={description}>
-	<header class="border-b border-violet/15">
+	<header class="border-b border-line">
 		<div class="rail flex items-center justify-between gap-4 py-6">
 			<a href="/" class="flex items-center gap-2.5" aria-label={`${SITE.name} home`}>
-				<Mark class="h-6 w-6" />
-				<span class="font-display font-bold tracking-tight">Synesthia</span>
+				<Mark size={24} class="h-6 w-6" />
+				<span class="font-display font-semibold tracking-tight">Synesthia</span>
 			</a>
 			<nav class="flex items-center gap-6 text-sm text-dim">
 				<a href="/support" class="transition-colors hover:text-paper">Support</a>
@@ -34,11 +34,11 @@ const { title, description, heading, standfirst, updated } = Astro.props;
 	</header>
 
 	<main id="main" class="rail max-w-3xl py-16 sm:py-24">
-		<h1 class="display text-[clamp(2.25rem,6vw,3.5rem)]">{heading}</h1>
-		<p class="mt-6 text-lg text-dim">{standfirst}</p>
+		<h1 class="display h1">{heading}</h1>
+		<p class="mt-5 max-w-[46ch] text-lg text-dim">{standfirst}</p>
 		{
 			updated && (
-				<p class="tag mt-6">
+				<p class="eyebrow mt-6">
 					Last updated {updated}
 				</p>
 			)
@@ -49,13 +49,13 @@ const { title, description, heading, standfirst, updated } = Astro.props;
 		</div>
 	</main>
 
-	<footer class="border-t border-violet/15">
+	<footer class="border-t border-line">
 		<div
 			class="rail flex flex-col items-center justify-between gap-4 py-8 text-sm text-mute sm:flex-row"
 		>
 			<div class="flex items-center gap-2.5">
-				<Mark class="h-5 w-5" />
-				<span class="font-display font-bold tracking-tight text-dim">Synesthia</span>
+				<Mark size={20} class="h-5 w-5" />
+				<span class="font-display font-semibold tracking-tight text-dim">Synesthia</span>
 			</div>
 			<p>© 2026 {SITE.author}. {RELEASE.requires}.</p>
 		</div>
@@ -66,7 +66,7 @@ const { title, description, heading, standfirst, updated } = Astro.props;
 	/* Scoped to the prose block so the landing page is untouched. */
 	.legal h2 {
 		font-family: var(--font-display);
-		font-weight: 700;
+		font-weight: 600;
 		letter-spacing: -0.02em;
 		font-size: 1.5rem;
 		margin-top: 3rem;
@@ -115,13 +115,14 @@ const { title, description, heading, standfirst, updated } = Astro.props;
 	}
 
 	.legal a {
-		color: var(--color-spec-cyan);
+		color: var(--color-paper);
 		text-decoration: underline;
+		text-decoration-color: var(--color-line);
 		text-underline-offset: 3px;
 	}
 
 	.legal a:hover {
-		color: var(--color-paper);
+		text-decoration-color: var(--color-mute);
 	}
 
 	.legal dl {

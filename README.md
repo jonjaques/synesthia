@@ -55,6 +55,51 @@ control bar. Settings persist across launches.
   permission must be granted (System Settings › Privacy & Security ›
   Automation › Synesthia › Music).
 
+## Building
+
+Everything runs through `make` (`make` on its own lists the targets); each
+target is a thin wrapper around `xcodebuild` or a script in `scripts/`, which
+stay runnable directly.
+
+```bash
+make build                 # Debug build          (CONFIGURATION=Direct|Release)
+make run                   # build, then launch
+make test                  # the SynesthiaTests suite
+make clean
+```
+
+| Target | What it does |
+|---|---|
+| `build` · `run` · `test` · `clean` | Xcode build, launch, Swift Testing suite, clean |
+| `app-path` | Print the built `.app`'s path for the current `CONFIGURATION` |
+| `demo-track` | Regenerate `Resources/DemoLoop.m4a` (deterministic; needs `afconvert`) |
+| `screenshots` | Capture every visualizer, windowed and fullscreen, into `web/src/assets/screenshots` |
+| `appstore` · `appstore-upload` | Archive + validate the Mac App Store build, optionally upload |
+| `direct` · `direct-fast` | Notarized direct-download build + DMG; `-fast` skips notarization |
+| `appcast` | Regenerate the signed Sparkle appcast from the DMGs in `build/` |
+| `check-metadata` | Check the App Store listing drafts against Apple's field limits |
+| `web-install` · `web-dev` · `web-build` · `web-preview` · `web-assets` | The Astro site in `web/` |
+
+Variables: `CONFIGURATION` (`Debug` default, then `Direct` and `Release` — see
+[docs/distribution.md](docs/distribution.md) for why the App Store and direct
+builds differ), `DESTINATION`, and `ARGS` to forward flags to the wrapped
+script — e.g. `make screenshots ARGS="--size 1440x900 --only nebula"`.
+
+### Screenshots
+
+`make screenshots` relaunches the app once per registered visualizer with
+`-visualizerID` in its argument domain, sizes the window, captures it, then
+repeats in fullscreen. Each run writes under its own prefix
+(`20260725-174312Z-nebula-windowed.png`) so takes accumulate rather than
+overwrite; `ARGS="--prefix hero"` names one yourself, `--prefix ''` drops it.
+It assumes **Music.app is already playing** so the
+now-playing badge and artwork are populated. Because it drives another app's
+window, the terminal you run it from needs two grants in System Settings ›
+Privacy & Security: **Accessibility** (resize the window, move the pointer so
+the auto-hiding chrome reappears) and **Screen & System Audio Recording**
+(`screencapture` itself). The script checks both up front and tells you what's
+missing. `./scripts/take-screenshots.sh --help` lists the options.
+
 ## How it works
 
 > Developer documentation lives in [`docs/`](docs/README.md) — architecture,

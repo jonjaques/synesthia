@@ -36,8 +36,11 @@ Synesthia/
     └── {Nebula,Tunnel,Aurora}Visualizer.swift
 
 SynesthiaTests/                   Swift Testing bundle; AudioAnalyzer DSP coverage
+Makefile                          Single entry point for every command (see below)
 scripts/                          make_demo_loop.py, build-appstore.sh, build-direct.sh,
-                                  make-appcast.sh, check-metadata.py
+                                  make-appcast.sh, check-metadata.py,
+                                  take-screenshots.sh + shotkit.swift
+web/                              Astro marketing site (own package.json; see web/AGENTS.md)
 ```
 
 Data flow: audio threads → `AudioAnalyzer.appendMono` (NSLock) → render loop pulls `analyzer.latest()` each frame. Audio never publishes into SwiftUI; only `MusicController`/`AppState` are observable.
@@ -48,26 +51,44 @@ Data flow: audio threads → `AudioAnalyzer.appendMono` (NSLock) → render loop
 
 ## Commands
 
+**The `Makefile` is the single entry point — prefer it over raw `xcodebuild`.** `make` with no target prints the list. Every target is a thin wrapper (the scripts stay runnable directly), so adding a script means adding a target next to it.
+
 ```bash
-# Build (Debug)
-xcodebuild -project Synesthia.xcodeproj -scheme Synesthia -configuration Debug build
+make build            # xcodebuild build; CONFIGURATION=Debug (also Direct, Release)
+make run              # build, then open the built .app
+make test             # xcodebuild test -destination 'platform=macOS'
+make clean            # xcodebuild clean + rm -rf build/
+make app-path         # print the built .app path for CONFIGURATION
 
-# Build and run
-xcodebuild -project Synesthia.xcodeproj -scheme Synesthia -configuration Debug build && \
-  open ~/Library/Developer/Xcode/DerivedData/Synesthia-*/Build/Products/Debug/Synesthia.app
+make demo-track       # python3 scripts/make_demo_loop.py
+make screenshots      # scripts/take-screenshots.sh → web/src/assets/screenshots
+make check-metadata   # scripts/check-metadata.py
 
-# Test
-xcodebuild test -project Synesthia.xcodeproj -scheme Synesthia -destination 'platform=macOS'
+make appstore         # archive + assert + export for the Mac App Store
+make appstore-upload  # …and upload to App Store Connect
+make direct           # archive + Developer ID + notarize + staple + DMG
+make direct-fast      # …--skip-notarize
+make appcast          # regenerate the signed Sparkle appcast
 
-# Clean
-xcodebuild -project Synesthia.xcodeproj -scheme Synesthia clean
-
-# Release pipelines (see docs/distribution.md)
-./scripts/build-appstore.sh              # archive + assert + export for the Mac App Store
-./scripts/build-direct.sh                # archive + Developer ID + notarize + staple + DMG
+make web-install web-dev web-build web-preview web-assets   # the Astro site in web/
 ```
 
-`SynesthiaTests` is a **Swift Testing** bundle (`import Testing`, `@Test`, `#expect`), hosted by the app target, covering `AudioAnalyzer`. Regenerate the demo track with `python3 scripts/make_demo_loop.py` (deterministic; needs only the stdlib and `afconvert`).
+`ARGS=` forwards flags to the wrapped script (`make screenshots ARGS="--only nebula --1x"`). `BUILT_PRODUCTS_DIR` is resolved from `xcodebuild -showBuildSettings`, not globbed out of DerivedData, so `run`/`app-path` are correct for any configuration.
+
+`SynesthiaTests` is a **Swift Testing** bundle (`import Testing`, `@Test`, `#expect`), hosted by the app target, covering `AudioAnalyzer`.
+
+### Screenshots
+
+`make screenshots` (`scripts/take-screenshots.sh` + `scripts/shotkit.swift`, a Swift helper compiled on demand) relaunches the app once per registered visualizer, sizes the window, captures it, then repeats fullscreen. Notes for changing it:
+
+- **Every run writes under a unique prefix** (`<UTC stamp to the second>-<id>-<windowed|fullscreen>.png`), so nothing is overwritten and two takes can be compared side by side. `--prefix` overrides it; `--prefix ''` gives bare `<id>-<mode>.png` names. Note the generator can't use `tr -dc … </dev/urandom | head -c 4`: `head` closing the pipe kills `tr`, and `set -o pipefail` turns that into a failed run.
+- **Visualizers are discovered from source**, not hardcoded: the registry order is parsed out of `VisualizerCore.swift` and each id out of its own `*Visualizer.swift`. A new visualizer is picked up for free.
+- **State is injected through the argument domain**, not `defaults write`: `open -a … --args -visualizerID nebula -sourceKind musicApp -hasSeenWelcome YES`. `NSUserDefaults` reads `-key value` pairs out of `argv` at highest priority, which works for a *sandboxed* app (whose prefs live in its container, so `defaults write com.jonjaques.Synesthia` would go to the wrong plist) and leaves nothing behind in the user's real preferences.
+- **The bottom chrome auto-hides after 3 s of pointer stillness**, so every capture is preceded by a synthetic two-step pointer move inside the window plus 0.6 s for the 0.35 s fade-in. One warp is not enough — `onContinuousHover` only reacts to a *change* in position.
+- **It needs Accessibility and Screen & System Audio Recording on the invoking terminal**, and preflights both. Nothing in the app was changed to support it; it drives the shipping UI.
+- Window capture (`screencapture -o -l <id>`) keeps the rounded corners on transparency; `--mode region` is the fallback if a Metal window ever composites black.
+- **`CFTypeRef as? [AXUIElement]` silently yields an *empty* array**, so reading `kAXWindows` that way reports "no windows" on a perfectly healthy app — with no error to go on. `shotkit.swift` asks for `kAXMainWindow`/`kAXFocusedWindow` (single elements) and type-checks with `CFGetTypeID` + `unsafeBitCast` instead. Same trap for `CFBoolean` → `Bool`.
+- **`CGWindowListCopyWindowInfo` marks every window off-screen while the display is asleep**, so `.optionOnScreenOnly` makes the whole thing look windowless when run headless. `cgWindow` uses `.optionAll` and merely *prefers* on-screen matches.
 
 ## Hard-won gotchas (violating these caused real bugs)
 

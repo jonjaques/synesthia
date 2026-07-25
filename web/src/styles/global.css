@@ -1,51 +1,41 @@
 @import 'tailwindcss';
 
 /* ---------------------------------------------------------------------------
-   Design tokens — every colour below is sampled from the app icon: an indigo
-   field with a comet of white-hot light dispersing into a full spectrum.
+   Design tokens.
+
+   The app's own output is the most saturated thing on any page it appears on:
+   six real screenshots of rainbow spectra on black. So the chrome around them
+   is deliberately achromatic — a neutral near-black, warm off-white type, and
+   hairline rules. The only colour on the page comes from the product, with one
+   exception: the indigo lifted out of the app icon, used for focus rings and
+   nothing else.
    --------------------------------------------------------------------------- */
 @theme {
-	/* Field */
-	--color-void: #07031a;
-	--color-abyss: #0c0630;
-	--color-field: #2e1e8f;
-	--color-violet: #6b4bff;
+	/* Surfaces, darkest to lightest */
+	--color-ink: #0b0b0f;
+	--color-raised: #131319;
+	--color-line: #22212b;
+	--color-line-soft: #17161e;
 
 	/* Ink */
-	--color-paper: #ede9ff;
-	--color-dim: #a79ce0;
-	--color-mute: #6f65a8;
+	--color-paper: #f3f2f7;
+	--color-dim: #a3a1af;
+	--color-mute: #85838f;
 
-	/* Dispersion — head of the comet through to its tail */
-	--color-spec-white: #eaf4ff;
-	--color-spec-blue: #2e9bff;
-	--color-spec-cyan: #43d9ff;
-	--color-spec-green: #3fe39b;
-	--color-spec-yellow: #f2d544;
-	--color-spec-orange: #ff7a18;
-	--color-spec-red: #ff2d2d;
+	/* The icon's field colour. Focus rings only — it fails contrast as text. */
+	--color-accent: #6e4bff;
 
 	/* Type */
-	--font-display: var(--font-archivo);
+	--font-display: var(--font-familjen);
 	--font-body: var(--font-plex);
 	--font-mono: var(--font-plex-mono);
 
-	/* Rhythm */
-	--ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+	--ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
 }
 
 @layer base {
 	:root {
-		--rail: clamp(1.25rem, 5vw, 5.5rem);
-		--spectrum: linear-gradient(
-			100deg,
-			var(--color-spec-blue) 0%,
-			var(--color-spec-cyan) 18%,
-			var(--color-spec-green) 38%,
-			var(--color-spec-yellow) 58%,
-			var(--color-spec-orange) 78%,
-			var(--color-spec-red) 100%
-		);
+		--rail: clamp(1.25rem, 5vw, 4.5rem);
 		color-scheme: dark;
 	}
 
@@ -55,29 +45,30 @@
 	}
 
 	body {
-		background-color: var(--color-void);
+		background-color: var(--color-ink);
 		color: var(--color-paper);
 		font-family: var(--font-body);
 		font-size: 1rem;
-		line-height: 1.65;
+		line-height: 1.6;
 		overflow-x: hidden;
 		-webkit-font-smoothing: antialiased;
 		text-rendering: optimizeLegibility;
 	}
 
 	::selection {
-		background: var(--color-spec-cyan);
-		color: var(--color-void);
+		background: var(--color-paper);
+		color: var(--color-ink);
 	}
 
 	:focus-visible {
-		outline: 2px solid var(--color-spec-cyan);
+		outline: 2px solid var(--color-accent);
 		outline-offset: 3px;
-		border-radius: 2px;
+		border-radius: 3px;
 	}
 
-	canvas {
+	img {
 		display: block;
+		max-width: 100%;
 	}
 }
 
@@ -86,124 +77,147 @@
 	.rail {
 		padding-inline: var(--rail);
 		margin-inline: auto;
-		max-width: 84rem;
+		max-width: 76rem;
 	}
 
-	/* Small uppercase machine label — the app's own vernacular. */
-	.tag {
+	/* Small mono label. The app's own vernacular is spec-like — 64 bands,
+	   30 Hz – 16 kHz — so the utility face carries the machine-readable bits. */
+	.eyebrow {
 		font-family: var(--font-mono);
 		font-size: 0.6875rem;
 		font-weight: 500;
-		letter-spacing: 0.22em;
+		letter-spacing: 0.12em;
 		text-transform: uppercase;
 		color: var(--color-mute);
 	}
 
+	.spec {
+		font-family: var(--font-mono);
+		font-size: 0.75rem;
+		font-weight: 400;
+		color: var(--color-mute);
+		font-variant-numeric: tabular-nums;
+	}
+
 	.display {
 		font-family: var(--font-display);
-		font-weight: 800;
-		letter-spacing: -0.035em;
-		line-height: 0.88;
+		font-weight: 600;
+		letter-spacing: -0.022em;
+		line-height: 1.04;
 		text-wrap: balance;
 	}
 
-	/* Text filled with the dispersion gradient. The background position is
-	   nudged each frame by the audio signal, so the type refracts with the art. */
-	.refract {
-		background-image: var(--spectrum);
-		background-size: 250% 100%;
-		background-position: calc(6% + var(--refract, 0) * 30%) 50%;
-		-webkit-background-clip: text;
-		background-clip: text;
-		color: transparent;
+	.h1 {
+		font-size: clamp(2.5rem, 5.2vw, 3.75rem);
 	}
 
-	/* Hairline card over the indigo field. */
-	.panel {
-		position: relative;
-		border: 1px solid color-mix(in oklab, var(--color-violet) 22%, transparent);
-		background: linear-gradient(
-			180deg,
-			color-mix(in oklab, var(--color-field) 16%, transparent),
-			color-mix(in oklab, var(--color-abyss) 55%, transparent)
-		);
-		border-radius: 1.125rem;
-		backdrop-filter: blur(14px);
+	.h2 {
+		font-size: clamp(1.75rem, 3.4vw, 2.375rem);
 	}
 
+	.h3 {
+		font-family: var(--font-display);
+		font-weight: 600;
+		font-size: 1.0625rem;
+		letter-spacing: -0.012em;
+		line-height: 1.3;
+	}
+
+	/* Flat card. No blur, no gradient — the screenshots supply the depth. */
+	.surface {
+		border: 1px solid var(--color-line);
+		background: var(--color-raised);
+		border-radius: 0.875rem;
+	}
+
+	/* Screenshot frame. The windowed captures carry their own rounded corners
+	   and traffic lights in the alpha channel, so those get shadow only; the
+	   full-screen ones are opaque and get clipped to a radius here. */
+	.plate {
+		border-radius: 0.875rem;
+		overflow: hidden;
+		border: 1px solid var(--color-line);
+		background: #000;
+	}
+
+	.plate img {
+		width: 100%;
+		height: auto;
+	}
+
+	.shot-shadow {
+		filter: drop-shadow(0 24px 60px rgba(0, 0, 0, 0.7));
+	}
+
+	/* Buttons are rounded rects, not pills — this is a Mac app, and the page
+	   should feel like it came from the same place as the app's own controls. */
 	.btn {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.625rem;
-		border-radius: 999px;
-		font-weight: 600;
+		justify-content: center;
+		gap: 0.5rem;
+		border-radius: 0.625rem;
+		font-weight: 500;
 		line-height: 1;
 		white-space: nowrap;
 		transition:
-			transform 0.35s var(--ease-out-expo),
-			box-shadow 0.35s var(--ease-out-expo),
-			background-color 0.25s,
-			border-color 0.25s,
-			color 0.25s;
+			background-color 0.18s ease,
+			border-color 0.18s ease,
+			color 0.18s ease;
 	}
 
 	.btn-primary {
-		padding: 1rem 1.5rem;
-		color: var(--color-void);
+		padding: 0.9rem 1.25rem;
+		color: var(--color-ink);
 		background: var(--color-paper);
-		box-shadow: 0 0 0 0 color-mix(in oklab, var(--color-spec-cyan) 55%, transparent);
 	}
 
 	.btn-primary:hover {
-		transform: translateY(-2px);
-		box-shadow: 0 14px 44px -10px color-mix(in oklab, var(--color-spec-cyan) 75%, transparent);
+		background: #ffffff;
 	}
 
-	.btn-ghost {
-		padding: 1rem 1.4rem;
+	.btn-secondary {
+		padding: 0.9rem 1.25rem;
 		color: var(--color-paper);
-		border: 1px solid color-mix(in oklab, var(--color-violet) 45%, transparent);
-		background: color-mix(in oklab, var(--color-field) 14%, transparent);
+		border: 1px solid var(--color-line);
+		background: transparent;
 	}
 
-	.btn-ghost:hover {
-		border-color: var(--color-spec-cyan);
-		color: var(--color-spec-cyan);
-	}
-
-	/* Live state for the mic toggle. */
-	.btn-ghost[data-live='true'] {
-		border-color: var(--color-spec-cyan);
-		color: var(--color-spec-cyan);
-		background: color-mix(in oklab, var(--color-spec-cyan) 12%, transparent);
+	.btn-secondary:hover {
+		border-color: #34333f;
+		background: var(--color-raised);
 	}
 
 	kbd {
 		font-family: var(--font-mono);
-		font-size: 0.75rem;
-		padding: 0.2rem 0.45rem;
-		border-radius: 0.35rem;
-		border: 1px solid color-mix(in oklab, var(--color-violet) 34%, transparent);
-		background: color-mix(in oklab, var(--color-abyss) 70%, transparent);
-		color: var(--color-paper);
+		font-size: 0.6875rem;
+		min-width: 1.55rem;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		padding: 0.25rem 0.4rem;
+		border-radius: 0.3rem;
+		border: 1px solid var(--color-line);
+		background: var(--color-raised);
+		color: var(--color-dim);
 		white-space: nowrap;
 	}
 }
 
 @layer utilities {
-	/* Reveal-on-scroll. Elements start hidden only when JS is present, so the
-	   page stays fully readable without it. */
+	/* One reveal, short and quiet. Elements only start hidden when JS is
+	   present, so the page stays fully readable without it. */
 	.js [data-reveal] {
 		opacity: 0;
-		transform: translateY(18px);
+		transform: translateY(10px);
 	}
 
 	.js [data-reveal].is-in {
 		opacity: 1;
 		transform: none;
 		transition:
-			opacity 0.9s var(--ease-out-expo),
-			transform 0.9s var(--ease-out-expo);
+			opacity 0.5s var(--ease-out-quart),
+			transform 0.5s var(--ease-out-quart);
 	}
 }
 

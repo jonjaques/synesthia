@@ -1,28 +1,26 @@
 ---
+/**
+ * The app icon, straight from the Icon Composer export. `npm run assets`
+ * regenerates the PNGs below from `assets/Icon Exports/`; nothing here is
+ * redrawn by hand, so the site can never drift from the shipping icon.
+ */
 interface Props {
 	class?: string;
+	/** Rendered CSS size in px — sets the intrinsic size so the srcset picks right. */
+	size?: number;
 }
-const { class: className = 'h-8 w-8' } = Astro.props;
+
+const { class: className = '', size = 32 } = Astro.props;
 ---
 
-<svg viewBox="0 0 24 24" class={className} aria-hidden="true" focusable="false">
-	<defs>
-		<linearGradient id="mark-field" x1="0" y1="0" x2="0" y2="1">
-			<stop offset="0" stop-color="#3D28B4"></stop>
-			<stop offset="1" stop-color="#1B0E63"></stop>
-		</linearGradient>
-		<linearGradient id="mark-streak" x1="0.15" y1="0.85" x2="0.9" y2="0.1">
-			<stop offset="0" stop-color="#EAF4FF"></stop>
-			<stop offset="0.16" stop-color="#43D9FF"></stop>
-			<stop offset="0.42" stop-color="#3FE39B"></stop>
-			<stop offset="0.64" stop-color="#F2D544"></stop>
-			<stop offset="0.84" stop-color="#FF7A18"></stop>
-			<stop offset="1" stop-color="#FF2D2D"></stop>
-		</linearGradient>
-	</defs>
-	<rect width="24" height="24" rx="5.4" fill="url(#mark-field)"></rect>
-	<path
-		d="M5.4 18.7 C7.6 15.2 12.8 9.8 20.6 4 C15.4 11.2 10.6 15.8 7.1 19.4 C6.2 20.3 4.7 19.6 5.4 18.7 Z"
-		fill="url(#mark-streak)"></path>
-	<circle cx="6.1" cy="18.5" r="1.45" fill="#EAF4FF" opacity="0.92"></circle>
-</svg>
+<img
+	src="/img/icon-64.png"
+	srcset="/img/icon-64.png 64w, /img/icon-128.png 128w, /img/icon-256.png 256w"
+	sizes={`${size}px`}
+	width={size}
+	height={size}
+	alt=""
+	aria-hidden="true"
+	decoding="async"
+	class={className}
+/>

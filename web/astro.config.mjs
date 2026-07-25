@@ -14,10 +14,13 @@ export default defineConfig({
 	},
 	fonts: [
 		{
+			// Display face. A Swedish grotesque — warmer and less corporate than
+			// the usual Inter/Archivo default, but sober enough at 600 to carry a
+			// product page that is meant to stay out of the app's way.
 			provider: fontProviders.google(),
-			name: 'Archivo',
-			cssVariable: '--font-archivo',
-			weights: [500, 600, 700, 800],
+			name: 'Familjen Grotesk',
+			cssVariable: '--font-familjen',
+			weights: [500, 600, 700],
 			styles: ['normal'],
 			subsets: ['latin'],
 			fallbacks: ['Helvetica Neue', 'Helvetica', 'sans-serif'],

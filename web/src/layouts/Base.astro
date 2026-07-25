@@ -58,11 +58,12 @@ const schema = [
 		<meta name="generator" content={Astro.generator} />
 		<meta name="robots" content="index, follow, max-image-preview:large" />
 		<meta name="author" content={SITE.author} />
-		<meta name="theme-color" content="#07031A" />
+		<meta name="theme-color" content="#0B0B0F" />
 		<meta name="color-scheme" content="dark" />
 
-		<!-- Icons -->
-		<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+		<!-- Icons. Every one of these is derived from the Icon Composer export by
+		     `npm run assets` — there is no hand-drawn version of the mark. -->
+		<link rel="icon" href="/favicon-48.png" sizes="48x48" type="image/png" />
 		<link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png" />
 		<link rel="icon" href="/favicon-16.png" sizes="16x16" type="image/png" />
 		<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
@@ -81,7 +82,7 @@ const schema = [
 		<meta property="og:image:height" content="630" />
 		<meta
 			property="og:image:alt"
-			content="The Synesthia comet — a streak of white light dispersing into a full spectrum on a deep indigo field."
+			content="Synesthia running the Aurora visualizer — layered bands of colour rippling across a black screen."
 		/>
 
 		<!-- Twitter -->
@@ -95,11 +96,9 @@ const schema = [
 		<!-- Apple -->
 		<meta name="apple-mobile-web-app-title" content={SITE.name} />
 
-		<Font cssVariable="--font-archivo" preload />
+		<Font cssVariable="--font-familjen" preload />
 		<Font cssVariable="--font-plex" preload />
 		<Font cssVariable="--font-plex-mono" />
-
-		<link rel="preload" as="image" href="/img/icon-512.png" />
 
 		<script type="application/ld+json" set:html={JSON.stringify(schema)} is:inline />
 
@@ -130,7 +129,7 @@ const schema = [
 	<body>
 		<a
 			href="#main"
-			class="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-full focus:bg-paper focus:px-5 focus:py-2 focus:font-semibold focus:text-void"
+			class="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-50 focus:rounded-lg focus:bg-paper focus:px-5 focus:py-2 focus:font-semibold focus:text-ink"
 		>
 			Skip to content
 		</a>
