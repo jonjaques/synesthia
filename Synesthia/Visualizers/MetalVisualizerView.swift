@@ -3,6 +3,16 @@ import MetalKit
 import QuartzCore
 
 /// Hosts an MTKView and forwards each frame to the currently selected visualizer.
+///
+/// `MTKView` is MetalKit's AppKit view that owns the drawable surface and
+/// calls its delegate 60 times a second; `NSViewRepresentable` is the SwiftUI
+/// bridge that lets it sit inside the SwiftUI hierarchy. The `Coordinator` is
+/// the long-lived object behind the value-type view struct — it owns all the
+/// Metal machinery and acts as the MTKView's delegate.
+///
+/// This is the *pull* end of the audio pipeline: nothing pushes audio data at
+/// the UI; every frame the coordinator asks the analyzer for the latest
+/// snapshot and hands it to the visualizer.
 struct MetalVisualizerView: NSViewRepresentable {
     let appState: AppState
 
@@ -17,8 +27,12 @@ struct MetalVisualizerView: NSViewRepresentable {
         view.colorPixelFormat = .bgra8Unorm
         view.clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
         view.preferredFramesPerSecond = 60
+        // Drive continuously from an internal display link rather than on
+        // demand — the visuals animate even when SwiftUI has nothing to update.
         view.isPaused = false
         view.enableSetNeedsDisplay = false
+        // We never read the framebuffer back; letting Metal know enables
+        // memoryless/optimized storage for it.
         view.framebufferOnly = true
         view.layer?.backgroundColor = .black
         return view
@@ -29,7 +43,10 @@ struct MetalVisualizerView: NSViewRepresentable {
     final class Coordinator: NSObject, MTKViewDelegate {
         let appState: AppState
         let device: MTLDevice
+        /// Feeds encoded command buffers to the GPU; one per app is plenty.
         private let queue: MTLCommandQueue
+        /// All shader functions, compiled from source at launch (see
+        /// ShaderSource.swift for why there are no precompiled .metal files).
         private let library: MTLLibrary
 
         private var visualizer: (any Visualizer)?
@@ -52,9 +69,15 @@ struct MetalVisualizerView: NSViewRepresentable {
 
         func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
 
+        /// Called by the MTKView once per display refresh. Each frame:
+        /// (re)build the visualizer if the selection changed, gather the
+        /// audio snapshot + tuning into a `VizUniforms`, let the visualizer
+        /// encode its drawing, then present.
         func draw(in view: MTKView) {
             guard view.drawableSize.width > 0, view.drawableSize.height > 0 else { return }
 
+            // Visualizers are built lazily and torn down on switch; only the
+            // selected one holds GPU resources.
             let wantedID = appState.visualizerID
             if visualizerID != wantedID || visualizer == nil {
                 guard let descriptor = VisualizerRegistry.descriptor(id: wantedID) else { return }
@@ -64,6 +87,8 @@ struct MetalVisualizerView: NSViewRepresentable {
             guard let visualizer,
                   let descriptor = VisualizerRegistry.descriptor(id: wantedID) else { return }
 
+            // Frame delta, clamped so a hiccup (debugger pause, window drag)
+            // doesn't produce one giant simulation step.
             let now = CACurrentMediaTime()
             let dt = Float(min(max(now - lastFrameTime, 0), 0.1))
             lastFrameTime = now
@@ -96,6 +121,10 @@ struct MetalVisualizerView: NSViewRepresentable {
                 uniforms.setParameter(index, to: Float(tuning.value(for: option)))
             }
 
+            // Standard Metal frame: record GPU work into a command buffer,
+            // schedule the drawable (the screen surface) for presentation,
+            // and commit. `commit` is asynchronous — the CPU moves on while
+            // the GPU renders.
             guard let commandBuffer = queue.makeCommandBuffer() else { return }
             visualizer.draw(in: view, commandBuffer: commandBuffer,
                             uniforms: uniforms, snapshot: snapshot)

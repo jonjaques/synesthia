@@ -4,12 +4,22 @@ import Foundation
 /// runtime with `MTLDevice.makeLibrary(source:)`. Runtime compilation keeps
 /// the build independent of the offline Metal toolchain and lets future
 /// plugins ship their own shader source the same way.
+///
+/// A note for readers new to shaders: a *vertex* function runs once per
+/// vertex and decides where geometry lands on screen; a *fragment* function
+/// runs once per covered pixel and decides its color. The visualizers here
+/// are mostly "full-screen shader" style — a single triangle covers the
+/// window, and the fragment function computes every pixel's color from
+/// scratch each frame using only its coordinates, the clock, and the audio
+/// uniforms (the style popularized by Shadertoy).
 enum ShaderSource {
     static let library = #"""
 #include <metal_stdlib>
 using namespace metal;
 
 // Layout must match VizUniforms in VisualizerCore.swift exactly (24 floats / 96 bytes).
+// The CPU fills that Swift struct each frame and copies its raw bytes here;
+// see VisualizerCore.swift for what each field means.
 struct VizUniforms {
     float2 resolution;
     float time;
@@ -41,6 +51,11 @@ struct FSQuadOut {
     float2 uv;
 };
 
+// The standard "fullscreen triangle" trick: one triangle big enough that the
+// screen rectangle is entirely inside it (clipped at the edges). Cheaper and
+// simpler than two triangles forming a quad, and the vertex positions are
+// generated from the vertex index — no vertex buffer needed at all.
+// uv comes out as 0...1 across the visible screen.
 vertex FSQuadOut fullscreenVertex(uint vid [[vertex_id]]) {
     float2 pos[3] = { float2(-1.0, -1.0), float2(3.0, -1.0), float2(-1.0, 3.0) };
     FSQuadOut out;
@@ -51,6 +66,9 @@ vertex FSQuadOut fullscreenVertex(uint vid [[vertex_id]]) {
 
 // ---------------------------------------------------------------- helpers
 
+// Cosine palette (Íñigo Quílez): a + b*cos(2π(c*t + d)) per channel maps any
+// scalar t to a smooth cyclic gradient. Coefficients must stay in sync with
+// the CPU mirror in VisualizerCore.swift (Palettes.color).
 static float3 cosPalette(float t, float which) {
     float3 a, b, c, d;
     int p = int(which + 0.5);
@@ -62,24 +80,32 @@ static float3 cosPalette(float t, float which) {
     return a + b * cos(6.28318 * (c * t + d));
 }
 
+// Samples the 64-band spectrum at a continuous position x in 0...1, linearly
+// interpolating between neighboring bands so sweeps look smooth.
 static float bandAt(constant float* bands, float x) {
     float f = clamp(x, 0.0, 0.9999) * 63.0;
     int i = int(f);
     return mix(bands[i], bands[min(i + 1, 63)], fract(f));
 }
 
+// Samples the 256-point waveform at x in 0...1, averaged with its neighbors
+// to soften single-sample spikes.
 static float waveAt(constant float* wave, float x) {
     int i = int(clamp(x, 0.0, 0.9999) * 255.0);
     int a = max(i - 1, 0), b = min(i + 1, 255);
     return (wave[a] + wave[i] + wave[b]) / 3.0;
 }
 
+// Cheap 2D → pseudo-random hash in 0...1. Not statistically great, but fast
+// and stable per input — used to scatter stars/particles deterministically.
 static float hash21(float2 p) {
     p = fract(p * float2(123.34, 456.21));
     p += dot(p, p + 45.32);
     return fract(p.x * p.y);
 }
 
+// Value noise: random values at integer grid points, smoothly interpolated
+// between them. Gives soft, organic variation rather than white noise.
 static float vnoise(float2 p) {
     float2 i = floor(p), f = fract(p);
     f = f * f * (3.0 - 2.0 * f);
@@ -90,6 +116,9 @@ static float vnoise(float2 p) {
     return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
 }
 
+// Fractal Brownian motion: several octaves of noise, each at double the
+// frequency and half the amplitude of the last. The classic recipe for
+// clouds, smoke, and haze.
 static float fbm(float2 p) {
     float v = 0.0, amp = 0.5;
     for (int i = 0; i < 4; i++) {
@@ -100,12 +129,15 @@ static float fbm(float2 p) {
     return v;
 }
 
+// 2D rotation by angle a.
 static float2 rot2(float2 p, float a) {
     float c = cos(a), s = sin(a);
     return float2(c * p.x - s * p.y, s * p.x + c * p.y);
 }
 
 // Sparse twinkling point field; returns brightness at uv for one layer.
+// Space is cut into a grid; ~8% of cells (hash > 0.92) contain a star at a
+// hashed offset, each pulsing on its own phase.
 static float starLayer(float2 uv, float scale, float t, float twinkleSpeed) {
     float2 g = uv * scale;
     float2 id = floor(g);
@@ -119,10 +151,16 @@ static float starLayer(float2 uv, float scale, float t, float twinkleSpeed) {
 }
 
 // ---------------------------------------------------------------- Spectrum Tunnel
+//
+// A classic "tunnel" shader: map each pixel's polar coordinates (angle,
+// 1/radius) into a texture space, so the screen looks like an infinite tube
+// receding at the center. Here the tube's angular slices are the 64 spectrum
+// bands — the walls literally are the live spectrum.
 
 fragment float4 tunnelFragment(FSQuadOut in [[stage_in]],
                                constant VizUniforms& u [[buffer(0)]],
                                constant float* bands [[buffer(1)]]) {
+    // Center the coordinates and correct for aspect so the tunnel is round.
     float2 uv = in.uv * 2.0 - 1.0;
     uv.x *= u.resolution.x / max(u.resolution.y, 1.0);
 
@@ -130,12 +168,16 @@ fragment float4 tunnelFragment(FSQuadOut in [[stage_in]],
     float wobble = (0.08 * u.subBass + 0.05 * u.bass) * u.sensitivity;
     uv += wobble * float2(sin(u.time * 0.7), cos(u.time * 0.9));
 
+    // Polar mapping: depth ~ 1/radius makes the center recede to infinity;
+    // adding time*speed drives the flight forward.
     float r = length(uv);
     float angle = atan2(uv.y, uv.x);
     float depth = 0.35 / max(r, 1e-3) + u.time * u.speed * 1.2 + 0.30 * u.beat;
 
     float twist = u.p0;
     float glow = u.p1;
+    // Angle mapped to 0...1 selects which spectrum band this pixel reads;
+    // the twist option shears that mapping with depth, corkscrewing the tube.
     float ang01 = fract(angle / 6.28318 + 0.5 + twist * 0.05 * depth);
 
     float e  = clamp(bandAt(bands, ang01) * u.sensitivity, 0.0, 1.5);
@@ -182,12 +224,20 @@ fragment float4 tunnelFragment(FSQuadOut in [[stage_in]],
     // onsets lift the whole scene a touch
     col *= 1.0 + 0.22 * u.flux;
 
+    // Vignette toward the edges, then Reinhard tone mapping (c/(1+c)) to
+    // roll the additive-brightness pile-up smoothly into 0...1 instead of
+    // clipping hard at white.
     col *= smoothstep(1.7, 0.35, r);
     col = col / (1.0 + col);
     return float4(col, 1.0);
 }
 
 // ---------------------------------------------------------------- Aurora
+//
+// A night-sky scene built in layers, back to front: gradient sky, stars,
+// haze, ground fog, then N glowing horizontal ribbons. Ribbon i is displaced
+// vertically by the live waveform and brightened by its own slice of the
+// spectrum, so lows drive the bottom ribbons and highs the top ones.
 
 fragment float4 auroraFragment(FSQuadOut in [[stage_in]],
                                constant VizUniforms& u [[buffer(0)]],
@@ -195,6 +245,7 @@ fragment float4 auroraFragment(FSQuadOut in [[stage_in]],
                                constant float* wave [[buffer(2)]]) {
     float2 uv = in.uv;
     float aspect = u.resolution.x / max(u.resolution.y, 1.0);
+    // Vertical sky gradient, near-black at the bottom.
     float3 col = mix(float3(0.010, 0.012, 0.030), float3(0.020, 0.030, 0.055), uv.y);
 
     // twinkling stars in the upper sky, brightened by the air band
@@ -219,12 +270,16 @@ fragment float4 auroraFragment(FSQuadOut in [[stage_in]],
 
     for (int i = 0; i < 10; i++) {
         if (i >= layers) break;
+        // fi in 0...1 spreads the ribbons vertically and assigns each its
+        // portion of the spectrum (low ribbons = low bands).
         float fi = float(i) / float(max(layers - 1, 1));
         float bandE = clamp(bandAt(bands, 0.06 + fi * 0.88) * u.sensitivity, 0.0, 1.3);
         float w = waveAt(wave, fract(uv.x + fi * 0.13));
         // fine ripple from the high-mids
         float ripple = 0.012 * sin(uv.x * 42.0 + u.time * u.speed * 3.0 + fi * 9.0)
                      * clamp(u.highMid * u.sensitivity, 0.0, 1.2);
+        // The ribbon's center line: base row + waveform displacement + ripple
+        // + a slow idle sway so it never sits perfectly still.
         float yC = 0.5
                  + (fi - 0.5) * 0.55
                  + w * height * (0.35 + 0.65 * bandE)
@@ -233,6 +288,8 @@ fragment float4 auroraFragment(FSQuadOut in [[stage_in]],
         // thickness pulses along the ribbon with local spectral detail
         float local = bandAt(bands, fract(uv.x * 0.35 + fi * 0.2));
         float thickness = (0.005 + 0.040 * bandE) * (0.7 + 0.8 * local);
+        // t/(|dy|+t) is a soft glow profile: 1 on the center line, falling
+        // off hyperbolically; the pow sharpens its core.
         float glow = thickness / (fabs(uv.y - yC) + thickness);
         glow = pow(glow, 1.6);
         // vertical curtain rays driven by the presence band
@@ -251,11 +308,17 @@ fragment float4 auroraFragment(FSQuadOut in [[stage_in]],
     // beat lift + onset shimmer
     col *= 1.0 + 0.18 * u.beat + 0.10 * u.flux;
 
+    // Reinhard tone mapping; see tunnelFragment.
     col = col / (1.0 + col);
     return float4(col, 1.0);
 }
 
 // ---------------------------------------------------------------- Nebula
+//
+// Nebula is the one hybrid visualizer: this fragment shader paints the smoky
+// background, then a CPU-simulated particle cloud (NebulaVisualizer.swift)
+// is drawn on top with the point-sprite pipeline below, using additive
+// blending so overlapping particles glow brighter.
 
 fragment float4 nebulaBackgroundFragment(FSQuadOut in [[stage_in]],
                                          constant VizUniforms& u [[buffer(0)]],
@@ -270,7 +333,8 @@ fragment float4 nebulaBackgroundFragment(FSQuadOut in [[stage_in]],
     float stars = starLayer(uv, 40.0, u.time, 2.0) + starLayer(uv + 11.3, 80.0, u.time, 4.0) * 0.5;
     col += stars * (0.20 + 0.80 * clamp(u.air * u.sensitivity, 0.0, 1.0));
 
-    // slow smoky nebula, breathing with the bass
+    // slow smoky nebula, breathing with the bass (two fbm fields multiplied
+    // and drifting in different directions gives the billowing look)
     float smoke = fbm(uv * 1.6 + float2(u.time * 0.03 * u.speed, -u.time * 0.02 * u.speed));
     smoke *= fbm(uv * 3.1 - float2(0.0, u.time * 0.04 * u.speed));
     col += cosPalette(0.15 + u.centroid * 0.3 + u.time * 0.008, u.palette) * smoke
@@ -290,6 +354,8 @@ fragment float4 nebulaBackgroundFragment(FSQuadOut in [[stage_in]],
     return float4(col, 1.0);
 }
 
+// Mirrors NebulaVisualizer.GPUParticle in Swift; the CPU simulation writes
+// this layout into a shared MTLBuffer each frame.
 struct Particle {
     float4 posSize;   // xyz = position, w = point size hint
     float4 color;     // rgb, a = intensity
@@ -301,6 +367,10 @@ struct ParticleOut {
     float4 color;
 };
 
+// Projects one particle from its 3D simulation position to the screen.
+// The "camera" is a slow orbit implemented by rotating the *world* (yaw
+// around Y, pitch around X) and a simple perspective divide by depth —
+// no matrices or camera classes, just enough 3D for a drifting cloud.
 vertex ParticleOut particleVertex(uint vid [[vertex_id]],
                                   constant Particle* particles [[buffer(0)]],
                                   constant VizUniforms& u [[buffer(1)]]) {
@@ -314,6 +384,8 @@ vertex ParticleOut particleVertex(uint vid [[vertex_id]],
     float3x3 rotX = float3x3(float3(1.0, 0.0, 0.0), float3(0.0, cp, sp), float3(0.0, -sp, cp));
 
     float3 pos = rotX * (rotY * p.posSize.xyz);
+    // Push the cloud in front of the camera, then perspective-divide:
+    // farther particles land closer to center and draw smaller.
     pos.z += 3.4;
 
     float persp = 1.0 / max(pos.z, 0.25);
@@ -322,11 +394,16 @@ vertex ParticleOut particleVertex(uint vid [[vertex_id]],
 
     ParticleOut out;
     out.position = float4(clip, 0.0, 1.0);
+    // point_size makes the GPU rasterize this vertex as a screen-aligned
+    // square of that many pixels (a "point sprite").
     out.pointSize = clamp(p.posSize.w * persp * u.resolution.y * 0.012, 1.0, 90.0);
     out.color = p.color;
     return out;
 }
 
+// Shades each particle's square: point_coord is 0...1 across the sprite, and
+// a Gaussian falloff from its center turns the square into a soft glowing
+// dot. Rendered with additive blending, so overlaps brighten like real light.
 fragment float4 particleFragment(ParticleOut in [[stage_in]],
                                  float2 pc [[point_coord]]) {
     float d = length(pc - 0.5) * 2.0;

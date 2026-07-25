@@ -3,6 +3,11 @@ import MetalKit
 
 /// A shader-driven flight through a tube whose walls are the live spectrum:
 /// each angular slice of the tunnel is one frequency band.
+///
+/// The Swift side is a thin shell: all the imagery lives in `tunnelFragment`
+/// in ShaderSource.swift. Per frame it draws one fullscreen triangle, passing
+/// the uniforms and the 64-band array via `setFragmentBytes` (Metal's path
+/// for small per-draw constants — no buffer management needed under 4 KB).
 final class TunnelVisualizer: Visualizer {
     static let descriptor = VisualizerDescriptor(
         id: "tunnel",

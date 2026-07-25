@@ -57,6 +57,10 @@ control bar. Settings persist across launches.
 
 ## How it works
 
+> Developer documentation lives in [`docs/`](docs/README.md) — architecture,
+> the audio pipeline, rendering, the visualizer plugin system, and macOS
+> integration, written for developers new to audio/graphics/macOS.
+
 ```
 SystemAudioCapture (ScreenCaptureKit)  ─┐
 InputDeviceCapture (AVAudioEngine tap) ─┼─▶ AudioAnalyzer ──▶ AudioSnapshot ──▶ MetalVisualizerView ──▶ active Visualizer

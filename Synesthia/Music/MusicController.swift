@@ -3,12 +3,21 @@ import Observation
 
 /// Controls the Music app over Apple Events and mirrors its now-playing state.
 /// The first command triggers macOS's automation consent prompt.
+///
+/// Apple Events are macOS's ancient (but still canonical) inter-app scripting
+/// mechanism; the practical way to speak them from Swift is to run small
+/// AppleScript snippets via `NSAppleScript`. Music.app pushes no
+/// notifications to third parties, so this class *polls* it once a second
+/// while the Music source is active and republishes the results as
+/// `@Observable` properties for SwiftUI.
 @Observable
 final class MusicController {
     struct TrackInfo: Equatable {
         var title = ""
         var artist = ""
         var album = ""
+        /// Music's stable per-library track ID; used to detect track changes
+        /// even between tracks with identical titles.
         var databaseID = ""
     }
 
@@ -21,12 +30,17 @@ final class MusicController {
 
     private var pollTask: Task<Void, Never>?
     private var artworkAttempts = 0
+    /// `NSAppleScript` compiles its source on first execution; caching the
+    /// compiled object per source string makes the 1 Hz poll cheap.
     private var compiledScripts = [String: NSAppleScript]()
 
+    /// Checked before polling so we never *launch* Music just by asking it
+    /// questions (sending any Apple Event to a closed app would start it).
     var isMusicAppRunning: Bool {
         NSWorkspace.shared.runningApplications.contains { $0.bundleIdentifier == "com.apple.Music" }
     }
 
+    /// Begins the 1-second poll loop; idempotent.
     func startPolling() {
         guard pollTask == nil else { return }
         pollTask = Task { [weak self] in
@@ -75,6 +89,10 @@ final class MusicController {
 
     // MARK: - Polling
 
+    /// One poll: read player state and current-track metadata in a single
+    /// script (one Apple Event round-trip), returned as a linefeed-separated
+    /// string because AppleScript's structured return types are painful to
+    /// unpack from Swift.
     private func poll() {
         guard isMusicAppRunning else {
             isRunning = false
@@ -125,6 +143,9 @@ final class MusicController {
         }
     }
 
+    /// Pulls the current track's artwork bytes. `raw data` is the original
+    /// JPEG/PNG and is preferred; `data` (a PICT-flavored fallback) still
+    /// decodes via NSImage when `raw data` is missing.
     private func fetchArtwork() {
         let result = run("""
         tell application "Music"
@@ -146,6 +167,10 @@ final class MusicController {
 
     // MARK: - Scripting
 
+    /// Compiles (once) and runs an AppleScript snippet, translating the two
+    /// interesting failure codes into `automationDenied`:
+    /// -1743 = user denied the Automation permission (errAEEventNotPermitted),
+    /// -600  = target app not running (procNotFound).
     @discardableResult
     private func run(_ source: String) -> NSAppleEventDescriptor? {
         let script: NSAppleScript

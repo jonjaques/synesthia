@@ -4,6 +4,8 @@ import Observation
 import UniformTypeIdentifiers
 import CoreAudio
 
+/// Track metadata for the on-screen badge (Music.app source only — no other
+/// source knows what's playing).
 struct NowPlayingInfo {
     var title: String
     var artist: String
@@ -13,6 +15,13 @@ struct NowPlayingInfo {
 
 /// Central app state: which audio source is active, which visualizer is
 /// selected, and the glue between transport controls and the capture engines.
+///
+/// This is the app's composition root — it owns the analyzer, the Music
+/// controller, the settings store, and one instance of each capture engine,
+/// and it is the only place that starts/stops them. It's `@Observable`, so
+/// SwiftUI views re-render when the properties they read change; note that
+/// the *audio data itself* never flows through here (the render loop pulls
+/// it straight from the analyzer) — only control state does.
 @Observable
 final class AppState {
     static let shared = AppState()
@@ -25,6 +34,8 @@ final class AppState {
     private let inputCapture: InputDeviceCapture
     private let filePlayer: FilePlayer
 
+    /// The active audio source; persisted, and switching it retargets all
+    /// the capture machinery (see `handleSourceChange`).
     var sourceKind: AudioSourceKind {
         didSet {
             guard sourceKind != oldValue else { return }
@@ -32,6 +43,8 @@ final class AppState {
             handleSourceChange()
         }
     }
+    /// Selected visualizer's descriptor id; the render loop watches this and
+    /// swaps visualizers when it changes.
     var visualizerID: String {
         didSet { UserDefaults.standard.set(visualizerID, forKey: "visualizerID") }
     }
@@ -42,8 +55,11 @@ final class AppState {
     private(set) var isCapturing = false
     /// Mirrors `FilePlayer.isPlaying`; the player isn't observable on its own.
     private(set) var isFilePlaying = false
+    /// Transient user-facing error/hint, shown as a banner and auto-cleared.
     var statusMessage: String?
 
+    /// Auto-latching onto an already-playing Music.app is attempted once per
+    /// launch, so a user who deliberately stopped capture isn't fought with.
     private var attemptedAutoCapture = false
     private var statusClearTask: Task<Void, Never>?
 
@@ -122,7 +138,9 @@ final class AppState {
             return
         }
         // Starting playback with no capture attached would leave the canvas
-        // dead, so latch on first.
+        // dead, so latch on first. Deliberately only when Music is *not*
+        // playing: if it is, the user may just be re-attaching capture after
+        // granting the permission, and toggling would pause their music.
         if !music.isPlaying && !isCapturing {
             await startSystemCapture()
         }
@@ -214,6 +232,10 @@ final class AppState {
 
     // MARK: - Source plumbing
 
+    /// Tears everything down (all engines stopped, analyzer cleared so the
+    /// old source's tail doesn't linger) and brings up whatever the new
+    /// source needs. Stopping every engine unconditionally is simpler and
+    /// safer than tracking which one was running.
     private func handleSourceChange() {
         Task {
             await systemCapture.stop()
@@ -244,6 +266,8 @@ final class AppState {
         }
     }
 
+    /// If Music is already playing when the app opens, attach the system
+    /// audio tap automatically so the visuals come alive without a click.
     private func autoStartCaptureIfMusicPlaying() {
         guard !attemptedAutoCapture, music.isMusicAppRunning else { return }
         attemptedAutoCapture = true
@@ -267,6 +291,8 @@ final class AppState {
         }
     }
 
+    /// Shows a banner message and schedules its disappearance; a newer
+    /// message cancels the older one's clear timer.
     private func setStatus(_ message: String) {
         statusMessage = message
         statusClearTask?.cancel()

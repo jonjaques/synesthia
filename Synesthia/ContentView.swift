@@ -30,6 +30,11 @@ enum ChromeLayout {
     }
 }
 
+/// The window's entire content: the Metal canvas edge to edge, with floating
+/// "chrome" layered on top — a status banner and title capsule at the top,
+/// and three glass pods at the bottom (now-playing badge, transport,
+/// visualizer controls). The chrome fades out after 3 s of pointer stillness
+/// and reappears on movement, like a video player's controls.
 struct ContentView: View {
     @Environment(AppState.self) private var appState
     @State private var chromeVisible = true
@@ -261,6 +266,9 @@ struct NowPlayingBadge: View {
 
 // MARK: - Source, capture and transport (centered)
 
+/// The main control pod: audio-source menu (with per-source extras like the
+/// input-device picker), the capture button, and — for sources that can be
+/// driven — previous/play/next transport buttons.
 struct ControlsPod: View {
     @Environment(AppState.self) private var appState
 
@@ -344,8 +352,10 @@ struct ControlsPod: View {
 struct CaptureButton: View {
     @Environment(AppState.self) private var appState
 
-    /// Matches the purple macOS uses for the menu bar audio-capture indicator.
-    private static let captureTint = Color(nsColor: .systemPurple)
+    /// The purple of macOS's menu-bar audio-capture pill (#7163FF). Not a
+    /// built-in system color — the closest, `.systemIndigo` (#5856D6), is
+    /// visibly darker — so it's hardcoded.
+    private static let captureTint = Color(red: 0x71 / 255.0, green: 0x63 / 255.0, blue: 0xFF / 255.0)
 
     var body: some View {
         let active = appState.isCaptureActive
@@ -385,6 +395,7 @@ struct CaptureButton: View {
 
 // MARK: - Visualizer pod (trailing)
 
+/// Visualizer picker, options-popover button, and fullscreen toggle.
 struct VisualizerPod: View {
     @Environment(AppState.self) private var appState
     /// Owned by ContentView so the chrome stays up while the popover is open.
@@ -449,6 +460,10 @@ struct VisualizerPod: View {
 
 // MARK: - Options panel
 
+/// The popover for tuning the current visualizer: palette swatches, the
+/// shared Sensitivity/Speed sliders, and whatever options the visualizer's
+/// descriptor declares — the UI is generated from the descriptor, so new
+/// visualizers get their controls for free.
 struct OptionsPanel: View {
     @Environment(AppState.self) private var appState
 

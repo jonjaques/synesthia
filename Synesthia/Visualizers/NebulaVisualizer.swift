@@ -5,6 +5,11 @@ import simd
 /// A 3D particle cloud: each particle is bound to a frequency band and flares
 /// outward as that band gets loud, with a slow orbiting camera and a smoky
 /// audio-reactive background. Closest in spirit to the classic iTunes visualizer.
+///
+/// Unlike the other two (pure fragment-shader) visualizers, this one runs a
+/// small CPU simulation: every frame `update` advances all particles and
+/// writes their positions/colors into a shared `MTLBuffer`, which the GPU
+/// then draws as point sprites on top of a shader-painted background.
 final class NebulaVisualizer: Visualizer {
     static let descriptor = VisualizerDescriptor(
         id: "nebula",
@@ -17,11 +22,17 @@ final class NebulaVisualizer: Visualizer {
         ],
         make: { try NebulaVisualizer(device: $0, library: $1, pixelFormat: $2) })
 
+    /// What the GPU sees; must match the `Particle` struct in
+    /// ShaderSource.swift (xyz position + point size, rgb color + intensity).
     private struct GPUParticle {
         var posSize: SIMD4<Float>
         var color: SIMD4<Float>
     }
 
+    /// CPU-side simulation state. Each particle lives on a ray from the
+    /// origin (`direction`, a unit vector) at distance `radius`, orbits by
+    /// rotating that direction around its own `axis` at `spin` rad/s, and
+    /// listens to one frequency `band`. `phase` desynchronizes the flicker.
     private struct CPUParticle {
         var direction: SIMD3<Float>
         var axis: SIMD3<Float>
@@ -62,6 +73,10 @@ final class NebulaVisualizer: Visualizer {
         var rng = SystemRandomNumberGenerator()
         cpuParticles = (0..<Self.maxParticles).map { i in
             let direction = Self.randomUnitVector(&rng)
+            // Orbit axis: any vector perpendicular to the direction (the
+            // cross product with a random vector), so each particle circles
+            // the origin in its own plane. Bands are dealt round-robin so
+            // every band gets an equal share of particles.
             var axis = simd_normalize(simd_cross(direction, Self.randomUnitVector(&rng)))
             if !axis.x.isFinite { axis = SIMD3(0, 1, 0) }
             return CPUParticle(
@@ -130,6 +145,10 @@ final class NebulaVisualizer: Visualizer {
                 p.direction = simd_normalize(q.act(p.direction))
             }
 
+            // The band's energy sets a target distance from the center; the
+            // radius eases toward it exponentially (frame-rate-independent
+            // spring-like motion), so hits fling particles out and silence
+            // lets them drift back in.
             var target: Float
             if isBass {
                 target = 0.50 + 1.1 * energy + 0.75 * snapshot.beat
@@ -167,6 +186,9 @@ final class NebulaVisualizer: Visualizer {
                 color: SIMD4(color.x, color.y, color.z, alpha))
         }
 
+        // The buffer uses .storageModeShared (one memory region visible to
+        // both CPU and GPU on Apple silicon), so this copy is all it takes
+        // to publish the frame's particles.
         gpuParticles.withUnsafeBytes {
             particleBuffer.contents().copyMemory(
                 from: $0.baseAddress!,
@@ -174,6 +196,9 @@ final class NebulaVisualizer: Visualizer {
         }
     }
 
+    /// Uniformly distributed direction: sample the unit cube, reject points
+    /// outside the unit sphere, normalize. (Normalizing raw cube samples
+    /// would cluster directions toward the corners.)
     private static func randomUnitVector(_ rng: inout SystemRandomNumberGenerator) -> SIMD3<Float> {
         while true {
             let v = SIMD3<Float>(Float.random(in: -1...1, using: &rng),

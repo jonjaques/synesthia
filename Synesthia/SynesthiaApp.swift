@@ -1,11 +1,30 @@
 import SwiftUI
+import AppKit
 
+/// App entry point: one window containing `ContentView`, plus the menu-bar
+/// commands. The shared `AppState` is injected through the SwiftUI
+/// environment so every view (and the menus here) drive the same state.
 @main
 struct SynesthiaApp: App {
     @State private var appState = AppState.shared
 
+    init() {
+        // Single-window app: disable window tabbing so View ▸ Show Tab Bar /
+        // Show All Tabs don't appear in the menu bar.
+        NSWindow.allowsAutomaticWindowTabbing = false
+    }
+
     private var currentVisualizerName: String {
         VisualizerRegistry.descriptor(id: appState.visualizerID)?.name ?? "Visualizer"
+    }
+
+    /// Mirrors the wording of the control bar's capture button (which acts
+    /// as play/pause for the file source).
+    private var captureMenuTitle: String {
+        switch appState.sourceKind {
+        case .audioFile: appState.isCaptureActive ? "Pause File" : "Play File"
+        default: appState.isCaptureActive ? "Stop Listening" : "Start Listening"
+        }
     }
 
     var body: some Scene {
@@ -32,6 +51,13 @@ struct SynesthiaApp: App {
                     appState.previousTrack()
                 }
                 .keyboardShortcut(.leftArrow, modifiers: [.command])
+
+                Divider()
+
+                Button(captureMenuTitle) {
+                    appState.toggleCapture()
+                }
+                .keyboardShortcut("l")
 
                 Divider()
 

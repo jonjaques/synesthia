@@ -9,22 +9,38 @@ import Observation
 // Layout must match `VizUniforms` in ShaderSource.swift exactly
 // (currently 24 floats / 96 bytes).
 
+/// The per-frame constants handed to every shader ("uniforms" in graphics
+/// jargon: values that are the same for every pixel/vertex of a draw call).
+/// Built fresh each frame by `MetalVisualizerView` from the clock, the latest
+/// `AudioSnapshot`, and the user's tuning, then copied verbatim into GPU
+/// memory — which is why the Swift struct and the MSL struct must stay
+/// byte-identical: the GPU just reinterprets these bytes as its own struct.
 struct VizUniforms {
+    /// Drawable size in pixels; shaders use it to correct for aspect ratio.
     var resolution = SIMD2<Float>(0, 0)
+    /// Seconds since app launch — the animation clock.
     var time: Float = 0
+    /// Seconds since the previous frame (clamped; see MetalVisualizerView).
     var dt: Float = 0
+    // Audio features copied from AudioSnapshot (see AudioAnalyzer.swift for
+    // what each one means). All roughly 0...1.
     var bass: Float = 0
     var mid: Float = 0
     var treble: Float = 0
     var level: Float = 0
     var beat: Float = 0
+    // User tuning from the options popover.
     var sensitivity: Float = 1
     var speed: Float = 1
+    /// Palette index as a float (uniform blocks hold floats; the shader
+    /// rounds it back to an int).
     var palette: Float = 0
+    /// The visualizer's own option sliders, in declaration order.
     var p0: Float = 0
     var p1: Float = 0
     var p2: Float = 0
     var p3: Float = 0
+    // Finer-grained audio features (named sub-bands and transients).
     var subBass: Float = 0
     var lowMid: Float = 0
     var highMid: Float = 0
@@ -48,13 +64,15 @@ struct VizUniforms {
 //
 // Synesthia visualizers are plugins. To add one:
 //   1. Create a class conforming to `Visualizer` with a static `descriptor`.
-//   2. Put its shaders in any .metal file in the target (they all compile
-//      into the default library).
+//   2. Append its shader functions to the MSL string in ShaderSource.swift
+//      (compiled into the runtime library at launch).
 //   3. Append the descriptor to `VisualizerRegistry.builtIn`, or call
 //      `VisualizerRegistry.register(_:)` at startup (e.g. from a loaded bundle).
 // Options declared in the descriptor automatically appear in the Options UI
 // and arrive in `VizUniforms.p0...p3` in declaration order.
 
+/// One user-tunable slider: `range` bounds it, `defaultValue` is where reset
+/// puts it. A visualizer may declare at most four (they map onto p0...p3).
 struct VisualizerOption: Identifiable {
     let id: String
     let name: String
@@ -62,14 +80,24 @@ struct VisualizerOption: Identifiable {
     let defaultValue: Double
 }
 
+/// Static description of a visualizer: identity, UI strings, options, and a
+/// factory closure. Descriptors are cheap values that exist even when their
+/// visualizer isn't instantiated; the class itself (pipelines, buffers) is
+/// only built via `make` when the user actually selects it.
 struct VisualizerDescriptor: Identifiable {
     let id: String
     let name: String
     let tagline: String
     let options: [VisualizerOption]
+    /// Builds the visualizer: (GPU device, compiled shader library, pixel
+    /// format of the view it will draw into) → instance.
     let make: (MTLDevice, MTLLibrary, MTLPixelFormat) throws -> any Visualizer
 }
 
+/// The whole runtime contract: once per frame, encode your drawing into the
+/// given command buffer. `uniforms` is prepared by the host; `snapshot`
+/// additionally offers the full 64-band array and waveform for visualizers
+/// that want more than the scalar features.
 protocol Visualizer: AnyObject {
     func draw(in view: MTKView,
               commandBuffer: MTLCommandBuffer,
@@ -97,10 +125,16 @@ enum VisualizerRegistry {
 
 // MARK: - Palettes
 
+/// The five color schemes. Each is a *cosine palette* (Íñigo Quílez's
+/// technique): color(t) = a + b·cos(2π(c·t + d)) per RGB channel, which turns
+/// a single scalar t into a smooth, endlessly cyclable gradient from just
+/// four coefficient vectors — no texture or lookup table needed.
 enum Palettes {
     static let names = ["Prism", "Ember", "Ocean", "Violet", "Mono"]
 
-    /// CPU mirror of the cosine palette in Shaders.metal, for CPU-colored particles.
+    /// CPU mirror of `cosPalette` in ShaderSource.swift, for CPU-colored
+    /// particles and the palette swatches in the options UI. Keep the
+    /// coefficients in sync with the shader.
     static func color(_ t: Float, palette: Int) -> SIMD3<Float> {
         let a: SIMD3<Float>, b: SIMD3<Float>, c: SIMD3<Float>, d: SIMD3<Float>
         switch palette {
@@ -151,7 +185,8 @@ struct VisualizerTuning: Codable, Equatable {
     }
 }
 
-/// Persisted per-visualizer tuning, keyed by visualizer id.
+/// Persisted per-visualizer tuning, keyed by visualizer id. Stored as JSON in
+/// `UserDefaults` and saved on every mutation (the payload is tiny).
 @Observable
 final class VisualizerSettings {
     private var tunings: [String: VisualizerTuning] {
@@ -180,7 +215,8 @@ final class VisualizerSettings {
         tunings[visualizer] = tuning
     }
 
-    /// Two-way binding into one field of a visualizer's tuning.
+    /// Two-way binding into one field of a visualizer's tuning, so SwiftUI
+    /// sliders/pickers can edit the stored value directly.
     func binding<V>(_ visualizer: String,
                     _ keyPath: WritableKeyPath<VisualizerTuning, V>) -> Binding<V> {
         Binding(get: { self.tuning(for: visualizer)[keyPath: keyPath] },
@@ -230,6 +266,15 @@ final class VisualizerSettings {
 
 // MARK: - Pipeline helper
 
+/// Builds a Metal render pipeline state: the pre-validated, GPU-compiled
+/// combination of one vertex function + one fragment function + output
+/// format. Creating these is expensive, so visualizers build theirs once in
+/// `init` and reuse them every frame.
+///
+/// With `additiveBlending`, each drawn fragment is *added* to what's already
+/// in the framebuffer instead of replacing it — overlapping translucent
+/// things accumulate brightness the way overlapping lights do. That's the
+/// standard look for glowing particles.
 func makeRenderPipeline(device: MTLDevice,
                         library: MTLLibrary,
                         vertex: String,
