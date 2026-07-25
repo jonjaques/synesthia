@@ -104,8 +104,8 @@ const schema = [
 		<script type="application/ld+json" set:html={JSON.stringify(schema)} is:inline />
 
 		{
-			/* Google Analytics 4. Set PUBLIC_GA_ID (G-XXXXXXXXXX) to switch this on;
-			   until then nothing is loaded and no cookie is written. */
+			/* Google Analytics 4. Override PUBLIC_GA_ID with a non-`G-` value to
+			   build without it — nothing is loaded and no cookie is written. */
 		}
 		{
 			GA_ENABLED && (

@@ -33,12 +33,11 @@ export const RELEASE = {
 } as const;
 
 /**
- * PLACEHOLDER — drop in the Google Analytics 4 measurement ID (G-XXXXXXXXXX).
- * Prefer setting PUBLIC_GA_ID in the environment; the literal below is only a
- * fallback so the markup is easy to find. While the value is still the
- * placeholder, no analytics script is emitted.
+ * Google Analytics 4 measurement ID. PUBLIC_GA_ID overrides the literal below,
+ * which is the production property. Set PUBLIC_GA_ID to 'G-XXXXXXXXXX' (or any
+ * non-`G-` value) to build without emitting the analytics script at all.
  */
-export const GA_MEASUREMENT_ID = import.meta.env.PUBLIC_GA_ID ?? 'G-XXXXXXXXXX';
+export const GA_MEASUREMENT_ID = import.meta.env.PUBLIC_GA_ID ?? 'G-MEDVX83G9P';
 
 export const GA_ENABLED =
 	typeof GA_MEASUREMENT_ID === 'string' &&
