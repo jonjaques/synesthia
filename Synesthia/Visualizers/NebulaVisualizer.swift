@@ -116,24 +116,51 @@ final class NebulaVisualizer: Visualizer {
             var p = cpuParticles[i]
             let energy = min(snapshot.bands[p.band] * sensitivity, 1.4)
 
-            let angle = p.spin * (0.25 + energy) * dt * swirl * uniforms.speed
+            // Each particle behaves according to the register it listens to:
+            // low bands form a heavy pulsing core, mids orbit, highs sparkle out wide.
+            let isBass = p.band < 12
+            let isTreble = p.band >= 47
+
+            var swirlRate = 0.25 + energy + 0.4 * snapshot.flux
+            if isBass { swirlRate *= 0.55 }
+            if isTreble { swirlRate *= 1.6 }
+            let angle = p.spin * swirlRate * dt * swirl * uniforms.speed
             if angle != 0 {
                 let q = simd_quatf(angle: angle, axis: p.axis)
                 p.direction = simd_normalize(q.act(p.direction))
             }
 
-            let target = 0.75 + 1.5 * energy + 0.55 * snapshot.beat
-            p.radius += (target - p.radius) * min(1, dt * 5)
+            var target: Float
+            if isBass {
+                target = 0.50 + 1.1 * energy + 0.75 * snapshot.beat
+            } else if isTreble {
+                target = 1.00 + 1.6 * energy + 0.55 * snapshot.trebleBeat
+            } else {
+                target = 0.75 + 1.5 * energy + 0.45 * snapshot.beat
+            }
+            p.radius += (target - p.radius) * min(1, dt * (isBass ? 7 : 5))
             cpuParticles[i] = p
 
             let position = p.direction * p.radius
-            let flicker = 0.75 + 0.25 * sin(p.phase + time * 18)
-            let size = glow * (2.2 + 11 * energy + 5 * snapshot.treble * sensitivity * flicker)
+            var size: Float
+            var alpha: Float
+            if isBass {
+                let pulse = 1 + 0.5 * snapshot.beat
+                size = glow * (4.5 + 15 * energy) * pulse
+                alpha = 0.16 + 0.84 * energy
+            } else if isTreble {
+                let flicker = 0.55 + 0.45 * sin(p.phase + time * 30)
+                size = glow * (1.4 + 6 * energy + 5 * snapshot.trebleBeat * flicker)
+                alpha = 0.06 + 0.94 * min(energy + snapshot.trebleBeat * 0.6, 1.2)
+            } else {
+                let flicker = 0.75 + 0.25 * sin(p.phase + time * 18)
+                size = glow * (2.2 + 11 * energy + 4 * snapshot.components[5] * sensitivity * flicker)
+                alpha = 0.10 + 0.90 * energy
+            }
 
             let hue = Float(p.band) / Float(AudioSnapshot.bandCount)
-            var color = Palettes.color(hue + time * 0.01, palette: palette)
+            var color = Palettes.color(hue + time * 0.01 + snapshot.centroid * 0.15, palette: palette)
             color = simd_mix(color, SIMD3<Float>(1, 1, 1), SIMD3<Float>(repeating: min(energy * 0.45, 0.6)))
-            let alpha = 0.10 + 0.90 * energy
 
             gpuParticles[i] = GPUParticle(
                 posSize: SIMD4(position.x, position.y, position.z, size),

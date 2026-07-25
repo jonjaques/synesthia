@@ -9,7 +9,7 @@ final class AuroraVisualizer: Visualizer {
         name: "Aurora",
         tagline: "Waveform ribbons glowing with their slice of the spectrum",
         options: [
-            VisualizerOption(id: "layers", name: "Ribbons", range: 2...8, defaultValue: 6),
+            VisualizerOption(id: "layers", name: "Ribbons", range: 2...10, defaultValue: 7),
             VisualizerOption(id: "height", name: "Wave height", range: 0.05...0.6, defaultValue: 0.28),
         ],
         make: { try AuroraVisualizer(device: $0, library: $1, pixelFormat: $2) })

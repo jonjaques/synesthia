@@ -6,6 +6,7 @@ import AVFoundation
 struct AudioSnapshot: Sendable {
     static let bandCount = 64
     static let waveformCount = 256
+    static let componentCount = 8
 
     /// Log-spaced frequency bands, smoothed, roughly 0...1.
     var bands = [Float](repeating: 0, count: AudioSnapshot.bandCount)
@@ -15,8 +16,17 @@ struct AudioSnapshot: Sendable {
     var bass: Float = 0
     var mid: Float = 0
     var treble: Float = 0
+    /// Eight named sub-band energies, 0...1 each:
+    /// sub-bass, bass, low-mid, mid, high-mid, presence, treble, air.
+    var components = [Float](repeating: 0, count: AudioSnapshot.componentCount)
     /// Beat envelope: jumps to 1 on a detected bass transient, decays.
     var beat: Float = 0
+    /// Treble transient envelope (hi-hats, snares' snap); decays faster than `beat`.
+    var trebleBeat: Float = 0
+    /// Spectral flux: how much new energy arrived this frame, 0...1. Spikes on onsets.
+    var flux: Float = 0
+    /// Spectral centroid mapped to 0...1 (dark/bassy → bright/airy).
+    var centroid: Float = 0
 }
 
 /// Streams mono samples in from any audio thread, runs a windowed FFT, and
@@ -40,9 +50,15 @@ nonisolated final class AudioAnalyzer: @unchecked Sendable {
     private var imag = [Float](repeating: 0, count: 1024)
     private var magnitudes = [Float](repeating: 0, count: 1024)
     private var bandEdges = [Int]()
+    private var componentRanges = [Range<Int>]()
     private var smoothed = [Float](repeating: 0, count: AudioSnapshot.bandCount)
+    private var previousRaw = [Float](repeating: 0, count: AudioSnapshot.bandCount)
     private var beatAverage: Float = 0
     private var beatEnvelope: Float = 0
+    private var trebleAverage: Float = 0
+    private var trebleEnvelope: Float = 0
+    private var fluxEnvelope: Float = 0
+    private var centroidSmoothed: Float = 0.4
     private var lastAppendTime: CFAbsoluteTime = 0
 
     init() {
@@ -58,12 +74,17 @@ nonisolated final class AudioAnalyzer: @unchecked Sendable {
         if CFAbsoluteTimeGetCurrent() - lastAppendTime > 0.25 {
             for i in smoothed.indices { smoothed[i] *= 0.92 }
             beatEnvelope *= 0.9
+            trebleEnvelope *= 0.85
+            fluxEnvelope *= 0.85
             snapshot.bands = smoothed
             snapshot.beat = beatEnvelope
+            snapshot.trebleBeat = trebleEnvelope
+            snapshot.flux = fluxEnvelope
             snapshot.level *= 0.92
             snapshot.bass *= 0.92
             snapshot.mid *= 0.92
             snapshot.treble *= 0.92
+            for i in snapshot.components.indices { snapshot.components[i] *= 0.92 }
             for i in snapshot.waveform.indices { snapshot.waveform[i] *= 0.9 }
         }
         return snapshot
@@ -74,9 +95,14 @@ nonisolated final class AudioAnalyzer: @unchecked Sendable {
         defer { lock.unlock() }
         snapshot = AudioSnapshot()
         smoothed = [Float](repeating: 0, count: AudioSnapshot.bandCount)
+        previousRaw = [Float](repeating: 0, count: AudioSnapshot.bandCount)
         recent = [Float](repeating: 0, count: fftSize)
         beatAverage = 0
         beatEnvelope = 0
+        trebleAverage = 0
+        trebleEnvelope = 0
+        fluxEnvelope = 0
+        centroidSmoothed = 0.4
     }
 
     /// Mixes an arbitrary PCM buffer down to mono and appends it. Callable from any thread.
@@ -137,6 +163,18 @@ nonisolated final class AudioAnalyzer: @unchecked Sendable {
             edges.append(min(bin, binCount - 1))
         }
         bandEdges = edges
+
+        // Map the eight named components onto the log-spaced band axis.
+        let componentEdgesHz: [Double] = [30, 60, 150, 400, 1200, 3000, 6000, 10_000, 16_000]
+        let bandIndex = { (f: Double) -> Int in
+            let t = log(max(f, fMin) / fMin) / log(fMax / fMin)
+            return max(0, min(AudioSnapshot.bandCount - 1, Int(t * Double(AudioSnapshot.bandCount))))
+        }
+        componentRanges = (0..<AudioSnapshot.componentCount).map { c in
+            let lo = bandIndex(componentEdgesHz[c])
+            let hi = max(bandIndex(componentEdgesHz[c + 1]), lo + 1)
+            return lo..<hi
+        }
     }
 
     private func processLocked() {
@@ -180,6 +218,42 @@ nonisolated final class AudioAnalyzer: @unchecked Sendable {
         let mid = average(20..<42)
         let treble = average(46..<AudioSnapshot.bandCount)
 
+        var components = [Float](repeating: 0, count: AudioSnapshot.componentCount)
+        for (c, range) in componentRanges.enumerated() {
+            components[c] = average(range)
+        }
+
+        // Spectral flux: positive per-band energy change, spikes on any onset.
+        var fluxNow: Float = 0
+        for b in 0..<AudioSnapshot.bandCount {
+            fluxNow += max(0, raw[b] - previousRaw[b])
+        }
+        previousRaw = raw
+        fluxEnvelope = max(min(fluxNow * 0.9, 1), fluxEnvelope * 0.86)
+
+        // Spectral centroid: where the energy lives, 0 (dark) ... 1 (bright).
+        var weighted: Float = 0, total: Float = 0
+        for b in 0..<AudioSnapshot.bandCount {
+            weighted += raw[b] * Float(b)
+            total += raw[b]
+        }
+        if total > 0.02 {
+            let instantCentroid = weighted / (total * Float(AudioSnapshot.bandCount - 1))
+            centroidSmoothed = centroidSmoothed * 0.9 + instantCentroid * 0.1
+        }
+
+        // Treble-transient envelope (hi-hats/snare snap) against its own running average.
+        let trebleRange = componentRanges[6].lowerBound..<AudioSnapshot.bandCount
+        var trebleInstant: Float = 0
+        for b in trebleRange { trebleInstant += raw[b] }
+        trebleInstant /= Float(trebleRange.count)
+        trebleAverage = trebleAverage * 0.96 + trebleInstant * 0.04
+        if trebleInstant > trebleAverage * 1.35, trebleInstant > 0.10 {
+            trebleEnvelope = 1
+        } else {
+            trebleEnvelope *= 0.80
+        }
+
         var rms: Float = 0
         vDSP_rmsqv(recent, 1, &rms, vDSP_Length(fftSize))
         let levelDB = 20 * log10(max(rms, 1e-9))
@@ -207,6 +281,10 @@ nonisolated final class AudioAnalyzer: @unchecked Sendable {
         snapshot.bass = bass
         snapshot.mid = mid
         snapshot.treble = treble
+        snapshot.components = components
         snapshot.beat = beatEnvelope
+        snapshot.trebleBeat = trebleEnvelope
+        snapshot.flux = min(fluxEnvelope, 1)
+        snapshot.centroid = centroidSmoothed
     }
 }

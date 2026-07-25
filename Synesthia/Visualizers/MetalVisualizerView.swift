@@ -81,6 +81,14 @@ struct MetalVisualizerView: NSViewRepresentable {
             uniforms.treble = snapshot.treble
             uniforms.level = snapshot.level
             uniforms.beat = snapshot.beat
+            uniforms.subBass = snapshot.components[0]
+            uniforms.lowMid = snapshot.components[2]
+            uniforms.highMid = snapshot.components[4]
+            uniforms.presence = snapshot.components[5]
+            uniforms.air = snapshot.components[7]
+            uniforms.trebleBeat = snapshot.trebleBeat
+            uniforms.flux = snapshot.flux
+            uniforms.centroid = snapshot.centroid
             uniforms.sensitivity = Float(settings.sensitivity)
             uniforms.speed = Float(settings.speed)
             uniforms.palette = Float(settings.paletteIndex)

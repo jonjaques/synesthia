@@ -5,7 +5,8 @@ import simd
 import Observation
 
 // MARK: - Shared uniforms
-// Layout must match `VizUniforms` in Shaders.metal exactly.
+// Layout must match `VizUniforms` in ShaderSource.swift exactly
+// (currently 24 floats / 96 bytes).
 
 struct VizUniforms {
     var resolution = SIMD2<Float>(0, 0)
@@ -23,6 +24,14 @@ struct VizUniforms {
     var p1: Float = 0
     var p2: Float = 0
     var p3: Float = 0
+    var subBass: Float = 0
+    var lowMid: Float = 0
+    var highMid: Float = 0
+    var presence: Float = 0
+    var air: Float = 0
+    var trebleBeat: Float = 0
+    var flux: Float = 0
+    var centroid: Float = 0
 
     mutating func setParameter(_ index: Int, to value: Float) {
         switch index {
