@@ -12,7 +12,11 @@ import AVFoundation
 /// All values are pre-normalized to roughly 0...1 (waveform: -1...1) so
 /// visualizers can use them directly as intensities without knowing anything
 /// about decibels or FFT bin math.
-struct AudioSnapshot: Sendable {
+/// `nonisolated` because this is read from the audio thread and the render
+/// loop, not the main actor — without it the project-wide
+/// `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` makes even `bandCount` and
+/// `init()` main-actor isolated, which is a hard error under Swift 6.
+nonisolated struct AudioSnapshot: Sendable {
     static let bandCount = 64
     static let waveformCount = 256
     static let componentCount = 8

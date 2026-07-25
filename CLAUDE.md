@@ -6,7 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Synesthia is a macOS-only SwiftUI + Metal music visualizer (`SDKROOT = macosx`, no iOS/Catalyst target). It captures audio (system audio via ScreenCaptureKit, mic/line-in via AVAudioEngine, or a local file), runs an FFT, and renders pluggable Metal visualizers. See README.md for the user-facing feature description and roadmap, and `docs/` for developer documentation (architecture, audio pipeline, rendering, plugin system, macOS integration).
 
-Built with Xcode 26.6 / Swift 6.3 toolchain. Deployment target is macOS 26.5, so newer platform APIs are available without availability guards.
+Built with Xcode 26.6 / Swift 6.3 toolchain. Deployment target is macOS 26.0, so
+macOS 26 APIs (including `glassEffect`) are available without availability
+guards. Going below 26.0 requires guarding the five `glassEffect` call sites in
+`ContentView.swift` — that is the *only* thing pinning the floor at 26.
 
 ## Architecture
 
@@ -71,9 +74,13 @@ xcodebuild test -project Synesthia.xcodeproj -scheme Synesthia -destination 'pla
 
 **Adding files: do not edit `project.pbxproj`.** The project uses `objectVersion = 77` with a `PBXFileSystemSynchronizedRootGroup` for `Synesthia/`. Any `.swift` file created anywhere under `Synesthia/` is compiled automatically. Hand-adding file references will corrupt the sync group. (Editing *build settings* in project.pbxproj is fine and is how the `INFOPLIST_KEY_*` and `CODE_SIGN_ENTITLEMENTS` values were added.)
 
-**`@MainActor` is the default.** `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` and `SWIFT_APPROACHABLE_CONCURRENCY = YES` are set project-wide: every unannotated type, function, and closure is main-actor isolated. Background work must be opted out explicitly — see `nonisolated final class AudioAnalyzer` and the `nonisolated` SCStreamOutput callbacks. Don't add `@MainActor` annotations; they're redundant. `SWIFT_VERSION = 5.0`, so strict concurrency is not fully enforced at compile time even though the isolation default applies.
+**`@MainActor` is the default.** `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` and `SWIFT_APPROACHABLE_CONCURRENCY = YES` are set project-wide: every unannotated type, function, and closure is main-actor isolated. Background work must be opted out explicitly — see `nonisolated final class AudioAnalyzer`, `nonisolated struct AudioSnapshot`, and the `nonisolated` SCStreamOutput callbacks. Don't add `@MainActor` annotations; they're redundant. `SWIFT_VERSION = 6.0`, so isolation violations are **errors**, not warnings: anything reachable from the audio thread or the Metal draw callback must be explicitly `nonisolated`. Marking the *type* `nonisolated` (rather than each member) is the cheap fix — that is why `AudioSnapshot` carries the annotation even though its members look inert.
 
-**No `Info.plist` file.** `GENERATE_INFOPLIST_FILE = YES`; plist keys go in as `INFOPLIST_KEY_*` build settings in project.pbxproj. Currently set: `NSAppleEventsUsageDescription`, `NSMicrophoneUsageDescription`.
+**No `Info.plist` file.** `GENERATE_INFOPLIST_FILE = YES`; plist keys go in as `INFOPLIST_KEY_*` build settings in project.pbxproj (the suffix becomes the key verbatim, so arbitrary keys work). Currently set: `NSAppleEventsUsageDescription`, `NSMicrophoneUsageDescription`, `NSHumanReadableCopyright`, `LSApplicationCategoryType`, and `ITSAppUsesNonExemptEncryption = NO` (the last one pre-answers App Store Connect's export-compliance prompt on every upload).
+
+**Privacy manifest**: `Synesthia/PrivacyInfo.xcprivacy` declares no tracking, no collected data, and one `UserDefaults` access reason. It is picked up automatically by the synchronized group. Its contents must stay in sync with the App Store Connect privacy answers.
+
+**Shared scheme**: `Synesthia.xcodeproj/xcshareddata/xcschemes/Synesthia.xcscheme` is checked in so `xcodebuild -scheme Synesthia` works on a clean clone / in CI without relying on Xcode's implicit scheme autocreation.
 
 **Entitlements**: `Synesthia.entitlements` at the repo root (deliberately outside the synced `Synesthia/` folder so it isn't treated as a source/resource), wired via `CODE_SIGN_ENTITLEMENTS`. Contains sandbox, audio-input, user-selected read-only files, music-library read, `automation.apple-events`, and a `temporary-exception.apple-events` for `com.apple.Music` (required — Music defines no scripting-targets groups; note this exception would need review for App Store distribution). Build-setting entitlements (`ENABLE_APP_SANDBOX` etc.) are merged with the file at signing time. Sandbox is the usual cause of silent failures when reading files outside the container.
 

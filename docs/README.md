@@ -45,5 +45,14 @@ Synesthia/
     └── AuroraVisualizer.swift    Waveform-ribbon visualizer
 ```
 
+## Shipping
+
+**[App Store launch plan](app-store-launch-plan.md)** — what remains between
+here and a Mac App Store release: the blockers, the quality gaps, the App Store
+Connect checklist, and the config work already landed. A working document; check
+items off as they close.
+
+---
+
 `CLAUDE.md` (repo root) records build commands and hard-won gotchas;
 `README.md` covers the user-facing feature set.
