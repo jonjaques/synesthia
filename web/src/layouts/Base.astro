@@ -1,0 +1,139 @@
+---
+import { Font } from 'astro:assets';
+import { GA_ENABLED, GA_MEASUREMENT_ID, RELEASE, SITE } from '../consts';
+import '../styles/global.css';
+
+interface Props {
+	title?: string;
+	description?: string;
+}
+
+const { title = SITE.title, description = SITE.description } = Astro.props;
+
+const canonical = new URL(Astro.url.pathname, Astro.site).href;
+const ogImage = new URL('/img/og.png', Astro.site).href;
+
+// Structured data. SoftwareApplication is what Google reads for app listings;
+// WebSite gives the sitelinks search box its name.
+const schema = [
+	{
+		'@context': 'https://schema.org',
+		'@type': 'SoftwareApplication',
+		name: SITE.name,
+		applicationCategory: 'MultimediaApplication',
+		applicationSubCategory: 'Music visualizer',
+		operatingSystem: RELEASE.requires,
+		softwareVersion: RELEASE.version,
+		description: SITE.description,
+		url: canonical,
+		image: ogImage,
+		screenshot: ogImage,
+		author: { '@type': 'Person', name: SITE.author },
+		offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+		featureList: [
+			'64-band log-spaced FFT analysis from 30 Hz to 16 kHz',
+			'Three Metal visualizers: Nebula, Spectrum Tunnel, Aurora',
+			'Captures system audio, microphone, line-in, or a local file',
+			'Apple Music transport control with now-playing artwork',
+		],
+	},
+	{
+		'@context': 'https://schema.org',
+		'@type': 'WebSite',
+		name: SITE.name,
+		url: Astro.site?.href,
+		description: SITE.description,
+	},
+];
+---
+
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>{title}</title>
+		<meta name="description" content={description} />
+		<link rel="canonical" href={canonical} />
+		<meta name="generator" content={Astro.generator} />
+		<meta name="robots" content="index, follow, max-image-preview:large" />
+		<meta name="author" content={SITE.author} />
+		<meta name="theme-color" content="#07031A" />
+		<meta name="color-scheme" content="dark" />
+
+		<!-- Icons -->
+		<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+		<link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png" />
+		<link rel="icon" href="/favicon-16.png" sizes="16x16" type="image/png" />
+		<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+		<link rel="manifest" href="/site.webmanifest" />
+		<link rel="sitemap" href="/sitemap-index.xml" />
+
+		<!-- Open Graph -->
+		<meta property="og:type" content="website" />
+		<meta property="og:site_name" content={SITE.name} />
+		<meta property="og:title" content={title} />
+		<meta property="og:description" content={description} />
+		<meta property="og:url" content={canonical} />
+		<meta property="og:locale" content={SITE.locale} />
+		<meta property="og:image" content={ogImage} />
+		<meta property="og:image:width" content="1200" />
+		<meta property="og:image:height" content="630" />
+		<meta
+			property="og:image:alt"
+			content="The Synesthia comet — a streak of white light dispersing into a full spectrum on a deep indigo field."
+		/>
+
+		<!-- Twitter -->
+		<meta name="twitter:card" content="summary_large_image" />
+		<meta name="twitter:title" content={title} />
+		<meta name="twitter:description" content={description} />
+		<meta name="twitter:image" content={ogImage} />
+		<meta name="twitter:site" content={SITE.social} />
+		<meta name="twitter:creator" content={SITE.social} />
+
+		<!-- Apple -->
+		<meta name="apple-mobile-web-app-title" content={SITE.name} />
+
+		<Font cssVariable="--font-archivo" preload />
+		<Font cssVariable="--font-plex" preload />
+		<Font cssVariable="--font-plex-mono" />
+
+		<link rel="preload" as="image" href="/img/icon-512.png" />
+
+		<script type="application/ld+json" set:html={JSON.stringify(schema)} is:inline />
+
+		{
+			/* Google Analytics 4. Set PUBLIC_GA_ID (G-XXXXXXXXXX) to switch this on;
+			   until then nothing is loaded and no cookie is written. */
+		}
+		{
+			GA_ENABLED && (
+				<Fragment>
+					<script
+						is:inline
+						async
+						src={`https://www.googletagmanager.com/gtag/js?id=${GA_MEASUREMENT_ID}`}
+					/>
+					<script is:inline define:vars={{ GA_MEASUREMENT_ID }}>
+						window.dataLayer = window.dataLayer || [];
+						function gtag() {
+							dataLayer.push(arguments);
+						}
+						gtag('js', new Date());
+						gtag('config', GA_MEASUREMENT_ID, { anonymize_ip: true });
+					</script>
+				</Fragment>
+			)
+		}
+	</head>
+	<body>
+		<a
+			href="#main"
+			class="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-full focus:bg-paper focus:px-5 focus:py-2 focus:font-semibold focus:text-void"
+		>
+			Skip to content
+		</a>
+		<slot />
+	</body>
+</html>

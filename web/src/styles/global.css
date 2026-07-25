@@ -1,0 +1,227 @@
+@import 'tailwindcss';
+
+/* ---------------------------------------------------------------------------
+   Design tokens — every colour below is sampled from the app icon: an indigo
+   field with a comet of white-hot light dispersing into a full spectrum.
+   --------------------------------------------------------------------------- */
+@theme {
+	/* Field */
+	--color-void: #07031a;
+	--color-abyss: #0c0630;
+	--color-field: #2e1e8f;
+	--color-violet: #6b4bff;
+
+	/* Ink */
+	--color-paper: #ede9ff;
+	--color-dim: #a79ce0;
+	--color-mute: #6f65a8;
+
+	/* Dispersion — head of the comet through to its tail */
+	--color-spec-white: #eaf4ff;
+	--color-spec-blue: #2e9bff;
+	--color-spec-cyan: #43d9ff;
+	--color-spec-green: #3fe39b;
+	--color-spec-yellow: #f2d544;
+	--color-spec-orange: #ff7a18;
+	--color-spec-red: #ff2d2d;
+
+	/* Type */
+	--font-display: var(--font-archivo);
+	--font-body: var(--font-plex);
+	--font-mono: var(--font-plex-mono);
+
+	/* Rhythm */
+	--ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@layer base {
+	:root {
+		--rail: clamp(1.25rem, 5vw, 5.5rem);
+		--spectrum: linear-gradient(
+			100deg,
+			var(--color-spec-blue) 0%,
+			var(--color-spec-cyan) 18%,
+			var(--color-spec-green) 38%,
+			var(--color-spec-yellow) 58%,
+			var(--color-spec-orange) 78%,
+			var(--color-spec-red) 100%
+		);
+		color-scheme: dark;
+	}
+
+	html {
+		scroll-behavior: smooth;
+		-webkit-text-size-adjust: 100%;
+	}
+
+	body {
+		background-color: var(--color-void);
+		color: var(--color-paper);
+		font-family: var(--font-body);
+		font-size: 1rem;
+		line-height: 1.65;
+		overflow-x: hidden;
+		-webkit-font-smoothing: antialiased;
+		text-rendering: optimizeLegibility;
+	}
+
+	::selection {
+		background: var(--color-spec-cyan);
+		color: var(--color-void);
+	}
+
+	:focus-visible {
+		outline: 2px solid var(--color-spec-cyan);
+		outline-offset: 3px;
+		border-radius: 2px;
+	}
+
+	canvas {
+		display: block;
+	}
+}
+
+@layer components {
+	/* Section gutter, used by every band of the page so nothing drifts. */
+	.rail {
+		padding-inline: var(--rail);
+		margin-inline: auto;
+		max-width: 84rem;
+	}
+
+	/* Small uppercase machine label — the app's own vernacular. */
+	.tag {
+		font-family: var(--font-mono);
+		font-size: 0.6875rem;
+		font-weight: 500;
+		letter-spacing: 0.22em;
+		text-transform: uppercase;
+		color: var(--color-mute);
+	}
+
+	.display {
+		font-family: var(--font-display);
+		font-weight: 800;
+		letter-spacing: -0.035em;
+		line-height: 0.88;
+		text-wrap: balance;
+	}
+
+	/* Text filled with the dispersion gradient. The background position is
+	   nudged each frame by the audio signal, so the type refracts with the art. */
+	.refract {
+		background-image: var(--spectrum);
+		background-size: 250% 100%;
+		background-position: calc(6% + var(--refract, 0) * 30%) 50%;
+		-webkit-background-clip: text;
+		background-clip: text;
+		color: transparent;
+	}
+
+	/* Hairline card over the indigo field. */
+	.panel {
+		position: relative;
+		border: 1px solid color-mix(in oklab, var(--color-violet) 22%, transparent);
+		background: linear-gradient(
+			180deg,
+			color-mix(in oklab, var(--color-field) 16%, transparent),
+			color-mix(in oklab, var(--color-abyss) 55%, transparent)
+		);
+		border-radius: 1.125rem;
+		backdrop-filter: blur(14px);
+	}
+
+	.btn {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.625rem;
+		border-radius: 999px;
+		font-weight: 600;
+		line-height: 1;
+		white-space: nowrap;
+		transition:
+			transform 0.35s var(--ease-out-expo),
+			box-shadow 0.35s var(--ease-out-expo),
+			background-color 0.25s,
+			border-color 0.25s,
+			color 0.25s;
+	}
+
+	.btn-primary {
+		padding: 1rem 1.5rem;
+		color: var(--color-void);
+		background: var(--color-paper);
+		box-shadow: 0 0 0 0 color-mix(in oklab, var(--color-spec-cyan) 55%, transparent);
+	}
+
+	.btn-primary:hover {
+		transform: translateY(-2px);
+		box-shadow: 0 14px 44px -10px color-mix(in oklab, var(--color-spec-cyan) 75%, transparent);
+	}
+
+	.btn-ghost {
+		padding: 1rem 1.4rem;
+		color: var(--color-paper);
+		border: 1px solid color-mix(in oklab, var(--color-violet) 45%, transparent);
+		background: color-mix(in oklab, var(--color-field) 14%, transparent);
+	}
+
+	.btn-ghost:hover {
+		border-color: var(--color-spec-cyan);
+		color: var(--color-spec-cyan);
+	}
+
+	/* Live state for the mic toggle. */
+	.btn-ghost[data-live='true'] {
+		border-color: var(--color-spec-cyan);
+		color: var(--color-spec-cyan);
+		background: color-mix(in oklab, var(--color-spec-cyan) 12%, transparent);
+	}
+
+	kbd {
+		font-family: var(--font-mono);
+		font-size: 0.75rem;
+		padding: 0.2rem 0.45rem;
+		border-radius: 0.35rem;
+		border: 1px solid color-mix(in oklab, var(--color-violet) 34%, transparent);
+		background: color-mix(in oklab, var(--color-abyss) 70%, transparent);
+		color: var(--color-paper);
+		white-space: nowrap;
+	}
+}
+
+@layer utilities {
+	/* Reveal-on-scroll. Elements start hidden only when JS is present, so the
+	   page stays fully readable without it. */
+	.js [data-reveal] {
+		opacity: 0;
+		transform: translateY(18px);
+	}
+
+	.js [data-reveal].is-in {
+		opacity: 1;
+		transform: none;
+		transition:
+			opacity 0.9s var(--ease-out-expo),
+			transform 0.9s var(--ease-out-expo);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	html {
+		scroll-behavior: auto;
+	}
+
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.001ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.001ms !important;
+	}
+
+	.js [data-reveal] {
+		opacity: 1;
+		transform: none;
+	}
+}
