@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import Metal
 import MetalKit
 import simd
@@ -121,48 +122,109 @@ enum Palettes {
 
 // MARK: - Settings
 
-/// Persisted user tuning: global sensitivity/speed/palette plus per-visualizer
-/// option values keyed by "visualizerID.optionID".
+/// Everything the user can tune about one visualizer. Nothing here is shared
+/// with any other visualizer — switching visualizers restores its own look.
+struct VisualizerTuning: Codable, Equatable {
+    var sensitivity: Double = 1.0
+    var speed: Double = 1.0
+    var paletteIndex: Int = 0
+    /// Descriptor option values keyed by option id; missing means "default".
+    var options: [String: Double] = [:]
+
+    func value(for option: VisualizerOption) -> Double {
+        options[option.id] ?? option.defaultValue
+    }
+
+    static func defaults(for descriptor: VisualizerDescriptor) -> VisualizerTuning {
+        var tuning = VisualizerTuning()
+        for option in descriptor.options {
+            tuning.options[option.id] = option.defaultValue
+        }
+        return tuning
+    }
+
+    /// Fills in unset options so a stored tuning can be compared to `defaults`.
+    func normalized(for descriptor: VisualizerDescriptor) -> VisualizerTuning {
+        var tuning = self
+        tuning.options = descriptor.options.reduce(into: [:]) { $0[$1.id] = value(for: $1) }
+        return tuning
+    }
+}
+
+/// Persisted per-visualizer tuning, keyed by visualizer id.
 @Observable
 final class VisualizerSettings {
-    var sensitivity: Double {
-        didSet { save() }
-    }
-    var speed: Double {
-        didSet { save() }
-    }
-    var paletteIndex: Int {
-        didSet { save() }
-    }
-    private var optionValues: [String: Double] {
+    private var tunings: [String: VisualizerTuning] {
         didSet { save() }
     }
 
-    private static let defaultsKey = "VisualizerSettings"
+    private static let storageKey = "VisualizerTunings"
+    private static let legacyKey = "VisualizerSettings"
 
     init() {
-        let stored = UserDefaults.standard.dictionary(forKey: Self.defaultsKey) ?? [:]
-        sensitivity = stored["sensitivity"] as? Double ?? 1.0
-        speed = stored["speed"] as? Double ?? 1.0
-        paletteIndex = stored["paletteIndex"] as? Int ?? 0
-        optionValues = stored["options"] as? [String: Double] ?? [:]
+        if let data = UserDefaults.standard.data(forKey: Self.storageKey),
+           let decoded = try? JSONDecoder().decode([String: VisualizerTuning].self, from: data) {
+            tunings = decoded
+        } else {
+            tunings = Self.migratedLegacyTunings()
+        }
     }
 
-    func value(visualizer: String, option: VisualizerOption) -> Double {
-        optionValues["\(visualizer).\(option.id)"] ?? option.defaultValue
+    func tuning(for visualizer: String) -> VisualizerTuning {
+        tunings[visualizer] ?? VisualizerTuning()
     }
 
-    func setValue(_ value: Double, visualizer: String, option: VisualizerOption) {
-        optionValues["\(visualizer).\(option.id)"] = value
+    func update(_ visualizer: String, _ change: (inout VisualizerTuning) -> Void) {
+        var tuning = tuning(for: visualizer)
+        change(&tuning)
+        tunings[visualizer] = tuning
+    }
+
+    /// Two-way binding into one field of a visualizer's tuning.
+    func binding<V>(_ visualizer: String,
+                    _ keyPath: WritableKeyPath<VisualizerTuning, V>) -> Binding<V> {
+        Binding(get: { self.tuning(for: visualizer)[keyPath: keyPath] },
+                set: { value in self.update(visualizer) { $0[keyPath: keyPath] = value } })
+    }
+
+    func binding(_ visualizer: String, option: VisualizerOption) -> Binding<Double> {
+        Binding(get: { self.tuning(for: visualizer).value(for: option) },
+                set: { value in self.update(visualizer) { $0.options[option.id] = value } })
+    }
+
+    func reset(_ descriptor: VisualizerDescriptor) {
+        tunings[descriptor.id] = .defaults(for: descriptor)
+    }
+
+    func isDefault(_ descriptor: VisualizerDescriptor) -> Bool {
+        tuning(for: descriptor.id).normalized(for: descriptor) == .defaults(for: descriptor)
     }
 
     private func save() {
-        UserDefaults.standard.set([
-            "sensitivity": sensitivity,
-            "speed": speed,
-            "paletteIndex": paletteIndex,
-            "options": optionValues,
-        ] as [String: Any], forKey: Self.defaultsKey)
+        guard let data = try? JSONEncoder().encode(tunings) else { return }
+        UserDefaults.standard.set(data, forKey: Self.storageKey)
+    }
+
+    /// Carries the old global sensitivity/speed/palette onto every visualizer so
+    /// an upgrade doesn't silently reset the user's look.
+    private static func migratedLegacyTunings() -> [String: VisualizerTuning] {
+        guard let stored = UserDefaults.standard.dictionary(forKey: legacyKey) else { return [:] }
+        let legacyOptions = stored["options"] as? [String: Double] ?? [:]
+        var result: [String: VisualizerTuning] = [:]
+        for descriptor in VisualizerRegistry.all {
+            var tuning = VisualizerTuning(
+                sensitivity: stored["sensitivity"] as? Double ?? 1.0,
+                speed: stored["speed"] as? Double ?? 1.0,
+                paletteIndex: stored["paletteIndex"] as? Int ?? 0)
+            for option in descriptor.options {
+                // Legacy option keys were already namespaced by visualizer.
+                if let value = legacyOptions["\(descriptor.id).\(option.id)"] {
+                    tuning.options[option.id] = value
+                }
+            }
+            result[descriptor.id] = tuning
+        }
+        return result
     }
 }
 

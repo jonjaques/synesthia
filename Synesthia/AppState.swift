@@ -40,6 +40,8 @@ final class AppState {
     var selectedInputDeviceID: AudioDeviceID?
     private(set) var fileURL: URL?
     private(set) var isCapturing = false
+    /// Mirrors `FilePlayer.isPlaying`; the player isn't observable on its own.
+    private(set) var isFilePlaying = false
     var statusMessage: String?
 
     private var attemptedAutoCapture = false
@@ -69,13 +71,25 @@ final class AppState {
 
     // MARK: - Derived UI state
 
+    /// Transport state — only meaningful for sources we can actually drive.
     var isPlaying: Bool {
         switch sourceKind {
-        case .musicApp: music.isPlaying && isCapturing
+        case .musicApp: music.isPlaying
         case .systemAudio, .inputDevice: isCapturing
-        case .audioFile: filePlayer.isPlaying
+        case .audioFile: isFilePlaying
         }
     }
+
+    /// Whether audio is currently flowing into the analyzer.
+    var isCaptureActive: Bool {
+        switch sourceKind {
+        case .musicApp, .systemAudio, .inputDevice: isCapturing
+        case .audioFile: isFilePlaying
+        }
+    }
+
+    /// Only Music.app gives us prev/play/next; everything else is capture-only.
+    var showsTransport: Bool { sourceKind == .musicApp }
 
     var windowTitle: String {
         if sourceKind == .musicApp, let track = music.track, !track.title.isEmpty {
@@ -87,47 +101,45 @@ final class AppState {
         return "Synesthia"
     }
 
+    /// Track metadata, only when we genuinely have some: Music.app mode.
     var nowPlaying: NowPlayingInfo? {
-        switch sourceKind {
-        case .musicApp:
-            guard let track = music.track else { return nil }
-            return NowPlayingInfo(title: track.title, artist: track.artist,
-                                  album: track.album, artwork: music.artwork)
-        case .audioFile:
-            guard let fileURL else { return nil }
-            return NowPlayingInfo(title: fileURL.deletingPathExtension().lastPathComponent,
-                                  artist: "", album: "", artwork: nil)
-        case .systemAudio:
-            return isCapturing
-                ? NowPlayingInfo(title: "System audio", artist: "Visualizing everything you hear", album: "", artwork: nil)
-                : nil
-        case .inputDevice:
-            guard isCapturing else { return nil }
-            let name = inputDevices.first { $0.id == selectedInputDeviceID }?.name ?? "Default input"
-            return NowPlayingInfo(title: name, artist: "Live input", album: "", artwork: nil)
-        }
+        guard sourceKind == .musicApp, let track = music.track else { return nil }
+        return NowPlayingInfo(title: track.title, artist: track.artist,
+                              album: track.album, artwork: music.artwork)
     }
 
     // MARK: - Transport
 
+    /// Play/pause the *source*. Only Music.app and local files can be driven;
+    /// for live sources this is the same thing as toggling capture.
     func togglePlay() {
         Task { await handlePlay() }
     }
 
     private func handlePlay() async {
-        switch sourceKind {
-        case .musicApp:
-            let wasCapturing = isCapturing
+        guard sourceKind == .musicApp else {
+            await handleCaptureToggle()
+            return
+        }
+        // Starting playback with no capture attached would leave the canvas
+        // dead, so latch on first.
+        if !music.isPlaying && !isCapturing {
             await startSystemCapture()
-            // If Music was already playing and we just attached capture,
-            // leave it playing; otherwise this is a normal play/pause toggle.
-            if !music.isPlaying || wasCapturing {
-                music.togglePlayPause()
-            }
-            if music.automationDenied {
-                setStatus("Synesthia isn't allowed to control Music. Enable it in System Settings › Privacy & Security › Automation.")
-            }
-        case .systemAudio:
+        }
+        music.togglePlayPause()
+        if music.automationDenied {
+            setStatus("Synesthia isn't allowed to control Music. Enable it in System Settings › Privacy & Security › Automation.")
+        }
+    }
+
+    /// Start/stop the audio capture feeding the analyzer, independent of transport.
+    func toggleCapture() {
+        Task { await handleCaptureToggle() }
+    }
+
+    private func handleCaptureToggle() async {
+        switch sourceKind {
+        case .musicApp, .systemAudio:
             if isCapturing {
                 await systemCapture.stop()
                 isCapturing = false
@@ -152,6 +164,7 @@ final class AppState {
             } else {
                 do {
                     try filePlayer.togglePlayPause()
+                    isFilePlaying = filePlayer.isPlaying
                 } catch {
                     setStatus(error.localizedDescription)
                 }
@@ -161,7 +174,7 @@ final class AppState {
 
     func nextTrack() {
         guard sourceKind == .musicApp else {
-            if sourceKind == .audioFile { try? filePlayer.restart() }
+            if sourceKind == .audioFile { restartFile() }
             return
         }
         music.nextTrack()
@@ -169,10 +182,15 @@ final class AppState {
 
     func previousTrack() {
         guard sourceKind == .musicApp else {
-            if sourceKind == .audioFile { try? filePlayer.restart() }
+            if sourceKind == .audioFile { restartFile() }
             return
         }
         music.previousTrack()
+    }
+
+    private func restartFile() {
+        try? filePlayer.restart()
+        isFilePlaying = filePlayer.isPlaying
     }
 
     func openFilePanel() {
@@ -187,6 +205,7 @@ final class AppState {
             fileURL = url
             sourceKind = .audioFile
             try filePlayer.play()
+            isFilePlaying = filePlayer.isPlaying
             statusMessage = nil
         } catch {
             setStatus("Couldn't open \(url.lastPathComponent): \(error.localizedDescription)")
@@ -200,6 +219,7 @@ final class AppState {
             await systemCapture.stop()
             inputCapture.stop()
             filePlayer.pause()
+            isFilePlaying = false
             isCapturing = false
             analyzer.reset()
             statusMessage = nil
@@ -216,7 +236,10 @@ final class AppState {
                 inputDevices = AudioInputDeviceList.all()
             case .audioFile:
                 music.stopPolling()
-                if fileURL != nil { try? filePlayer.play() }
+                if fileURL != nil {
+                    try? filePlayer.play()
+                    isFilePlaying = filePlayer.isPlaying
+                }
             }
         }
     }

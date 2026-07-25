@@ -69,7 +69,7 @@ struct MetalVisualizerView: NSViewRepresentable {
             lastFrameTime = now
 
             let snapshot = appState.analyzer.latest()
-            let settings = appState.settings
+            let tuning = appState.settings.tuning(for: wantedID)
 
             var uniforms = VizUniforms()
             uniforms.resolution = SIMD2(Float(view.drawableSize.width),
@@ -89,11 +89,11 @@ struct MetalVisualizerView: NSViewRepresentable {
             uniforms.trebleBeat = snapshot.trebleBeat
             uniforms.flux = snapshot.flux
             uniforms.centroid = snapshot.centroid
-            uniforms.sensitivity = Float(settings.sensitivity)
-            uniforms.speed = Float(settings.speed)
-            uniforms.palette = Float(settings.paletteIndex)
+            uniforms.sensitivity = Float(tuning.sensitivity)
+            uniforms.speed = Float(tuning.speed)
+            uniforms.palette = Float(tuning.paletteIndex)
             for (index, option) in descriptor.options.prefix(4).enumerated() {
-                uniforms.setParameter(index, to: Float(settings.value(visualizer: wantedID, option: option)))
+                uniforms.setParameter(index, to: Float(tuning.value(for: option)))
             }
 
             guard let commandBuffer = queue.makeCommandBuffer() else { return }

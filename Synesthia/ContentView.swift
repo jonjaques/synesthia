@@ -1,17 +1,58 @@
 import SwiftUI
 import CoreAudio
 
+/// How long the cursor may sit still before the foreground UI fades away.
+private let chromeIdleDelay: Duration = .seconds(3)
+
+/// Smallest window the chrome can lay out in without clipping: the transport pod
+/// is the widest indivisible element.
+let minimumContentSize = CGSize(width: 460, height: 380)
+
+/// How the three bottom pods arrange themselves, chosen from the viewport width.
+enum ChromeLayout {
+    /// Now playing leading, transport centered, visualizer trailing — one row.
+    case wide
+    /// Now playing on its own row above transport + visualizer.
+    case medium
+    /// Every pod on its own centered row.
+    case compact
+
+    init(width: CGFloat) {
+        // Thresholds are the measured widths of the pods plus breathing room:
+        // transport ≈ 360, visualizer ≈ 240, a legible badge ≈ 260.
+        if width >= 940 {
+            self = .wide
+        } else if width >= 680 {
+            self = .medium
+        } else {
+            self = .compact
+        }
+    }
+}
+
 struct ContentView: View {
     @Environment(AppState.self) private var appState
-    @State private var controlsVisible = true
-    @State private var hideControlsTask: Task<Void, Never>?
+    @State private var chromeVisible = true
+    @State private var hideChromeTask: Task<Void, Never>?
+    @State private var pointerOverControls = false
+    @State private var pointerOverVisualizer = false
+    @State private var optionsShown = false
+    @State private var viewportWidth: CGFloat = 1100
+
+    private var layout: ChromeLayout { ChromeLayout(width: viewportWidth) }
+
+    /// The chrome can't fade out from under an interaction: pointer resting on
+    /// one of the pods, or the options popover open.
+    private var chromePinned: Bool {
+        pointerOverControls || pointerOverVisualizer || optionsShown
+    }
 
     var body: some View {
-        ZStack {
+        ZStack(alignment: .bottom) {
             MetalVisualizerView(appState: appState)
                 .ignoresSafeArea()
 
-            VStack {
+            VStack(spacing: 8) {
                 if let message = appState.statusMessage {
                     Text(message)
                         .font(.callout)
@@ -22,50 +63,147 @@ struct ContentView: View {
                         .padding(.top, 12)
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
-                Spacer()
-                HStack(alignment: .bottom) {
-                    if let info = appState.nowPlaying {
-                        NowPlayingBadge(info: info)
-                    }
-                    Spacer()
+                // The window has no title bar text any more, so sources without
+                // a now-playing badge get their name here instead.
+                if appState.nowPlaying == nil, appState.windowTitle != "Synesthia" {
+                    Text(appState.windowTitle)
+                        .font(.headline)
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .glassEffect(.regular, in: .capsule)
+                        .padding(.top, appState.statusMessage == nil ? 12 : 0)
+                        .opacity(chromeVisible ? 1 : 0)
+                        .animation(.easeInOut(duration: 0.35), value: chromeVisible)
                 }
-                .padding(16)
+                Spacer()
             }
 
-            VStack {
-                Spacer()
-                ControlsBar()
-                    .padding(.bottom, 24)
-                    .opacity(controlsVisible ? 1 : 0)
-                    .animation(.easeInOut(duration: 0.25), value: controlsVisible)
-            }
+            bottomChrome
+                .opacity(chromeVisible ? 1 : 0)
+                .allowsHitTesting(chromeVisible)
+                .animation(.easeInOut(duration: 0.35), value: chromeVisible)
         }
         .background(Color.black)
+        .background(ChromelessWindow())
+        .frame(minWidth: minimumContentSize.width, minHeight: minimumContentSize.height)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { viewportWidth = $0 }
         .navigationTitle(appState.windowTitle)
         .preferredColorScheme(.dark)
         .onContinuousHover { phase in
-            switch phase {
-            case .active:
-                showControlsTemporarily()
-            case .ended:
-                break
+            // Only fires on actual pointer movement, so a still cursor lets the
+            // idle timer run out.
+            if case .active = phase { showChromeTemporarily() }
+        }
+        .onChange(of: chromePinned) { _, pinned in
+            if pinned {
+                hideChromeTask?.cancel()
+                chromeVisible = true
+            } else {
+                showChromeTemporarily()
             }
         }
         .onAppear {
             appState.onAppear()
-            showControlsTemporarily()
+            showChromeTemporarily()
         }
     }
 
-    private func showControlsTemporarily() {
-        controlsVisible = true
-        hideControlsTask?.cancel()
-        hideControlsTask = Task {
-            try? await Task.sleep(for: .seconds(3))
-            if !Task.isCancelled {
-                controlsVisible = false
+    /// Arranges the three pods for the current width: side by side while there is
+    /// room, then progressively stacked so they never overlap.
+    @ViewBuilder
+    private var bottomChrome: some View {
+        Group {
+            switch layout {
+            case .wide:
+                // Transport stays optically centered in the window, the other two
+                // pods hug the edges around it.
+                ZStack(alignment: .bottom) {
+                    HStack(alignment: .bottom, spacing: 12) {
+                        badge
+                        Spacer(minLength: 0)
+                        visualizerPod
+                    }
+                    controlsPod
+                }
+            case .medium:
+                VStack(alignment: .leading, spacing: 10) {
+                    badge
+                    HStack(alignment: .bottom, spacing: 12) {
+                        controlsPod
+                        Spacer(minLength: 0)
+                        visualizerPod
+                    }
+                }
+            case .compact:
+                VStack(spacing: 10) {
+                    badge
+                    controlsPod
+                    visualizerPod
+                }
             }
         }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 20)
+    }
+
+    @ViewBuilder
+    private var badge: some View {
+        if let info = appState.nowPlaying {
+            NowPlayingBadge(info: info, compact: layout == .compact)
+                .frame(maxWidth: badgeMaxWidth, alignment: .leading)
+        }
+    }
+
+    private var controlsPod: some View {
+        ControlsPod()
+            .onHover { pointerOverControls = $0 }
+    }
+
+    private var visualizerPod: some View {
+        VisualizerPod(optionsShown: $optionsShown)
+            .onHover { pointerOverVisualizer = $0 }
+    }
+
+    /// Keeps the badge clear of the centered transport pod in the wide layout,
+    /// and merely readable in the others.
+    private var badgeMaxWidth: CGFloat {
+        switch layout {
+        case .wide: max(220, (viewportWidth - 400) / 2 - 28)
+        case .medium: 420
+        case .compact: .infinity
+        }
+    }
+
+    private func showChromeTemporarily() {
+        chromeVisible = true
+        hideChromeTask?.cancel()
+        guard !chromePinned else { return }
+        hideChromeTask = Task {
+            try? await Task.sleep(for: chromeIdleDelay)
+            if !Task.isCancelled && !chromePinned {
+                chromeVisible = false
+            }
+        }
+    }
+}
+
+// MARK: - Hit targets
+
+extension View {
+    /// Grows a control's clickable area without changing what the layout sees:
+    /// pad out, claim the padded rect for hit testing, then pad back in by the
+    /// same amount. SF Symbols hit-test to their tight glyph box otherwise, so
+    /// the icon buttons demand pixel-accurate aim.
+    ///
+    /// Keep `horizontal` below half the row spacing so neighbours don't overlap.
+    func hitTarget(horizontal: CGFloat = 6, vertical: CGFloat = 10) -> some View {
+        padding(.horizontal, horizontal)
+            .padding(.vertical, vertical)
+            .contentShape(.rect)
+            .padding(.horizontal, -horizontal)
+            .padding(.vertical, -vertical)
     }
 }
 
@@ -73,6 +211,10 @@ struct ContentView: View {
 
 struct NowPlayingBadge: View {
     let info: NowPlayingInfo
+    /// Drops the album line and shrinks the artwork when vertical room is tight.
+    var compact = false
+
+    private var artSize: CGFloat { compact ? 40 : 52 }
 
     var body: some View {
         HStack(spacing: 12) {
@@ -90,7 +232,7 @@ struct NowPlayingBadge: View {
                     }
                 }
             }
-            .frame(width: 52, height: 52)
+            .frame(width: artSize, height: artSize)
             .clipShape(RoundedRectangle(cornerRadius: 8))
 
             VStack(alignment: .leading, spacing: 2) {
@@ -101,7 +243,7 @@ struct NowPlayingBadge: View {
                         .font(.subheadline)
                         .opacity(0.85)
                 }
-                if !info.album.isEmpty {
+                if !compact, !info.album.isEmpty {
                     Text(info.album)
                         .font(.caption)
                         .opacity(0.6)
@@ -112,127 +254,191 @@ struct NowPlayingBadge: View {
             .padding(.trailing, 6)
         }
         .padding(8)
-        .frame(maxWidth: 380, alignment: .leading)
-        .fixedSize(horizontal: true, vertical: false)
+        .fixedSize(horizontal: false, vertical: true)
         .glassEffect(.regular, in: .rect(cornerRadius: 16))
     }
 }
 
-// MARK: - Controls bar
+// MARK: - Source, capture and transport (centered)
 
-struct ControlsBar: View {
+struct ControlsPod: View {
     @Environment(AppState.self) private var appState
-    @State private var optionsShown = false
 
     var body: some View {
         @Bindable var state = appState
 
-        GlassEffectContainer(spacing: 16) {
-            HStack(spacing: 16) {
-                // Source + transport pod
-                HStack(spacing: 14) {
-                    Menu {
-                        Picker("Audio Source", selection: $state.sourceKind) {
-                            ForEach(AudioSourceKind.allCases) { kind in
-                                Label(kind.label, systemImage: kind.symbol).tag(kind)
-                            }
-                        }
-                        .pickerStyle(.inline)
-                        .labelsHidden()
-
-                        if state.sourceKind == .inputDevice {
-                            Divider()
-                            Picker("Input Device", selection: $state.selectedInputDeviceID) {
-                                Text("Default input").tag(AudioDeviceID?.none)
-                                ForEach(appState.inputDevices) { device in
-                                    Text(device.name).tag(AudioDeviceID?.some(device.id))
-                                }
-                            }
-                        }
-                        if state.sourceKind == .audioFile {
-                            Divider()
-                            Button("Choose File…") { appState.openFilePanel() }
-                        }
-                    } label: {
-                        Label(appState.sourceKind.label, systemImage: appState.sourceKind.symbol)
+        HStack(spacing: 14) {
+            Menu {
+                Picker("Audio Source", selection: $state.sourceKind) {
+                    ForEach(AudioSourceKind.allCases) { kind in
+                        Label(kind.label, systemImage: kind.symbol).tag(kind)
                     }
-                    .menuStyle(.borderlessButton)
-                    .fixedSize()
-
-                    Divider().frame(height: 20)
-
-                    Button {
-                        appState.previousTrack()
-                    } label: {
-                        Image(systemName: "backward.fill")
-                    }
-                    .buttonStyle(.plain)
-
-                    Button {
-                        appState.togglePlay()
-                    } label: {
-                        Image(systemName: appState.isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                            .font(.system(size: 34))
-                    }
-                    .buttonStyle(.plain)
-
-                    Button {
-                        appState.nextTrack()
-                    } label: {
-                        Image(systemName: "forward.fill")
-                    }
-                    .buttonStyle(.plain)
                 }
-                .padding(.horizontal, 18)
-                .padding(.vertical, 10)
-                .glassEffect(.regular.interactive(), in: .capsule)
+                .pickerStyle(.inline)
+                .labelsHidden()
 
-                // Visualizer + options pod
-                HStack(spacing: 12) {
-                    Menu {
-                        Picker("Visualizer", selection: $state.visualizerID) {
-                            ForEach(VisualizerRegistry.all) { descriptor in
-                                Text(descriptor.name).tag(descriptor.id)
-                            }
-                        }
-                        .pickerStyle(.inline)
-                        .labelsHidden()
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "sparkles")
-                            Text(currentVisualizerName)
-                                .fontWeight(.medium)
+                if state.sourceKind == .inputDevice {
+                    Divider()
+                    Picker("Input Device", selection: $state.selectedInputDeviceID) {
+                        Text("Default input").tag(AudioDeviceID?.none)
+                        ForEach(appState.inputDevices) { device in
+                            Text(device.name).tag(AudioDeviceID?.some(device.id))
                         }
                     }
-                    .menuStyle(.borderlessButton)
-                    .fixedSize()
-
-                    Divider().frame(height: 20)
-
-                    Button {
-                        optionsShown.toggle()
-                    } label: {
-                        Image(systemName: "slider.horizontal.3")
-                    }
-                    .buttonStyle(.plain)
-                    .help("Visualizer options")
-                    .popover(isPresented: $optionsShown, arrowEdge: .top) {
-                        OptionsPanel()
-                    }
-
-                    Button {
-                        NSApp.keyWindow?.toggleFullScreen(nil)
-                    } label: {
-                        Image(systemName: "arrow.up.left.and.arrow.down.right")
-                    }
-                    .buttonStyle(.plain)
-                    .help("Toggle full screen")
                 }
-                .padding(.horizontal, 18)
-                .padding(.vertical, 10)
-                .glassEffect(.regular.interactive(), in: .capsule)
+                if state.sourceKind == .audioFile {
+                    Divider()
+                    Button("Choose File…") { appState.openFilePanel() }
+                }
+            } label: {
+                Label(appState.sourceKind.label, systemImage: appState.sourceKind.symbol)
+                    .hitTarget(horizontal: 4, vertical: 10)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+
+            Divider().frame(height: 20)
+
+            CaptureButton()
+
+            if appState.showsTransport {
+                Divider().frame(height: 20)
+
+                Button {
+                    appState.previousTrack()
+                } label: {
+                    Image(systemName: "backward.fill")
+                        .hitTarget()
+                }
+                .buttonStyle(.plain)
+                .help("Previous track")
+
+                Button {
+                    appState.togglePlay()
+                } label: {
+                    Image(systemName: appState.isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                        .font(.system(size: 34))
+                        .hitTarget(horizontal: 6, vertical: 4)
+                }
+                .buttonStyle(.plain)
+                .help(appState.isPlaying ? "Pause" : "Play")
+
+                Button {
+                    appState.nextTrack()
+                } label: {
+                    Image(systemName: "forward.fill")
+                        .hitTarget()
+                }
+                .buttonStyle(.plain)
+                .help("Next track")
             }
         }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 10)
+        .glassEffect(.regular.interactive(), in: .capsule)
+        .foregroundStyle(.white)
+    }
+}
+
+/// Starts and stops the audio feeding the analyzer, separate from transport.
+struct CaptureButton: View {
+    @Environment(AppState.self) private var appState
+
+    /// Matches the purple macOS uses for the menu bar audio-capture indicator.
+    private static let captureTint = Color(nsColor: .systemPurple)
+
+    var body: some View {
+        let active = appState.isCaptureActive
+
+        Button {
+            appState.toggleCapture()
+        } label: {
+            Image(systemName: symbol)
+                .font(.system(size: 22))
+                // Active: white glyph inside a purple disc, like the menu bar chip.
+                .symbolRenderingMode(active ? .palette : .monochrome)
+                .foregroundStyle(.white, Self.captureTint)
+                .shadow(color: Self.captureTint.opacity(active ? 0.7 : 0), radius: 6)
+                .hitTarget()
+        }
+        .buttonStyle(.plain)
+        .animation(.easeInOut(duration: 0.2), value: active)
+        .help(helpText)
+    }
+
+    private var symbol: String {
+        if appState.sourceKind == .audioFile {
+            return appState.isCaptureActive ? "pause.circle.fill" : "play.circle.fill"
+        }
+        return appState.isCaptureActive ? "waveform.circle.fill" : "waveform.circle"
+    }
+
+    private var helpText: String {
+        switch appState.sourceKind {
+        case .audioFile:
+            return appState.isCaptureActive ? "Pause file" : "Play file"
+        default:
+            return appState.isCaptureActive ? "Stop listening" : "Start listening"
+        }
+    }
+}
+
+// MARK: - Visualizer pod (trailing)
+
+struct VisualizerPod: View {
+    @Environment(AppState.self) private var appState
+    /// Owned by ContentView so the chrome stays up while the popover is open.
+    @Binding var optionsShown: Bool
+
+    var body: some View {
+        @Bindable var state = appState
+
+        HStack(spacing: 12) {
+            Menu {
+                Picker("Visualizer", selection: $state.visualizerID) {
+                    ForEach(VisualizerRegistry.all) { descriptor in
+                        Text(descriptor.name).tag(descriptor.id)
+                    }
+                }
+                .pickerStyle(.inline)
+                .labelsHidden()
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "sparkles")
+                    Text(currentVisualizerName)
+                        .fontWeight(.medium)
+                }
+                .hitTarget(horizontal: 4, vertical: 10)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+
+            Divider().frame(height: 20)
+
+            Button {
+                optionsShown.toggle()
+            } label: {
+                Image(systemName: "slider.horizontal.3")
+                    .hitTarget()
+            }
+            .buttonStyle(.plain)
+            .help("Visualizer options")
+            .popover(isPresented: $optionsShown, arrowEdge: .top) {
+                OptionsPanel()
+            }
+
+            Button {
+                NSApp.keyWindow?.toggleFullScreen(nil)
+            } label: {
+                Image(systemName: "arrow.up.left.and.arrow.down.right")
+                    .hitTarget()
+            }
+            .buttonStyle(.plain)
+            .help("Toggle full screen")
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 10)
+        .glassEffect(.regular.interactive(), in: .capsule)
         .foregroundStyle(.white)
     }
 
@@ -247,74 +453,127 @@ struct OptionsPanel: View {
     @Environment(AppState.self) private var appState
 
     var body: some View {
-        @Bindable var settings = appState.settings
+        let settings = appState.settings
         let descriptor = VisualizerRegistry.descriptor(id: appState.visualizerID)
 
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 0) {
             if let descriptor {
-                VStack(alignment: .leading, spacing: 3) {
-                    Label(descriptor.name, systemImage: "sparkles")
-                        .font(.headline)
-                    Text(descriptor.tagline)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
+                header(descriptor, settings: settings)
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Palette")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                PalettePicker(selection: $settings.paletteIndex)
-            }
+                Divider()
 
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Audio Response")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                LabeledSlider(name: "Sensitivity", value: $settings.sensitivity, range: 0.2...3.0)
-                LabeledSlider(name: "Speed", value: $settings.speed, range: 0.2...3.0)
-            }
+                VStack(alignment: .leading, spacing: 20) {
+                    OptionSection("Palette") {
+                        PalettePicker(selection: settings.binding(descriptor.id, \.paletteIndex))
+                    }
 
-            if let descriptor, !descriptor.options.isEmpty {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("\(descriptor.name) Options")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    ForEach(descriptor.options) { option in
-                        LabeledSlider(
-                            name: option.name,
-                            value: Binding(
-                                get: { appState.settings.value(visualizer: descriptor.id, option: option) },
-                                set: { appState.settings.setValue($0, visualizer: descriptor.id, option: option) }),
-                            range: option.range)
+                    OptionSection("Audio Response") {
+                        LabeledSlider(name: "Sensitivity",
+                                      value: settings.binding(descriptor.id, \.sensitivity),
+                                      range: 0.2...3.0,
+                                      defaultValue: 1.0)
+                        LabeledSlider(name: "Speed",
+                                      value: settings.binding(descriptor.id, \.speed),
+                                      range: 0.2...3.0,
+                                      defaultValue: 1.0)
+                    }
+
+                    if !descriptor.options.isEmpty {
+                        OptionSection("\(descriptor.name) Options") {
+                            ForEach(descriptor.options) { option in
+                                LabeledSlider(name: option.name,
+                                              value: settings.binding(descriptor.id, option: option),
+                                              range: option.range,
+                                              defaultValue: option.defaultValue)
+                            }
+                        }
                     }
                 }
+                .padding(18)
             }
         }
-        .padding(20)
-        .frame(width: 320)
+        .frame(width: 340)
+    }
+
+    /// Name, tagline, and the reset that only applies to this visualizer.
+    private func header(_ descriptor: VisualizerDescriptor, settings: VisualizerSettings) -> some View {
+        let isDefault = settings.isDefault(descriptor)
+
+        return HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "sparkles")
+                .font(.title3)
+                .foregroundStyle(.tint)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(descriptor.name)
+                    .font(.headline)
+                Text(descriptor.tagline)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 8)
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) { settings.reset(descriptor) }
+            } label: {
+                Image(systemName: "arrow.counterclockwise")
+                    .hitTarget(horizontal: 8, vertical: 8)
+            }
+            .buttonStyle(.borderless)
+            .disabled(isDefault)
+            .help(isDefault ? "Already at defaults" : "Reset \(descriptor.name) to defaults")
+        }
+        .padding(18)
     }
 }
 
-/// Horizontal row of gradient swatches, one per palette.
+/// Small caption-headed group used throughout the options popover.
+struct OptionSection<Content: View>: View {
+    private let title: String
+    private let content: Content
+
+    init(_ title: String, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+            content
+        }
+    }
+}
+
+/// Horizontal row of gradient swatches, one per palette, each labelled.
 struct PalettePicker: View {
     @Binding var selection: Int
 
     var body: some View {
         HStack(spacing: 8) {
             ForEach(Array(Palettes.names.enumerated()), id: \.offset) { index, name in
+                let isSelected = selection == index
                 Button {
-                    selection = index
+                    withAnimation(.easeInOut(duration: 0.15)) { selection = index }
                 } label: {
-                    Capsule()
-                        .fill(gradient(for: index))
-                        .frame(height: 22)
-                        .overlay {
-                            Capsule()
-                                .strokeBorder(selection == index ? Color.white : .white.opacity(0.15),
-                                              lineWidth: selection == index ? 2 : 1)
-                        }
+                    VStack(spacing: 4) {
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(gradient(for: index))
+                            .frame(height: 26)
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 6)
+                                    .strokeBorder(isSelected ? Color.white : .white.opacity(0.15),
+                                                  lineWidth: isSelected ? 2 : 1)
+                            }
+                        Text(name)
+                            .font(.system(size: 9))
+                            .foregroundStyle(isSelected ? .primary : .secondary)
+                            .lineLimit(1)
+                    }
+                    // The label and the gap between it and the swatch count too.
+                    .hitTarget(horizontal: 3, vertical: 4)
                 }
                 .buttonStyle(.plain)
                 .help(name)
@@ -337,15 +596,35 @@ struct LabeledSlider: View {
     let name: String
     @Binding var value: Double
     let range: ClosedRange<Double>
+    /// When given, the row offers a one-click revert once it's been moved.
+    var defaultValue: Double?
+
+    private var isModified: Bool {
+        guard let defaultValue else { return false }
+        return abs(value - defaultValue) > 0.005
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            HStack {
+            HStack(spacing: 6) {
                 Text(name).font(.caption)
-                Spacer()
+                Spacer(minLength: 4)
+                if isModified, let defaultValue {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.15)) { value = defaultValue }
+                    } label: {
+                        Image(systemName: "arrow.counterclockwise")
+                            .font(.system(size: 9))
+                            .hitTarget(horizontal: 8, vertical: 8)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .help("Reset to default")
+                    .transition(.opacity)
+                }
                 Text(value, format: .number.precision(.fractionLength(2)))
                     .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(isModified ? .primary : .secondary)
             }
             Slider(value: $value, in: range)
         }
