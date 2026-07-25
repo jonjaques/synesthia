@@ -20,6 +20,7 @@ final class MusicController {
     private(set) var automationDenied = false
 
     private var pollTask: Task<Void, Never>?
+    private var artworkAttempts = 0
     private var compiledScripts = [String: NSAppleScript]()
 
     var isMusicAppRunning: Bool {
@@ -83,15 +84,23 @@ final class MusicController {
             return
         }
         isRunning = true
+        // Note: AppleScript cannot coerce the `player state` constant to text
+        // ("playing as text" throws), so map it with comparisons instead.
         let result = run("""
         tell application "Music"
-            set st to (player state as text)
-            if st is in {"playing", "paused"} then
-                set t to current track
-                return st & linefeed & (name of t) & linefeed & (artist of t) & linefeed & (album of t) & linefeed & ((database ID of t) as text)
-            else
-                return st
+            set stateText to "stopped"
+            if player state is playing then
+                set stateText to "playing"
+            else if player state is paused then
+                set stateText to "paused"
             end if
+            if stateText is not "stopped" then
+                try
+                    set t to current track
+                    return stateText & linefeed & (name of t) & linefeed & (artist of t) & linefeed & (album of t) & linefeed & ((database ID of t) as text)
+                end try
+            end if
+            return stateText
         end tell
         """)
         guard let text = result?.stringValue else { return }
@@ -101,6 +110,13 @@ final class MusicController {
             let info = TrackInfo(title: parts[1], artist: parts[2], album: parts[3], databaseID: parts[4])
             if info != track {
                 track = info
+                artwork = nil
+                artworkAttempts = 0
+            }
+            // Artwork can lag behind track changes (especially streaming),
+            // so retry a few polls before giving up.
+            if artwork == nil, artworkAttempts < 3 {
+                artworkAttempts += 1
                 fetchArtwork()
             }
         } else {
@@ -113,16 +129,18 @@ final class MusicController {
         let result = run("""
         tell application "Music"
             try
-                return data of artwork 1 of current track
+                return raw data of artwork 1 of current track
             on error
-                return ""
+                try
+                    return data of artwork 1 of current track
+                on error
+                    return ""
+                end try
             end try
         end tell
         """)
         if let data = result?.data, !data.isEmpty, let image = NSImage(data: data) {
             artwork = image
-        } else {
-            artwork = nil
         }
     }
 
