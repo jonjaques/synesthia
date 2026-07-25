@@ -1,6 +1,13 @@
 import AppKit
 import Observation
 
+// The entire Music.app integration is compiled out of the Mac App Store
+// configuration. Only builds that define MUSIC_APP_SOURCE (Debug and Direct)
+// contain any Apple Events code, and only those ship the matching
+// entitlements — see Synesthia-Direct.entitlements and
+// docs/app-store-launch-plan.md §B5.
+#if MUSIC_APP_SOURCE
+
 /// Controls the Music app over Apple Events and mirrors its now-playing state.
 /// The first command triggers macOS's automation consent prompt.
 ///
@@ -192,3 +199,5 @@ final class MusicController {
         return result
     }
 }
+
+#endif

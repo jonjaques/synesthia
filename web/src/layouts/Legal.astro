@@ -1,0 +1,140 @@
+---
+/**
+ * Long-form text pages (privacy, support). Deliberately plainer than the
+ * landing page: no canvas, no reveal-on-scroll, no audio — these are pages
+ * people arrive at with a question, including App Review.
+ */
+import Base from '../layouts/Base.astro';
+import Mark from '../components/Mark.astro';
+import { RELEASE, SITE } from '../consts';
+
+interface Props {
+	title: string;
+	description: string;
+	heading: string;
+	standfirst: string;
+	updated?: string;
+}
+
+const { title, description, heading, standfirst, updated } = Astro.props;
+---
+
+<Base title={`${title} — ${SITE.name}`} description={description}>
+	<header class="border-b border-violet/15">
+		<div class="rail flex items-center justify-between gap-4 py-6">
+			<a href="/" class="flex items-center gap-2.5" aria-label={`${SITE.name} home`}>
+				<Mark class="h-6 w-6" />
+				<span class="font-display font-bold tracking-tight">Synesthia</span>
+			</a>
+			<nav class="flex items-center gap-6 text-sm text-dim">
+				<a href="/support" class="transition-colors hover:text-paper">Support</a>
+				<a href="/privacy" class="transition-colors hover:text-paper">Privacy</a>
+			</nav>
+		</div>
+	</header>
+
+	<main id="main" class="rail max-w-3xl py-16 sm:py-24">
+		<h1 class="display text-[clamp(2.25rem,6vw,3.5rem)]">{heading}</h1>
+		<p class="mt-6 text-lg text-dim">{standfirst}</p>
+		{
+			updated && (
+				<p class="tag mt-6">
+					Last updated {updated}
+				</p>
+			)
+		}
+
+		<div class="legal mt-12">
+			<slot />
+		</div>
+	</main>
+
+	<footer class="border-t border-violet/15">
+		<div
+			class="rail flex flex-col items-center justify-between gap-4 py-8 text-sm text-mute sm:flex-row"
+		>
+			<div class="flex items-center gap-2.5">
+				<Mark class="h-5 w-5" />
+				<span class="font-display font-bold tracking-tight text-dim">Synesthia</span>
+			</div>
+			<p>© 2026 {SITE.author}. {RELEASE.requires}.</p>
+		</div>
+	</footer>
+</Base>
+
+<style is:global>
+	/* Scoped to the prose block so the landing page is untouched. */
+	.legal h2 {
+		font-family: var(--font-display);
+		font-weight: 700;
+		letter-spacing: -0.02em;
+		font-size: 1.5rem;
+		margin-top: 3rem;
+		margin-bottom: 0.75rem;
+	}
+
+	.legal h3 {
+		font-family: var(--font-display);
+		font-weight: 600;
+		font-size: 1.125rem;
+		margin-top: 2rem;
+		margin-bottom: 0.5rem;
+	}
+
+	.legal h2:first-child,
+	.legal h3:first-child {
+		margin-top: 0;
+	}
+
+	.legal p,
+	.legal li {
+		color: var(--color-dim);
+	}
+
+	.legal p {
+		margin-bottom: 1rem;
+	}
+
+	.legal ul {
+		list-style: disc;
+		padding-left: 1.35rem;
+		margin-bottom: 1rem;
+	}
+
+	.legal li {
+		margin-bottom: 0.5rem;
+	}
+
+	.legal li::marker {
+		color: var(--color-mute);
+	}
+
+	.legal strong {
+		color: var(--color-paper);
+		font-weight: 600;
+	}
+
+	.legal a {
+		color: var(--color-spec-cyan);
+		text-decoration: underline;
+		text-underline-offset: 3px;
+	}
+
+	.legal a:hover {
+		color: var(--color-paper);
+	}
+
+	.legal dl {
+		margin-bottom: 1rem;
+	}
+
+	.legal dt {
+		color: var(--color-paper);
+		font-weight: 600;
+		margin-top: 1rem;
+	}
+
+	.legal dd {
+		color: var(--color-dim);
+	}
+</style>

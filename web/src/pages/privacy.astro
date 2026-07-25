@@ -1,0 +1,136 @@
+---
+/**
+ * Mandatory App Store external dependency. The claims here must stay in sync
+ * with `Synesthia/PrivacyInfo.xcprivacy` and the App Store Connect privacy
+ * answers ("Data Not Collected"); if one changes, change all three.
+ */
+import Legal from '../layouts/Legal.astro';
+import { CONTACT, GA_ENABLED, LEGAL, SITE } from '../consts';
+---
+
+<Legal
+	title="Privacy Policy"
+	description="Synesthia collects nothing. Audio is analysed on your Mac, in memory, and never recorded, stored, or transmitted."
+	heading="Privacy Policy"
+	standfirst="Synesthia collects no personal data. Audio is analysed on your Mac, in memory, and is never recorded, stored, or transmitted anywhere."
+	updated={LEGAL.effective}
+>
+	<h2>The short version</h2>
+	<p>
+		The Synesthia app has <strong>no analytics, no accounts, no networking, and no third-party
+		SDKs</strong>. It does not phone home. Sound reaching the app is turned into numbers — loudness
+		per frequency band — used to draw the next frame, and then discarded. Nothing is written to
+		disk, and nothing leaves your Mac.
+	</p>
+
+	<h2>What the app does with audio</h2>
+	<p>
+		Synesthia reads short slices of audio a few dozen times a second and runs a Fourier transform
+		over them to get the levels of 64 frequency bands. Those numbers drive the visuals. The audio
+		buffer is overwritten by the next slice.
+	</p>
+	<ul>
+		<li>Audio is <strong>never written to a file</strong>.</li>
+		<li>Audio is <strong>never sent over a network</strong>.</li>
+		<li>There is no recording feature, and no way to export what was heard.</li>
+	</ul>
+
+	<h2>Permissions, and why each one is asked for</h2>
+	<p>
+		Synesthia asks for a permission only at the moment you choose an audio source that needs it.
+		You can use the app without granting anything — it ships with a demo track, and can open an
+		audio file you pick yourself.
+	</p>
+
+	<dl>
+		<dt>Screen &amp; System Audio Recording</dt>
+		<dd>
+			Required to visualize what your Mac is playing. macOS provides no dedicated “capture system
+			audio” API; the only sanctioned route is ScreenCaptureKit, the screen-recording framework,
+			which is why the permission is worded around screen recording. Synesthia attaches the video
+			leg of that capture at <strong>2×2 pixels</strong> and discards every frame — it uses the
+			audio only. It never captures, stores, or transmits your screen contents.
+		</dd>
+
+		<dt>Microphone</dt>
+		<dd>
+			Required only for the “Audio input” source, so a microphone, line-in, or audio interface can
+			drive the visuals. The input is analysed and never played back or saved.
+		</dd>
+
+		<dt>Automation (Music)</dt>
+		<dd>
+			Used only by the version of Synesthia downloaded directly from this site, and only for the
+			“Music app” source: reading the current track’s title, artist, album, and artwork so they can
+			be shown on screen, and sending play, pause, and skip commands. Nothing is written to your
+			library. <strong>The Mac App Store version does not include this feature and never sends
+			Apple Events at all.</strong>
+		</dd>
+	</dl>
+
+	<h2>What is stored on your Mac</h2>
+	<p>
+		Synesthia keeps a small amount of local preference data, readable only by the app, in the
+		standard macOS preferences store. None of it is transmitted.
+	</p>
+	<ul>
+		<li>Your chosen visualizer, palette, and slider settings.</li>
+		<li>Your chosen audio source.</li>
+		<li>
+			A <strong>security-scoped bookmark</strong> to the audio file you last opened, so it can be
+			reopened next launch. This is a macOS-issued reference to that one file — it grants no
+			broader access to your disk.
+		</li>
+	</ul>
+	<p>Deleting the app removes your access to this data; it is never held anywhere else.</p>
+
+	<h2>This website</h2>
+	{
+		GA_ENABLED ? (
+			<Fragment>
+				<p>
+					The app and the website are separate. This site uses <strong>Google Analytics 4</strong>{' '}
+					to count visits and understand which pages people read. It is configured with IP
+					anonymisation enabled, and it sets cookies in your browser.
+				</p>
+				<p>
+					Analytics data is processed by Google; see{' '}
+					<a href="https://policies.google.com/privacy" rel="nofollow noopener">
+						Google’s privacy policy
+					</a>
+					. You can opt out with Google’s{' '}
+					<a href="https://tools.google.com/dlpage/gaoptout" rel="nofollow noopener">
+						opt-out browser add-on
+					</a>
+					, by blocking the script in your browser, or by enabling Do Not Track / a content
+					blocker. Nothing on this site is linked to anything in the app.
+				</p>
+			</Fragment>
+		) : (
+			<p>
+				This site uses no analytics and sets no cookies. Web fonts are self-hosted, so no request
+				is made to a third-party server when you load a page.
+			</p>
+		)
+	}
+
+	<h2>Children</h2>
+	<p>
+		Synesthia is not directed at children and collects no personal information from anyone,
+		including children under 13.
+	</p>
+
+	<h2>Changes to this policy</h2>
+	<p>
+		If this policy changes in a way that affects what the app does with your data, the date at the
+		top of this page will change and the app’s new behaviour will be described here before, or at
+		the same time as, the release that introduces it.
+	</p>
+
+	<h2>Contact</h2>
+	<p>
+		Questions about privacy: <a href={`mailto:${CONTACT.privacy}`}>{CONTACT.privacy}</a>. For
+		anything else, see the <a href="/support">support page</a>.
+	</p>
+	<p>{SITE.name} is made by {SITE.author}.</p>
+</Legal>

@@ -1,0 +1,100 @@
+---
+/**
+ * Mandatory App Store external dependency — this is the URL that goes in the
+ * "Support URL" field, and the one the app's Help menu opens. Apple checks
+ * that it resolves and is relevant, so it must stay a real support page.
+ */
+import Legal from '../layouts/Legal.astro';
+import { CONTACT, RELEASE, SITE } from '../consts';
+
+const faqs = [
+	{
+		q: 'The window is black and nothing is moving.',
+		a: 'The canvas only reacts to sound that is actually playing. Check that the source in the control bar matches where your audio is coming from, that the listen button is lit, and that something is playing. If you just granted a permission, see the next item.',
+	},
+	{
+		q: 'I allowed Screen & System Audio Recording but it still does not work.',
+		a: 'macOS often does not hand a freshly granted capture permission to an app that is already running. Press the listen button once more; if it still fails, quit Synesthia and open it again. This is a quirk of how macOS delivers the grant, not a setting you have missed.',
+	},
+	{
+		q: 'Why does a music visualizer need screen recording permission?',
+		a: 'macOS has no dedicated API for capturing system audio. The only sanctioned route is ScreenCaptureKit — the screen-recording framework — which can attach an audio stream to a screen capture. Synesthia takes that video leg at 2×2 pixels and throws every frame away. It never captures your screen.',
+	},
+	{
+		q: 'Can I use it without granting anything?',
+		a: 'Yes. Synesthia ships with a demo track that plays with no permissions at all, and the “Audio file” source plays any file you pick yourself — choosing a file in the open panel is itself the permission.',
+	},
+	{
+		q: 'The fans spin up / my battery drains.',
+		a: 'Synesthia stops rendering entirely when its window is hidden, minimised, or behind another window, and drops to a low frame rate when nothing is playing. If you are seeing heavy load with the window visible and audio playing, that is the GPU doing the work it is meant to — try a smaller window or a different visualizer.',
+	},
+	{
+		q: 'My display keeps going to sleep. / My display never sleeps.',
+		a: 'Synesthia holds a display-sleep assertion only while audio is actually flowing, and releases it the moment playback stops. Stop the listen button and normal sleep behaviour returns immediately.',
+	},
+	{
+		q: 'I have photosensitivity concerns.',
+		a: 'Turn on System Settings › Accessibility › Display › Reduce Motion. Synesthia honours it: the animation clock slows, beat-driven flashing is heavily damped, and brightness changes are smoothed so they drift rather than strobe.',
+	},
+	{
+		q: 'Where did the Music app source go?',
+		a: 'It is present in the version downloaded directly from this site, and not in the Mac App Store version. To visualize Apple Music in the App Store version, choose “System audio” — it sees Music.app perfectly; only the on-screen track name and transport buttons are missing.',
+	},
+	{
+		q: 'It says Metal is unavailable.',
+		a: 'Synesthia renders on the GPU and needs Metal. This message almost always means it is running in a virtual machine without graphics acceleration. It cannot be worked around in software.',
+	},
+];
+---
+
+<Legal
+	title="Support"
+	description="Help with Synesthia for macOS — permissions, troubleshooting, requirements, and how to get in touch."
+	heading="Support"
+	standfirst="Most questions are about permissions, and most of those have the same answer. Start here; if none of it helps, write to me directly."
+>
+	<h2>Get in touch</h2>
+	<p>
+		Email <a href={`mailto:${CONTACT.support}`}>{CONTACT.support}</a>. It reaches a real person and
+		I answer.
+	</p>
+	<p>When something is broken, these details make it far quicker to fix:</p>
+	<ul>
+		<li>Your macOS version and Mac model.</li>
+		<li>Which audio source you had selected.</li>
+		<li>Whether you downloaded from the Mac App Store or from this site.</li>
+		<li>What you expected to happen, and what happened instead.</li>
+	</ul>
+
+	<h2>Requirements</h2>
+	<ul>
+		<li>{RELEASE.requires}</li>
+		<li>{RELEASE.chip}</li>
+		<li>A Mac with Metal support (any physical Mac that runs macOS 26)</li>
+	</ul>
+
+	<h2>Common questions</h2>
+	{
+		faqs.map((item) => (
+			<Fragment>
+				<h3>{item.q}</h3>
+				<p>{item.a}</p>
+			</Fragment>
+		))
+	}
+
+	<h2>Resetting permissions</h2>
+	<p>
+		If a permission is in a confused state, the reliable fix is to remove Synesthia from the
+		relevant list in <strong>System Settings › Privacy &amp; Security</strong> (Screen &amp; System
+		Audio Recording, Microphone, or Automation), then quit and reopen the app so it asks again.
+	</p>
+
+	<h2>Privacy</h2>
+	<p>
+		Synesthia collects nothing, has no analytics, and does no networking. The full statement is on
+		the <a href="/privacy">privacy page</a>.
+	</p>
+
+	<p>{SITE.name} is made by {SITE.author}.</p>
+</Legal>

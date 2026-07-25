@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import CoreAudio
 
 /// How long the cursor may sit still before the foreground UI fades away.
@@ -53,9 +54,18 @@ struct ContentView: View {
     }
 
     var body: some View {
+        @Bindable var state = appState
+
         ZStack(alignment: .bottom) {
-            MetalVisualizerView(appState: appState)
-                .ignoresSafeArea()
+            // No Metal device (most plausibly a VM) means no canvas — say so
+            // rather than crashing. See MetalRenderContext.
+            if let context = MetalRenderContext.shared {
+                MetalVisualizerView(appState: appState, context: context)
+                    .ignoresSafeArea()
+            } else {
+                MetalUnavailableView()
+                    .ignoresSafeArea()
+            }
 
             VStack(spacing: 8) {
                 if let message = appState.statusMessage {
@@ -112,6 +122,10 @@ struct ContentView: View {
         .onAppear {
             appState.onAppear()
             showChromeTemporarily()
+        }
+        .sheet(isPresented: $state.showsWelcome) {
+            WelcomeView()
+                .environment(appState)
         }
     }
 
@@ -184,7 +198,11 @@ struct ContentView: View {
     private func showChromeTemporarily() {
         chromeVisible = true
         hideChromeTask?.cancel()
-        guard !chromePinned else { return }
+        // Fading the controls out on pointer idle is right for a mouse and
+        // actively hostile to anyone driving the app by keyboard or switch —
+        // they never generate the pointer movement that brings it back. With
+        // VoiceOver running, the chrome simply stays put.
+        guard !chromePinned, !NSWorkspace.shared.isVoiceOverEnabled else { return }
         hideChromeTask = Task {
             try? await Task.sleep(for: chromeIdleDelay)
             if !Task.isCancelled && !chromePinned {
@@ -320,6 +338,7 @@ struct ControlsPod: View {
                 }
                 .buttonStyle(.plain)
                 .help("Previous track")
+                .accessibilityLabel("Previous track")
 
                 Button {
                     appState.togglePlay()
@@ -330,6 +349,7 @@ struct ControlsPod: View {
                 }
                 .buttonStyle(.plain)
                 .help(appState.isPlaying ? "Pause" : "Play")
+                .accessibilityLabel(appState.isPlaying ? "Pause" : "Play")
 
                 Button {
                     appState.nextTrack()
@@ -339,6 +359,7 @@ struct ControlsPod: View {
                 }
                 .buttonStyle(.plain)
                 .help("Next track")
+                .accessibilityLabel("Next track")
             }
         }
         .padding(.horizontal, 18)
@@ -374,6 +395,8 @@ struct CaptureButton: View {
         .buttonStyle(.plain)
         .animation(.easeInOut(duration: 0.2), value: active)
         .help(helpText)
+        .accessibilityLabel(helpText)
+        .accessibilityAddTraits(active ? .isSelected : [])
     }
 
     private var symbol: String {
@@ -434,6 +457,7 @@ struct VisualizerPod: View {
             }
             .buttonStyle(.plain)
             .help("Visualizer options")
+            .accessibilityLabel("Visualizer options")
             .popover(isPresented: $optionsShown, arrowEdge: .top) {
                 OptionsPanel()
             }
@@ -446,6 +470,7 @@ struct VisualizerPod: View {
             }
             .buttonStyle(.plain)
             .help("Toggle full screen")
+            .accessibilityLabel("Toggle full screen")
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 10)
@@ -536,6 +561,7 @@ struct OptionsPanel: View {
             .buttonStyle(.borderless)
             .disabled(isDefault)
             .help(isDefault ? "Already at defaults" : "Reset \(descriptor.name) to defaults")
+            .accessibilityLabel(isDefault ? "Already at defaults" : "Reset \(descriptor.name) to defaults")
         }
         .padding(18)
     }
@@ -592,6 +618,8 @@ struct PalettePicker: View {
                 }
                 .buttonStyle(.plain)
                 .help(name)
+                .accessibilityLabel("\(name) palette")
+                .accessibilityAddTraits(isSelected ? .isSelected : [])
             }
         }
     }
@@ -635,6 +663,7 @@ struct LabeledSlider: View {
                     .buttonStyle(.plain)
                     .foregroundStyle(.secondary)
                     .help("Reset to default")
+                    .accessibilityLabel("Reset \(name) to default")
                     .transition(.opacity)
                 }
                 Text(value, format: .number.precision(.fractionLength(2)))

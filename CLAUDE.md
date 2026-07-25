@@ -15,9 +15,12 @@ guards. Going below 26.0 requires guarding the five `glassEffect` call sites in
 
 ```
 Synesthia/
-├── SynesthiaApp.swift            @main; WindowGroup + Playback/Visualizer menu commands
+├── SynesthiaApp.swift            @main; WindowGroup + Help/Playback/Visualizer menu commands
 ├── AppState.swift                @Observable hub: source switching, transport, permissions status
 ├── ContentView.swift             Canvas + auto-hiding ControlsBar + NowPlayingBadge + OptionsPanel
+├── WelcomeView.swift             First-run explainer: sources, permissions, System Settings links
+├── Updater.swift                 Sparkle glue, `#if canImport(Sparkle)`; direct build only
+├── Resources/DemoLoop.m4a        Generated demo track (scripts/make_demo_loop.py)
 ├── Audio/
 │   ├── AudioAnalyzer.swift       nonisolated, lock-guarded vDSP FFT → AudioSnapshot (64 bands,
 │   │                             waveform, bass/mid/treble/level, beat envelope)
@@ -28,8 +31,13 @@ Synesthia/
     ├── VisualizerCore.swift      Visualizer protocol, VisualizerDescriptor/Option, registry,
     │                             VizUniforms, palettes, persisted VisualizerSettings
     ├── Shaders.metal             ALL shader functions, compiled at build time (see below)
-    ├── MetalVisualizerView.swift NSViewRepresentable MTKView host; builds uniforms per frame
+    ├── MetalVisualizerView.swift MetalRenderContext (optional), MTKView host, uniforms per
+    │                             frame, occlusion pausing, Reduce Motion damping
     └── {Nebula,Tunnel,Aurora}Visualizer.swift
+
+SynesthiaTests/                   Swift Testing bundle; AudioAnalyzer DSP coverage
+scripts/                          make_demo_loop.py, build-appstore.sh, build-direct.sh,
+                                  make-appcast.sh, check-metadata.py
 ```
 
 Data flow: audio threads → `AudioAnalyzer.appendMono` (NSLock) → render loop pulls `analyzer.latest()` each frame. Audio never publishes into SwiftUI; only `MusicController`/`AppState` are observable.
@@ -48,15 +56,18 @@ xcodebuild -project Synesthia.xcodeproj -scheme Synesthia -configuration Debug b
 xcodebuild -project Synesthia.xcodeproj -scheme Synesthia -configuration Debug build && \
   open ~/Library/Developer/Xcode/DerivedData/Synesthia-*/Build/Products/Debug/Synesthia.app
 
+# Test
+xcodebuild test -project Synesthia.xcodeproj -scheme Synesthia -destination 'platform=macOS'
+
 # Clean
 xcodebuild -project Synesthia.xcodeproj -scheme Synesthia clean
+
+# Release pipelines (see docs/distribution.md)
+./scripts/build-appstore.sh              # archive + assert + export for the Mac App Store
+./scripts/build-direct.sh                # archive + Developer ID + notarize + staple + DMG
 ```
 
-There is **no test target**. Adding one (Xcode → File → New → Target → Unit Testing Bundle) is the prerequisite for any test work; `AudioAnalyzer` (band mapping, beat detection) is the natural first unit-test subject. After adding:
-
-```bash
-xcodebuild test -project Synesthia.xcodeproj -scheme Synesthia -destination 'platform=macOS'
-```
+`SynesthiaTests` is a **Swift Testing** bundle (`import Testing`, `@Test`, `#expect`), hosted by the app target, covering `AudioAnalyzer`. Regenerate the demo track with `python3 scripts/make_demo_loop.py` (deterministic; needs only the stdlib and `afconvert`).
 
 ## Hard-won gotchas (violating these caused real bugs)
 
@@ -64,11 +75,27 @@ xcodebuild test -project Synesthia.xcodeproj -scheme Synesthia -destination 'pla
 
 **ScreenCaptureKit audio extraction.** Use `sampleBuffer.withAudioBufferList` + `AVAudioPCMBuffer(pcmFormat:bufferListNoCopy:)` (the current code). Do NOT use `CMSampleBufferCopyPCMDataIntoAudioBufferList` into a fresh `AVAudioPCMBuffer` — its buffer list advertises `frameLength` (0) bytes, every copy fails with `err=-12731`, and the analyzer silently receives nothing. Also: even when only capturing audio, register a `.screen` stream output too, or SCK logs "stream output NOT found. Dropping frame" continuously.
 
+**AVFAudio callbacks must be built in a `nonisolated` context, or they trap.** `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` means a closure written inline inside a main-actor method is *itself* inferred main-actor. AVAudioEngine calls tap blocks and `scheduleFile` completion handlers on a realtime audio thread, so Swift 6's isolation check fires and the app dies with `EXC_BREAKPOINT` in `swift_task_checkIsolatedSwift` — on the very first buffer, with a stack that blames AVFAudio rather than the closure. Build these blocks from a `nonisolated` factory (`makeAnalyzerTap`, `FilePlayer.loopCompletion()`), never inline. Wrapping the body in `Task { @MainActor in … }` does **not** help: the trap happens on entry, before the `Task` is ever reached. Spell the return type `@Sendable () -> Void`; the `AVAudioNodeCompletionHandler` typealias isn't marked `@Sendable` and the call site warns.
+
 **AppleScript constants don't coerce to text.** `player state as text` throws; `player state is playing` compares fine. Map constants to strings via comparisons inside the script (see `MusicController.poll()`). This bug is invisible from Swift — the script just returns nil.
 
 **Music artwork**: prefer `raw data of artwork 1` (original JPEG/PNG), fall back to `data`; artwork lags track changes so the poll retries up to 3× per track.
 
 **TCC flow**: system-audio capture needs Screen & System Audio Recording; the first `startCapture` after a fresh grant can require a second attempt. `AppState.handlePlay` deliberately avoids toggling Music into pause when the user clicks play merely to re-attach capture.
+
+## Build configurations
+
+Three configurations, one target. **`Release` is the Mac App Store build and `Direct` is the notarized direct download** — they differ in whether the Music.app integration exists at all.
+
+| | `Release` (App Store) | `Direct` | `Debug` |
+|---|---|---|---|
+| `MUSIC_APP_SOURCE` | off | on | on |
+| Entitlements | `Synesthia.entitlements` | `Synesthia-Direct.entitlements` | `Synesthia-Direct.entitlements` |
+| Apple Events entitlements | none | automation + Music exception | same |
+
+`#if MUSIC_APP_SOURCE` removes the `.musicApp` source case, the whole of `MusicController.swift`, and every Apple Event with it, so the App Store build needs neither `automation.apple-events` nor the `temporary-exception.apple-events` for `com.apple.Music` — the single largest review risk this project had. `scripts/build-appstore.sh` asserts against the built archive that none of it leaked. Full rationale in `docs/distribution.md`.
+
+Adding a *new* configuration means cloning the `XCBuildConfiguration` objects at both project and target level and registering both in their `XCConfigurationList`s.
 
 ## Project configuration constraints
 
@@ -82,7 +109,7 @@ xcodebuild test -project Synesthia.xcodeproj -scheme Synesthia -destination 'pla
 
 **Shared scheme**: `Synesthia.xcodeproj/xcshareddata/xcschemes/Synesthia.xcscheme` is checked in so `xcodebuild -scheme Synesthia` works on a clean clone / in CI without relying on Xcode's implicit scheme autocreation.
 
-**Entitlements**: `Synesthia.entitlements` at the repo root (deliberately outside the synced `Synesthia/` folder so it isn't treated as a source/resource), wired via `CODE_SIGN_ENTITLEMENTS`. Contains sandbox, audio-input, user-selected read-only files, music-library read, `automation.apple-events`, and a `temporary-exception.apple-events` for `com.apple.Music` (required — Music defines no scripting-targets groups; note this exception would need review for App Store distribution). Build-setting entitlements (`ENABLE_APP_SANDBOX` etc.) are merged with the file at signing time. Sandbox is the usual cause of silent failures when reading files outside the container.
+**Entitlements**: two files at the repo root (deliberately outside the synced `Synesthia/` folder so they aren't treated as sources/resources), selected per configuration via `CODE_SIGN_ENTITLEMENTS`. Both carry sandbox, audio-input, user-selected read-only files, and app-scope bookmarks (the file source persists across launches via a security-scoped bookmark). `Synesthia-Direct.entitlements` adds `automation.apple-events` and a `temporary-exception.apple-events` for `com.apple.Music` — required because Music defines no scripting-targets group. `Synesthia.entitlements` (App Store) has neither. The unused `assets.music.read-only` was removed: nothing reads the music library. Build-setting entitlements (`ENABLE_APP_SANDBOX` etc.) are merged with the file at signing time. Sandbox is the usual cause of silent failures when reading files outside the container.
 
 `ENABLE_USER_SCRIPT_SANDBOXING = YES` — build phase scripts cannot freely touch the filesystem; declare inputs/outputs if you add one.
 

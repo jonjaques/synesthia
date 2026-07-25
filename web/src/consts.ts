@@ -27,9 +27,28 @@ export const APP_STORE_URL = 'https://apps.apple.com/app/id0000000000';
 /** Shown next to the download button. */
 export const RELEASE = {
 	version: '1.0',
-	requires: 'macOS 26.5 or later',
-	chip: 'Apple silicon',
+	// The deployment target is 26.0, not 26.5 — the only API pinning the floor
+	// is `glassEffect`, which is a 26.0 API.
+	requires: 'macOS 26 or later',
+	// Release archives are universal (arm64 + x86_64); macOS 26 Tahoe is the
+	// last release supporting Intel Macs, so they are still in scope.
+	chip: 'Apple silicon or Intel',
 	size: '4.2 MB',
+} as const;
+
+/**
+ * Contact addresses published on the support and privacy pages. Apple requires
+ * a reachable support URL, and a dead address there is a review risk.
+ * PLACEHOLDER — these need real mail routing on the synesthia.app domain.
+ */
+export const CONTACT = {
+	support: 'support@synesthia.app',
+	privacy: 'privacy@synesthia.app',
+} as const;
+
+/** Last substantive revision of the privacy policy, shown on that page. */
+export const LEGAL = {
+	effective: '25 July 2026',
 } as const;
 
 /**

@@ -2,19 +2,22 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- Mac App Store entitlements.
+	     Deliberately does NOT contain com.apple.security.automation.apple-events
+	     or the temporary exception for com.apple.Music: the Music.app source is
+	     compiled out of this configuration (no MUSIC_APP_SOURCE), so the app
+	     sends no Apple Events at all. See Synesthia-Direct.entitlements for the
+	     direct-download build, and docs/app-store-launch-plan.md §B5.
+	     com.apple.security.assets.music.read-only was removed — nothing reads
+	     the music library (§B6). -->
 	<key>com.apple.security.app-sandbox</key>
 	<true/>
 	<key>com.apple.security.device.audio-input</key>
 	<true/>
 	<key>com.apple.security.files.user-selected.read-only</key>
 	<true/>
-	<key>com.apple.security.assets.music.read-only</key>
+	<!-- Security-scoped bookmarks, so a chosen audio file survives relaunch. -->
+	<key>com.apple.security.files.bookmarks.app-scope</key>
 	<true/>
-	<key>com.apple.security.automation.apple-events</key>
-	<true/>
-	<key>com.apple.security.temporary-exception.apple-events</key>
-	<array>
-		<string>com.apple.Music</string>
-	</array>
 </dict>
 </plist>

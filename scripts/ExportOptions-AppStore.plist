@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Mac App Store export. Used by scripts/build-appstore.sh against the
+	     `Release` configuration, which compiles out the Music.app source and
+	     ships no Apple Events entitlements.
+	     ("app-store" is deprecated; "app-store-connect" is the current value.) -->
+	<key>method</key>
+	<string>app-store-connect</string>
+	<key>teamID</key>
+	<string>43Z6G73JW8</string>
+	<key>signingStyle</key>
+	<string>automatic</string>
+	<key>destination</key>
+	<string>export</string>
+	<!-- Symbols are useful for App Store Connect crash reports and cost
+	     nothing at runtime. -->
+	<key>uploadSymbols</key>
+	<true/>
+</dict>
+</plist>

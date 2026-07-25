@@ -18,6 +18,11 @@ struct SynesthiaApp: App {
         VisualizerRegistry.descriptor(id: appState.visualizerID)?.name ?? "Visualizer"
     }
 
+    private static func open(_ urlString: String) {
+        guard let url = URL(string: urlString) else { return }
+        NSWorkspace.shared.open(url)
+    }
+
     /// Mirrors the wording of the control bar's capture button (which acts
     /// as play/pause for the file source).
     private var captureMenuTitle: String {
@@ -36,6 +41,29 @@ struct SynesthiaApp: App {
         // No title bar strip: the visuals run to the very top of the window.
         .windowStyle(.hiddenTitleBar)
         .commands {
+            // Replaces the default "Synesthia Help" item, which would otherwise
+            // point at a help book that doesn't exist. App Store apps are
+            // expected to offer a support affordance, and this is where the
+            // Support URL belongs.
+            CommandGroup(replacing: .help) {
+                // Present only in builds that link Sparkle (the direct
+                // download); the Mac App Store build has no updater.
+                CheckForUpdatesCommand()
+
+                Button("Audio Sources & Permissions…") {
+                    appState.showWelcome()
+                }
+
+                Divider()
+
+                Button("Synesthia Support") {
+                    Self.open("https://synesthia.app/support")
+                }
+                Button("Privacy Policy") {
+                    Self.open("https://synesthia.app/privacy")
+                }
+            }
+
             CommandMenu("Playback") {
                 Button(appState.isPlaying ? "Pause" : "Play") {
                     appState.togglePlay()

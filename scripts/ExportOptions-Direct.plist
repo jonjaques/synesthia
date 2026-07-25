@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Developer ID export for the notarized direct download.
+	     Used by scripts/build-direct.sh against the `Direct` configuration,
+	     which is the one that includes the Music.app source. -->
+	<key>method</key>
+	<string>developer-id</string>
+	<key>teamID</key>
+	<string>43Z6G73JW8</string>
+	<key>signingStyle</key>
+	<string>automatic</string>
+	<!-- Export a signed app rather than uploading it; notarization is a
+	     separate notarytool step so the DMG is what gets stapled. -->
+	<key>destination</key>
+	<string>export</string>
+</dict>
+</plist>
