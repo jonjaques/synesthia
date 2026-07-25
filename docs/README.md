@@ -30,12 +30,16 @@ Synesthia/
 ├── SynesthiaApp.swift            App entry point; window + menu commands
 ├── AppState.swift                Central state hub and composition root
 ├── ContentView.swift             The window's UI: canvas + floating chrome
+├── WelcomeView.swift             First-run explainer: sources and permissions
 ├── WindowChrome.swift            Strips the title bar off the AppKit window
+├── Updater.swift                 Sparkle glue; direct-download build only
+├── Resources/DemoLoop.m4a        Bundled demo track (needs no permissions)
 ├── Audio/
 │   ├── AudioAnalyzer.swift       FFT analysis; produces AudioSnapshot
-│   └── AudioSources.swift        The four audio capture/playback engines
+│   └── AudioSources.swift        The audio capture/playback engines
 ├── Music/
 │   └── MusicController.swift     Remote-controls Music.app via Apple Events
+│                                 (compiled out of the App Store build)
 └── Visualizers/
     ├── VisualizerCore.swift      Plugin protocol, registry, palettes, settings
     ├── Shaders.metal             All GPU shader code (build-time compiled)
@@ -43,14 +47,25 @@ Synesthia/
     ├── NebulaVisualizer.swift    Particle-cloud visualizer
     ├── TunnelVisualizer.swift    Spectrum-tunnel visualizer
     └── AuroraVisualizer.swift    Waveform-ribbon visualizer
+
+SynesthiaTests/                   Swift Testing bundle; AudioAnalyzer coverage
+scripts/                          Demo-track generator and release pipelines
 ```
 
 ## Shipping
 
-**[App Store launch plan](app-store-launch-plan.md)** — what remains between
-here and a Mac App Store release: the blockers, the quality gaps, the App Store
-Connect checklist, and the config work already landed. A working document; check
-items off as they close.
+1. **[Prerelease report](prerelease-report.md)** — the state of play as of
+   2026-07-25: what landed, two crashes found and fixed while testing, the
+   verification evidence, and exactly what still needs a human. Read this first
+   if you're picking the release back up.
+2. **[App Store launch plan](app-store-launch-plan.md)** — the working
+   document the report executes against: blockers, quality gaps, and the App
+   Store Connect checklist. Check items off as they close.
+3. **[Distribution](distribution.md)** — how one target produces two different
+   binaries, why the Music.app feature exists in only one of them, and the
+   build/notarize/appcast pipelines.
+4. **[App Store metadata](app-store-metadata.md)** — drafts of every listing
+   field plus the review notes. Length-checked by `scripts/check-metadata.py`.
 
 ---
 
