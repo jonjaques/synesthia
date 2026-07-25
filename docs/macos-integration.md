@@ -118,10 +118,10 @@ pins the chrome visible).
 Settings that shape how you *work* on this codebase — violating these is the
 fastest way to break the build (details and history in `CLAUDE.md`):
 
-- **No offline Metal toolchain on this machine.** A `.metal` file in the
-  target fails the build outright. All shader source is a string in
-  `ShaderSource.swift`, compiled at launch. Append MSL there; never add
-  `.metal` files.
+- **Shader source lives in `Shaders.metal`**, compiled at build time now
+  that the Metal Toolchain component (26.6) is installed. (It previously had
+  to be a Swift string compiled at launch because the toolchain was missing;
+  external plugins may still use that `makeLibrary(source:)` path.)
 - **Never hand-edit file references in `project.pbxproj`.** The project uses
   a `PBXFileSystemSynchronizedRootGroup`: any `.swift` file created under
   `Synesthia/` is included automatically. (Editing *build settings* in the

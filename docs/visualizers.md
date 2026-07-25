@@ -131,12 +131,11 @@ dots.
 
 ## Adding a visualizer, step by step
 
-1. **Write the shader(s).** Append your MSL functions to the string in
-   `ShaderSource.swift`. For a Shadertoy-style visualizer you only need a
-   fragment function — reuse `fullscreenVertex`, `cosPalette`, `bandAt`,
-   `waveAt`, and the noise helpers. Do **not** add a `.metal` file (it
-   breaks the build on machines without the offline Metal toolchain — see
-   `CLAUDE.md`).
+1. **Write the shader(s).** Add your MSL functions to `Shaders.metal`
+   (compiled at build time, so errors surface in the build log). For a
+   Shadertoy-style visualizer you only need a fragment function — reuse
+   `fullscreenVertex`, `cosPalette`, `bandAt`, `waveAt`, and the noise
+   helpers.
 
 2. **Write the class.** Model it on `TunnelVisualizer` — build pipelines in
    `init` via `makeRenderPipeline`, encode one pass in `draw`:

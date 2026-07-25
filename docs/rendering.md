@@ -2,7 +2,7 @@
 
 This document covers the right half of the system: how an `AudioSnapshot`
 becomes pixels. Code: `Synesthia/Visualizers/MetalVisualizerView.swift`,
-`VisualizerCore.swift`, and `ShaderSource.swift`.
+`VisualizerCore.swift`, and `Shaders.metal`.
 
 ## A 60-second GPU primer
 
@@ -69,22 +69,20 @@ Details worth knowing:
   builds the new one (pipelines, buffers) on the spot and lets ARC free the
   old one.
 
-## Shaders are compiled at runtime
+## Where shaders live
 
-All shader code lives in **`ShaderSource.swift` as one big Metal Shading
-Language (MSL) string**, compiled at launch with
-`device.makeLibrary(source:)`. This is unusual — normally `.metal` files are
-compiled at build time — and deliberate:
+All shader code is in **`Shaders.metal`**, written in the Metal Shading
+Language (MSL — a C++ dialect). Xcode compiles it at build time into the
+app's **default library** (`default.metallib` inside the bundle), which the
+coordinator loads with `device.makeDefaultLibrary()`. Shader errors
+therefore surface as ordinary build errors, and launch pays no
+shader-compilation cost.
 
-1. This development machine lacks the offline Metal toolchain (adding a
-   `.metal` file breaks the build — see `CLAUDE.md`).
-2. It keeps the door open for external visualizer plugins that ship their
-   own shader source and compile it the same way at load time.
-
-The cost is that shader errors surface at *launch* instead of at build time.
-When editing the MSL string, compile-check it without launching the app:
-build a small command-line harness that links `ShaderSource.swift` and calls
-`makeLibrary` (a `main.swift` + `swiftc` two-liner).
+Historical note: the shaders used to live in a Swift string compiled at
+launch with `device.makeLibrary(source:)`, because this machine lacked the
+offline Metal toolchain. That runtime-compilation path is still the intended
+mechanism for future *external* visualizer plugins, which would ship their
+own MSL source and compile it at load time.
 
 ## The CPU→GPU contract: `VizUniforms`
 
@@ -97,11 +95,11 @@ flowchart LR
     CLOCK["time, dt, resolution"] --> U
     TUNE["VisualizerSettings<br>sensitivity, speed, palette"] --> U
     OPTS["descriptor options → p0…p3"] --> U
-    U["VizUniforms<br>24 floats / 96 bytes"] -- "raw byte copy<br>(setFragmentBytes)" --> MSL["struct VizUniforms<br>in ShaderSource.swift"]
+    U["VizUniforms<br>24 floats / 96 bytes"] -- "raw byte copy<br>(setFragmentBytes)" --> MSL["struct VizUniforms<br>in Shaders.metal"]
 ```
 
 The struct exists **twice**: once in Swift (`VisualizerCore.swift`) and once
-in MSL (`ShaderSource.swift`). The GPU receives the Swift struct's raw bytes
+in MSL (`Shaders.metal`). The GPU receives the Swift struct's raw bytes
 and reinterprets them as the MSL struct, so *the two layouts must stay
 byte-identical* — same fields, same order, currently 24 floats / 96 bytes.
 Adding a field means updating both and keeping the sizes in sync; a mismatch

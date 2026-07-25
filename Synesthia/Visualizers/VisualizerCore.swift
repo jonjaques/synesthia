@@ -6,7 +6,7 @@ import simd
 import Observation
 
 // MARK: - Shared uniforms
-// Layout must match `VizUniforms` in ShaderSource.swift exactly
+// Layout must match `VizUniforms` in Shaders.metal exactly
 // (currently 24 floats / 96 bytes).
 
 /// The per-frame constants handed to every shader ("uniforms" in graphics
@@ -64,8 +64,8 @@ struct VizUniforms {
 //
 // Synesthia visualizers are plugins. To add one:
 //   1. Create a class conforming to `Visualizer` with a static `descriptor`.
-//   2. Append its shader functions to the MSL string in ShaderSource.swift
-//      (compiled into the runtime library at launch).
+//   2. Add its shader functions to Shaders.metal (compiled into the app's
+//      default library at build time).
 //   3. Append the descriptor to `VisualizerRegistry.builtIn`, or call
 //      `VisualizerRegistry.register(_:)` at startup (e.g. from a loaded bundle).
 // Options declared in the descriptor automatically appear in the Options UI
@@ -132,7 +132,7 @@ enum VisualizerRegistry {
 enum Palettes {
     static let names = ["Prism", "Ember", "Ocean", "Violet", "Mono"]
 
-    /// CPU mirror of `cosPalette` in ShaderSource.swift, for CPU-colored
+    /// CPU mirror of `cosPalette` in Shaders.metal, for CPU-colored
     /// particles and the palette swatches in the options UI. Keep the
     /// coefficients in sync with the shader.
     static func color(_ t: Float, palette: Int) -> SIMD3<Float> {

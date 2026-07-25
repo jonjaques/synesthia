@@ -45,8 +45,8 @@ struct MetalVisualizerView: NSViewRepresentable {
         let device: MTLDevice
         /// Feeds encoded command buffers to the GPU; one per app is plenty.
         private let queue: MTLCommandQueue
-        /// All shader functions, compiled from source at launch (see
-        /// ShaderSource.swift for why there are no precompiled .metal files).
+        /// All shader functions, compiled at build time from Shaders.metal
+        /// into the app's default library.
         private let library: MTLLibrary
 
         private var visualizer: (any Visualizer)?
@@ -58,7 +58,7 @@ struct MetalVisualizerView: NSViewRepresentable {
             self.appState = appState
             guard let device = MTLCreateSystemDefaultDevice(),
                   let queue = device.makeCommandQueue(),
-                  let library = try? device.makeLibrary(source: ShaderSource.library, options: nil) else {
+                  let library = device.makeDefaultLibrary() else {
                 fatalError("Metal is unavailable on this Mac")
             }
             self.device = device

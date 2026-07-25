@@ -5,7 +5,7 @@ import MetalKit
 /// the energy of its own slice of the spectrum, over a smoky noise backdrop.
 ///
 /// Like Spectrum Tunnel this is a fullscreen-shader visualizer (see
-/// `auroraFragment` in ShaderSource.swift); it's the only one that also feeds
+/// `auroraFragment` in Shaders.metal); it's the only one that also feeds
 /// the shader the 256-point waveform, which shapes the ribbons.
 final class AuroraVisualizer: Visualizer {
     static let descriptor = VisualizerDescriptor(

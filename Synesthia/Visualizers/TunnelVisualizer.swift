@@ -5,7 +5,7 @@ import MetalKit
 /// each angular slice of the tunnel is one frequency band.
 ///
 /// The Swift side is a thin shell: all the imagery lives in `tunnelFragment`
-/// in ShaderSource.swift. Per frame it draws one fullscreen triangle, passing
+/// in Shaders.metal. Per frame it draws one fullscreen triangle, passing
 /// the uniforms and the 64-band array via `setFragmentBytes` (Metal's path
 /// for small per-draw constants — no buffer management needed under 4 KB).
 final class TunnelVisualizer: Visualizer {

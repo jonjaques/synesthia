@@ -23,7 +23,7 @@ final class NebulaVisualizer: Visualizer {
         make: { try NebulaVisualizer(device: $0, library: $1, pixelFormat: $2) })
 
     /// What the GPU sees; must match the `Particle` struct in
-    /// ShaderSource.swift (xyz position + point size, rgb color + intensity).
+    /// Shaders.metal (xyz position + point size, rgb color + intensity).
     private struct GPUParticle {
         var posSize: SIMD4<Float>
         var color: SIMD4<Float>
@@ -43,12 +43,24 @@ final class NebulaVisualizer: Visualizer {
     }
 
     private static let maxParticles = 4096
+    /// Depth of the CPU→GPU buffer ring below.
+    private static let inFlightFrames = 3
 
     private let backgroundPipeline: MTLRenderPipelineState
     private let particlePipeline: MTLRenderPipelineState
-    private let particleBuffer: MTLBuffer
+    /// Triple-buffered particle storage: each frame the CPU writes directly
+    /// into the next buffer of the ring while the GPU may still be reading
+    /// the previous frames' buffers. The semaphore blocks the CPU only if it
+    /// gets a whole ring ahead, so a buffer is never rewritten while the GPU
+    /// is reading it (a single shared buffer would race).
+    private let particleBuffers: [MTLBuffer]
+    private var bufferIndex = 0
+    private let inFlight = DispatchSemaphore(value: NebulaVisualizer.inFlightFrames)
     private var cpuParticles: [CPUParticle] = []
-    private var gpuParticles: [GPUParticle]
+    /// This frame's color per band: the cosine palette — the most expensive
+    /// math in the update loop — is evaluated once per band (64×) instead of
+    /// once per particle (4096×), since hue depends only on the band.
+    private var bandColors = [SIMD3<Float>](repeating: .zero, count: AudioSnapshot.bandCount)
 
     init(device: MTLDevice, library: MTLLibrary, pixelFormat: MTLPixelFormat) throws {
         backgroundPipeline = try makeRenderPipeline(
@@ -60,15 +72,17 @@ final class NebulaVisualizer: Visualizer {
             vertex: "particleVertex", fragment: "particleFragment",
             pixelFormat: pixelFormat, additiveBlending: true)
 
-        gpuParticles = Array(repeating: GPUParticle(posSize: .zero, color: .zero),
-                             count: Self.maxParticles)
-        guard let buffer = device.makeBuffer(
-            length: Self.maxParticles * MemoryLayout<GPUParticle>.stride,
-            options: .storageModeShared) else {
-            throw NSError(domain: "Synesthia", code: 1,
-                          userInfo: [NSLocalizedDescriptionKey: "Could not allocate particle buffer"])
+        var buffers = [MTLBuffer]()
+        for _ in 0..<Self.inFlightFrames {
+            guard let buffer = device.makeBuffer(
+                length: Self.maxParticles * MemoryLayout<GPUParticle>.stride,
+                options: .storageModeShared) else {
+                throw NSError(domain: "Synesthia", code: 1,
+                              userInfo: [NSLocalizedDescriptionKey: "Could not allocate particle buffer"])
+            }
+            buffers.append(buffer)
         }
-        particleBuffer = buffer
+        particleBuffers = buffers
 
         var rng = SystemRandomNumberGenerator()
         cpuParticles = (0..<Self.maxParticles).map { i in
@@ -98,13 +112,25 @@ final class NebulaVisualizer: Visualizer {
         let swirl = uniforms.p2
         let activeCount = max(64, Int(Float(Self.maxParticles) * density))
 
-        update(dt: min(uniforms.dt, 1 / 20),
+        guard let pass = view.currentRenderPassDescriptor,
+              let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass) else { return }
+
+        // Claim the next buffer in the ring; the GPU hands it back (via the
+        // semaphore) when this frame's command buffer finishes executing.
+        inFlight.wait()
+        let inFlight = self.inFlight
+        commandBuffer.addCompletedHandler { @Sendable _ in inFlight.signal() }
+        bufferIndex = (bufferIndex + 1) % Self.inFlightFrames
+        let particleBuffer = particleBuffers[bufferIndex]
+
+        // The simulation writes straight into the GPU-visible buffer
+        // (.storageModeShared) — no intermediate array, no copy.
+        update(into: particleBuffer.contents().bindMemory(to: GPUParticle.self,
+                                                          capacity: Self.maxParticles),
+               dt: min(uniforms.dt, 1 / 20),
                swirl: swirl, glow: glow,
                activeCount: activeCount,
                uniforms: uniforms, snapshot: snapshot)
-
-        guard let pass = view.currentRenderPassDescriptor,
-              let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass) else { return }
 
         var u = uniforms
         encoder.setRenderPipelineState(backgroundPipeline)
@@ -121,11 +147,19 @@ final class NebulaVisualizer: Visualizer {
         encoder.endEncoding()
     }
 
-    private func update(dt: Float, swirl: Float, glow: Float, activeCount: Int,
+    private func update(into out: UnsafeMutablePointer<GPUParticle>,
+                        dt: Float, swirl: Float, glow: Float, activeCount: Int,
                         uniforms: VizUniforms, snapshot: AudioSnapshot) {
         let palette = Int(uniforms.palette)
         let sensitivity = uniforms.sensitivity
         let time = uniforms.time
+
+        // Fill this frame's per-band color table once, up front.
+        let hueShift = time * 0.01 + snapshot.centroid * 0.15
+        for b in 0..<AudioSnapshot.bandCount {
+            bandColors[b] = Palettes.color(Float(b) / Float(AudioSnapshot.bandCount) + hueShift,
+                                           palette: palette)
+        }
 
         for i in 0..<activeCount {
             var p = cpuParticles[i]
@@ -177,22 +211,12 @@ final class NebulaVisualizer: Visualizer {
                 alpha = 0.10 + 0.90 * energy
             }
 
-            let hue = Float(p.band) / Float(AudioSnapshot.bandCount)
-            var color = Palettes.color(hue + time * 0.01 + snapshot.centroid * 0.15, palette: palette)
+            var color = bandColors[p.band]
             color = simd_mix(color, SIMD3<Float>(1, 1, 1), SIMD3<Float>(repeating: min(energy * 0.45, 0.6)))
 
-            gpuParticles[i] = GPUParticle(
+            out[i] = GPUParticle(
                 posSize: SIMD4(position.x, position.y, position.z, size),
                 color: SIMD4(color.x, color.y, color.z, alpha))
-        }
-
-        // The buffer uses .storageModeShared (one memory region visible to
-        // both CPU and GPU on Apple silicon), so this copy is all it takes
-        // to publish the frame's particles.
-        gpuParticles.withUnsafeBytes {
-            particleBuffer.contents().copyMemory(
-                from: $0.baseAddress!,
-                byteCount: activeCount * MemoryLayout<GPUParticle>.stride)
         }
     }
 

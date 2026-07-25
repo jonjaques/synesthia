@@ -24,16 +24,16 @@ Synesthia/
 └── Visualizers/
     ├── VisualizerCore.swift      Visualizer protocol, VisualizerDescriptor/Option, registry,
     │                             VizUniforms, palettes, persisted VisualizerSettings
-    ├── ShaderSource.swift        ALL Metal shader source as an MSL string (see below)
+    ├── Shaders.metal             ALL shader functions, compiled at build time (see below)
     ├── MetalVisualizerView.swift NSViewRepresentable MTKView host; builds uniforms per frame
     └── {Nebula,Tunnel,Aurora}Visualizer.swift
 ```
 
 Data flow: audio threads → `AudioAnalyzer.appendMono` (NSLock) → render loop pulls `analyzer.latest()` each frame. Audio never publishes into SwiftUI; only `MusicController`/`AppState` are observable.
 
-**Plugin contract**: a visualizer = class conforming to `Visualizer` + static `VisualizerDescriptor` (≤4 options, surfaced automatically in the UI and delivered as `VizUniforms.p0…p3`) + shader functions compiled at runtime. Register in `VisualizerRegistry`.
+**Plugin contract**: a visualizer = class conforming to `Visualizer` + static `VisualizerDescriptor` (≤4 options, surfaced automatically in the UI and delivered as `VizUniforms.p0…p3`) + shader functions in `Shaders.metal`. Register in `VisualizerRegistry`.
 
-`VizUniforms` in VisualizerCore.swift and the struct in ShaderSource.swift must stay byte-identical (currently 24 floats / 96 bytes).
+`VizUniforms` in VisualizerCore.swift and the struct in Shaders.metal must stay byte-identical (currently 24 floats / 96 bytes).
 
 ## Commands
 
@@ -57,7 +57,7 @@ xcodebuild test -project Synesthia.xcodeproj -scheme Synesthia -destination 'pla
 
 ## Hard-won gotchas (violating these caused real bugs)
 
-**No offline Metal toolchain on this machine.** Any `.metal` file in the target fails the build with "cannot execute tool 'metal' due to missing Metal Toolchain" (fix would be a multi-GB `xcodebuild -downloadComponent MetalToolchain`). Therefore ALL shader source lives in `ShaderSource.swift` as a raw string, compiled at launch with `device.makeLibrary(source:)`. Do not add `.metal` files; append MSL to that string.
+**Shaders compile at build time.** The Metal Toolchain component (26.6) is installed as of 2026-07, so `.metal` files build normally. All shader source lives in `Synesthia/Visualizers/Shaders.metal`, compiled into the app's default library and loaded via `device.makeDefaultLibrary()`. (Historical: the toolchain used to be missing, so shaders lived in a `ShaderSource.swift` string compiled at launch — don't resurrect that for built-ins; `makeLibrary(source:)` remains the intended path only for future external plugin bundles.)
 
 **ScreenCaptureKit audio extraction.** Use `sampleBuffer.withAudioBufferList` + `AVAudioPCMBuffer(pcmFormat:bufferListNoCopy:)` (the current code). Do NOT use `CMSampleBufferCopyPCMDataIntoAudioBufferList` into a fresh `AVAudioPCMBuffer` — its buffer list advertises `frameLength` (0) bytes, every copy fails with `err=-12731`, and the analyzer silently receives nothing. Also: even when only capturing audio, register a `.screen` stream output too, or SCK logs "stream output NOT found. Dropping frame" continuously.
 

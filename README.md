@@ -83,10 +83,9 @@ Visualizers are plugins (`Synesthia/Visualizers/VisualizerCore.swift`):
 
 1. Conform a class to `Visualizer` and give it a static `VisualizerDescriptor`
    (id, display name, tagline, up to four `VisualizerOption` sliders).
-2. Ship shader source as an MSL string compiled at runtime with
-   `MTLDevice.makeLibrary(source:)` (see `ShaderSource.swift`) — no offline
-   Metal toolchain needed, and a future external bundle can carry its own
-   shader source the same way.
+2. Add shader functions to `Shaders.metal` (compiled at build time into the
+   app's default library). A future external bundle would instead ship MSL
+   source and compile it at load time with `MTLDevice.makeLibrary(source:)`.
 3. Add the descriptor to `VisualizerRegistry.all`'s initial list, or call
    `VisualizerRegistry.register(_:)` at startup (the hook external bundles
    would use).

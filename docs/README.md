@@ -38,7 +38,7 @@ Synesthia/
 │   └── MusicController.swift     Remote-controls Music.app via Apple Events
 └── Visualizers/
     ├── VisualizerCore.swift      Plugin protocol, registry, palettes, settings
-    ├── ShaderSource.swift        All GPU shader code, as a string
+    ├── Shaders.metal             All GPU shader code (build-time compiled)
     ├── MetalVisualizerView.swift The render loop host
     ├── NebulaVisualizer.swift    Particle-cloud visualizer
     ├── TunnelVisualizer.swift    Spectrum-tunnel visualizer

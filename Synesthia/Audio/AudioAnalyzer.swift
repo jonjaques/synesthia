@@ -109,6 +109,11 @@ nonisolated final class AudioAnalyzer: @unchecked Sendable {
     private var real = [Float](repeating: 0, count: 1024)
     private var imag = [Float](repeating: 0, count: 1024)
     private var magnitudes = [Float](repeating: 0, count: 1024)
+    /// Scratch for the Hann-windowed FFT input, reused every pass.
+    private var windowed = [Float](repeating: 0, count: 2048)
+    /// This pass's unsmoothed band values. Swapped with `previousRaw` at the
+    /// end of each pass (instead of copied) so neither ever reallocates.
+    private var raw = [Float](repeating: 0, count: AudioSnapshot.bandCount)
     /// 65 FFT-bin indices delimiting the 64 log-spaced bands.
     private var bandEdges = [Int]()
     /// Which band indices make up each of the 8 named `components`.
@@ -277,7 +282,6 @@ nonisolated final class AudioAnalyzer: @unchecked Sendable {
     private func processLocked() {
         // 1. Window: multiply the samples by the Hann curve so the chunk
         //    fades in/out instead of starting and stopping abruptly.
-        var windowed = [Float](repeating: 0, count: fftSize)
         vDSP_vmul(recent, 1, window, 1, &windowed, 1, vDSP_Length(fftSize))
 
         // 2. FFT. vDSP's real-input FFT wants the 2048 real samples packed as
@@ -302,7 +306,6 @@ nonisolated final class AudioAnalyzer: @unchecked Sendable {
         //    everything but the loudest peak invisible; converting to dB and
         //    normalizing -72 dB → 0, -6 dB → 1 spreads the useful range out.
         let norm = 1.0 / Float(fftSize)
-        var raw = [Float](repeating: 0, count: AudioSnapshot.bandCount)
         for b in 0..<AudioSnapshot.bandCount {
             let lo = bandEdges[b], hi = max(bandEdges[b + 1], lo + 1)
             var sum: Float = 0
@@ -342,7 +345,6 @@ nonisolated final class AudioAnalyzer: @unchecked Sendable {
         for b in 0..<AudioSnapshot.bandCount {
             fluxNow += max(0, raw[b] - previousRaw[b])
         }
-        previousRaw = raw
         fluxEnvelope = max(min(fluxNow * 0.9, 1), fluxEnvelope * 0.86)
 
         // Spectral centroid: energy-weighted mean band index, i.e. where the
@@ -390,6 +392,11 @@ nonisolated final class AudioAnalyzer: @unchecked Sendable {
         } else {
             beatEnvelope *= 0.9
         }
+
+        // Keep this pass's raw bands for the next flux computation. A swap,
+        // not an assignment: assignment would share storage and force a
+        // copy-on-write allocation when `raw` is refilled next pass.
+        swap(&raw, &previousRaw)
 
         // Downsample the newest 1024 samples to 256 points for the waveform.
         var wave = [Float](repeating: 0, count: AudioSnapshot.waveformCount)

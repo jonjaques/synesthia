@@ -1,19 +1,18 @@
-import Foundation
+// All shader code for the built-in visualizers, compiled at build time into
+// the app's default Metal library (loaded via device.makeDefaultLibrary()).
+//
+// A primer for readers new to shaders: a *vertex* function runs once per
+// vertex and decides where geometry lands on screen; a *fragment* function
+// runs once per covered pixel and decides its color. The visualizers here
+// are mostly "full-screen shader" style — a single triangle covers the
+// window, and the fragment function computes every pixel's color from
+// scratch each frame using only its coordinates, the clock, and the audio
+// uniforms (the style popularized by Shadertoy).
+//
+// External visualizer plugins (a roadmap item) wouldn't compile into this
+// library; they can ship MSL source and compile it at load time with
+// MTLDevice.makeLibrary(source:), which is how this whole file used to work.
 
-/// Metal shading-language source for all built-in visualizers, compiled at
-/// runtime with `MTLDevice.makeLibrary(source:)`. Runtime compilation keeps
-/// the build independent of the offline Metal toolchain and lets future
-/// plugins ship their own shader source the same way.
-///
-/// A note for readers new to shaders: a *vertex* function runs once per
-/// vertex and decides where geometry lands on screen; a *fragment* function
-/// runs once per covered pixel and decides its color. The visualizers here
-/// are mostly "full-screen shader" style — a single triangle covers the
-/// window, and the fragment function computes every pixel's color from
-/// scratch each frame using only its coordinates, the clock, and the audio
-/// uniforms (the style popularized by Shadertoy).
-enum ShaderSource {
-    static let library = #"""
 #include <metal_stdlib>
 using namespace metal;
 
@@ -410,6 +409,4 @@ fragment float4 particleFragment(ParticleOut in [[stage_in]],
     float a = exp(-d * d * 4.5) * smoothstep(1.0, 0.65, d);
     float3 col = in.color.rgb * a * in.color.a;
     return float4(col, a * in.color.a);
-}
-"""#
 }
