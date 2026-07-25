@@ -8,40 +8,40 @@
 # baked into the app, which is what stops a compromised web host from shipping
 # malware to your users.
 #
-#   ./scripts/make-appcast.sh
+#   ./scripts/make-appcast.sh              # fetch current feed, regenerate
+#   ./scripts/make-appcast.sh --offline    # don't fetch; use what's in build/releases
 #
-# Expects the notarized DMG(s) from build-direct.sh in build/, and Sparkle's
-# CLI tools. Point SPARKLE_BIN at the directory containing `generate_appcast`
-# if it isn't on PATH:
+# Expects the notarized DMG(s) from build-direct.sh in build/. Writes the feed
+# to build/releases/appcast.xml and stops there — uploading is a separate step,
+# ./scripts/publish-release.sh, so you can read the diff before it goes live.
 #
-#   export SPARKLE_BIN=~/Downloads/Sparkle-2.x/bin
+# ONE-TIME SETUP — generate the signing key:
 #
-# One-time setup — generate the signing key (stores the private half in your
-# login keychain and prints the public half):
+#   make sparkle-keys
 #
-#   "$SPARKLE_BIN/generate_keys"
-#
-# Put the printed public key in the `Direct` build configuration as
-# INFOPLIST_KEY_SUPublicEDKey. Back the private key up somewhere safe: losing
-# it means you can never ship another update to existing installs.
+# It stores the private half in your login keychain and prints the public half,
+# which goes into Synesthia-Direct-Info.plist as SUPublicEDKey. Back the private
+# key up somewhere safe: losing it means you can never ship another update to
+# existing installs, and there is no recovery path but asking every user to
+# re-download by hand.
 set -euo pipefail
 
-cd "$(dirname "$0")/.."
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$REPO_ROOT"
+# shellcheck source=release.env
+source "$REPO_ROOT/scripts/release.env"
 
-RELEASES_DIR="${RELEASES_DIR:-build/releases}"
-FEED_URL="${FEED_URL:-https://synesthia.app/appcast.xml}"
-DOWNLOAD_BASE="${DOWNLOAD_BASE:-https://synesthia.app/downloads}"
-WEB_PUBLIC="web/public"
+OFFLINE=0
+[[ "${1:-}" == "--offline" ]] && OFFLINE=1
 
 step() { printf '\n\033[1;36m==> %s\033[0m\n' "$1"; }
 fail() { printf '\n\033[1;31mFAILED: %s\033[0m\n' "$1" >&2; exit 1; }
 
-GENERATE_APPCAST="$(command -v generate_appcast || true)"
-if [[ -n "${SPARKLE_BIN:-}" && -x "$SPARKLE_BIN/generate_appcast" ]]; then
-	GENERATE_APPCAST="$SPARKLE_BIN/generate_appcast"
-fi
-[[ -n "$GENERATE_APPCAST" ]] || fail \
-	"generate_appcast not found. Download the Sparkle release tools and set SPARKLE_BIN."
+SPARKLE_BIN_DIR="$(sparkle_bin)" || fail \
+	"Sparkle's tools were not found. Build the 'Synesthia Direct' target once
+        (make direct-fast) so SwiftPM fetches them, or download a Sparkle
+        release and export SPARKLE_BIN=/path/to/Sparkle-2.x/bin"
+echo "Using Sparkle tools from: $SPARKLE_BIN_DIR"
 
 step "Collecting releases"
 mkdir -p "$RELEASES_DIR"
@@ -51,7 +51,25 @@ for dmg in build/Synesthia-*.dmg; do
 	echo "  $(basename "$dmg")"
 done
 shopt -u nullglob
-[[ -n "$(ls -A "$RELEASES_DIR" 2>/dev/null)" ]] || fail "no DMGs found; run build-direct.sh first"
+[[ -n "$(find "$RELEASES_DIR" -maxdepth 1 -name '*.dmg' -print -quit)" ]] \
+	|| fail "no DMGs found; run build-direct.sh first"
+
+# generate_appcast re-uses an appcast.xml already sitting in the archives
+# directory and only *adds* entries to it. That is the whole reason we pull the
+# published feed down first: without it, a regeneration from a directory holding
+# only the newest DMG would silently produce a feed with a single item and drop
+# every older version's entry — including the ones users are updating *from*.
+if [[ $OFFLINE -eq 0 ]]; then
+	step "Fetching the published appcast so history is preserved"
+	if wrangler_r2 r2 object get "$R2_BUCKET/appcast.xml" \
+		--file "$RELEASES_DIR/appcast.xml" 2>/dev/null; then
+		echo "  merged with the live feed"
+	else
+		echo "  no published appcast yet — generating a fresh one"
+		echo "  (if this is NOT your first release, stop: publishing now would"
+		echo "   truncate the feed. Check your R2 credentials and bucket name.)"
+	fi
+fi
 
 step "Verifying every release is notarized and stapled"
 # An un-stapled DMG in the feed means users get a Gatekeeper warning on update.
@@ -62,21 +80,20 @@ for dmg in "$RELEASES_DIR"/*.dmg; do
 done
 
 step "Generating the appcast"
-"$GENERATE_APPCAST" \
+# Signing uses the private EdDSA key in the login keychain (account "ed25519").
+# Deltas are only produced for versions whose archives are present locally; we
+# keep just the newest few, so most updates are full downloads. At ~4 MB that is
+# a deliberate trade, not an oversight.
+"$SPARKLE_BIN_DIR/generate_appcast" \
 	--download-url-prefix "$DOWNLOAD_BASE/" \
-	--link "https://synesthia.app" \
+	--link "$SITE_URL" \
 	"$RELEASES_DIR"
 
 APPCAST="$RELEASES_DIR/appcast.xml"
 [[ -f "$APPCAST" ]] || fail "generate_appcast produced no appcast.xml"
 
-step "Publishing into $WEB_PUBLIC"
-mkdir -p "$WEB_PUBLIC/downloads"
-cp -f "$APPCAST" "$WEB_PUBLIC/appcast.xml"
-cp -f "$RELEASES_DIR"/*.dmg "$WEB_PUBLIC/downloads/"
-
 step "Done"
-echo "  Appcast   : $WEB_PUBLIC/appcast.xml  (serve at $FEED_URL)"
-echo "  Downloads : $WEB_PUBLIC/downloads/"
+echo "  Appcast: $APPCAST"
 echo
-echo "Check that the app's SUFeedURL matches $FEED_URL before shipping."
+echo "Review it, then publish with:"
+echo "      ./scripts/publish-release.sh"

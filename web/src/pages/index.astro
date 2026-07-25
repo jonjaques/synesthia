@@ -4,7 +4,7 @@ import Base from '../layouts/Base.astro';
 import Mark from '../components/Mark.astro';
 import ShotCarousel from '../components/ShotCarousel.astro';
 import StoreButton from '../components/StoreButton.astro';
-import { RELEASE, SITE } from '../consts';
+import { DIRECT_DOWNLOAD_URL, RELEASE, SITE } from '../consts';
 
 import auroraFull from '../assets/screenshots/aurora-fullscreen.png';
 import nebulaFull from '../assets/screenshots/nebula-fullscreen.png';
@@ -323,6 +323,17 @@ const navLinks = [
 
 				<p class="spec mt-6">
 					Version {RELEASE.version} · {RELEASE.requires} · {RELEASE.size}
+				</p>
+
+				<!-- The direct build is the one the Sources section refers to when it
+				     says Music control ships in the build downloaded from this site,
+				     so it needs somewhere to actually be downloaded from. -->
+				<p class="mt-4 text-sm text-mute">
+					Or <a
+						href={DIRECT_DOWNLOAD_URL}
+						class="underline underline-offset-4 transition-colors hover:text-paper">download it
+						directly</a
+					> to get Music.app controls and automatic updates.
 				</p>
 			</div>
 		</section>

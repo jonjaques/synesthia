@@ -38,9 +38,14 @@ Synesthia/
 SynesthiaTests/                   Swift Testing bundle; AudioAnalyzer DSP coverage
 Makefile                          Single entry point for every command (see below)
 scripts/                          make_demo_loop.py, build-appstore.sh, build-direct.sh,
-                                  make-appcast.sh, check-metadata.py,
+                                  make-appcast.sh, publish-release.sh, sparkle-keys.sh,
+                                  release.env (shared), check-metadata.py,
                                   take-screenshots.sh + shotkit.swift
+Synesthia-Direct-Info.plist       Sparkle's 3 Info.plist keys (Direct target only)
 web/                              Astro marketing site (own package.json; see web/AGENTS.md)
+web/functions/                    Pages Functions: /appcast.xml, /download, /downloads/*
+                                  — serve the release artifacts out of R2, so shipping a
+                                  version is an upload, not a site rebuild
 ```
 
 Data flow: audio threads → `AudioAnalyzer.appendMono` (NSLock) → render loop pulls `analyzer.latest()` each frame. Audio never publishes into SwiftUI; only `MusicController`/`AppState` are observable.
@@ -55,6 +60,7 @@ Data flow: audio threads → `AudioAnalyzer.appendMono` (NSLock) → render loop
 
 ```bash
 make build            # xcodebuild build; CONFIGURATION=Debug (also Direct, Release)
+make build-direct     # …the `Synesthia Direct` target (the one that links Sparkle)
 make run              # build, then open the built .app
 make test             # xcodebuild test -destination 'platform=macOS'
 make clean            # xcodebuild clean + rm -rf build/
@@ -68,9 +74,12 @@ make appstore         # archive + assert + export for the Mac App Store
 make appstore-upload  # …and upload to App Store Connect
 make direct           # archive + Developer ID + notarize + staple + DMG
 make direct-fast      # …--skip-notarize
-make appcast          # regenerate the signed Sparkle appcast
+make sparkle-keys     # one-time: create the EdDSA signing key (back it up!)
+make appcast          # regenerate the signed Sparkle appcast into build/releases
+make publish-release  # upload DMGs + appcast + latest.json to R2 (publish-dry-run first)
 
 make web-install web-dev web-build web-preview web-assets   # the Astro site in web/
+make web-typecheck web-cf-types                             # the Pages Functions in web/functions/
 ```
 
 `ARGS=` forwards flags to the wrapped script (`make screenshots ARGS="--only nebula --1x"`). `BUILT_PRODUCTS_DIR` is resolved from `xcodebuild -showBuildSettings`, not globbed out of DerivedData, so `run`/`app-path` are correct for any configuration.
@@ -106,17 +115,22 @@ make web-install web-dev web-build web-preview web-assets   # the Astro site in 
 
 ## Build configurations
 
-Three configurations, one target. **`Release` is the Mac App Store build and `Direct` is the notarized direct download** — they differ in whether the Music.app integration exists at all.
+Three configurations, two app targets. **`Synesthia`/`Release` is the Mac App Store build and `Synesthia Direct`/`Direct` is the notarized direct download** — they differ in whether the Music.app integration and the updater exist at all.
 
 | | `Release` (App Store) | `Direct` | `Debug` |
 |---|---|---|---|
+| Target | `Synesthia` | `Synesthia Direct` | either |
 | `MUSIC_APP_SOURCE` | off | on | on |
+| Sparkle | never | linked | Direct target only |
 | Entitlements | `Synesthia.entitlements` | `Synesthia-Direct.entitlements` | `Synesthia-Direct.entitlements` |
 | Apple Events entitlements | none | automation + Music exception | same |
+| `network.client` | no | yes (Sparkle) | yes |
 
-`#if MUSIC_APP_SOURCE` removes the `.musicApp` source case, the whole of `MusicController.swift`, and every Apple Event with it, so the App Store build needs neither `automation.apple-events` nor the `temporary-exception.apple-events` for `com.apple.Music` — the single largest review risk this project had. `scripts/build-appstore.sh` asserts against the built archive that none of it leaked. Full rationale in `docs/distribution.md`.
+`#if MUSIC_APP_SOURCE` removes the `.musicApp` source case, the whole of `MusicController.swift`, and every Apple Event with it, so the App Store build needs neither `automation.apple-events` nor the `temporary-exception.apple-events` for `com.apple.Music` — the single largest review risk this project had. Likewise `#if canImport(Sparkle)` empties `Updater.swift` in the target that doesn't link it, so `SynesthiaApp.swift` needs no conditional at the call site. `scripts/build-appstore.sh` asserts against the built archive that neither leaked (no Apple Events entitlement, no `tell application "Music"` string, no Sparkle framework/link/`SUFeedURL`). Full rationale in `docs/distribution.md`.
 
 Adding a *new* configuration means cloning the `XCBuildConfiguration` objects at both project and target level and registering both in their `XCConfigurationList`s.
+
+**Two app targets.** `Synesthia` is the App Store build; **`Synesthia Direct`** is the direct download and is the only target that links Sparkle — SPM attaches a package to a target, not a configuration, so keeping Sparkle out of `Release` requires a second target. Both reference the same `PBXFileSystemSynchronizedRootGroup`, so a new `.swift` file under `Synesthia/` compiles into both for free; **build settings are not shared** and must be changed in both places (including `MARKETING_VERSION`/`CURRENT_PROJECT_VERSION` on every release). Both produce `Synesthia.app`, so building both in the same configuration means the last one wins in `Build/Products/<config>/` — schemes and archive configurations keep them apart in practice. Full rationale in `docs/distribution.md`.
 
 ## Project configuration constraints
 
@@ -124,7 +138,7 @@ Adding a *new* configuration means cloning the `XCBuildConfiguration` objects at
 
 **`@MainActor` is the default.** `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` and `SWIFT_APPROACHABLE_CONCURRENCY = YES` are set project-wide: every unannotated type, function, and closure is main-actor isolated. Background work must be opted out explicitly — see `nonisolated final class AudioAnalyzer`, `nonisolated struct AudioSnapshot`, and the `nonisolated` SCStreamOutput callbacks. Don't add `@MainActor` annotations; they're redundant. `SWIFT_VERSION = 6.0`, so isolation violations are **errors**, not warnings: anything reachable from the audio thread or the Metal draw callback must be explicitly `nonisolated`. Marking the *type* `nonisolated` (rather than each member) is the cheap fix — that is why `AudioSnapshot` carries the annotation even though its members look inert.
 
-**No `Info.plist` file.** `GENERATE_INFOPLIST_FILE = YES`; plist keys go in as `INFOPLIST_KEY_*` build settings in project.pbxproj (the suffix becomes the key verbatim, so arbitrary keys work). Currently set: `NSAppleEventsUsageDescription`, `NSMicrophoneUsageDescription`, `NSHumanReadableCopyright`, `LSApplicationCategoryType`, and `ITSAppUsesNonExemptEncryption = NO` (the last one pre-answers App Store Connect's export-compliance prompt on every upload).
+**`INFOPLIST_KEY_*` only accepts Apple's known keys — arbitrary suffixes are silently dropped.** `GENERATE_INFOPLIST_FILE = YES` and most plist keys go in as `INFOPLIST_KEY_*` build settings: `NSAppleEventsUsageDescription`, `NSMicrophoneUsageDescription`, `NSHumanReadableCopyright`, `LSApplicationCategoryType`, `ITSAppUsesNonExemptEncryption = NO` (that last one pre-answers App Store Connect's export-compliance prompt on every upload). But a *third-party* key like `SUFeedURL` never reaches the built Info.plist — no warning, no build failure, and `INFOPLIST_KEY_SUFeedURL` sat in this project doing nothing until it was caught by inspecting a built bundle. For those, set **both** `INFOPLIST_FILE` and `GENERATE_INFOPLIST_FILE = YES`: the file is the base and the generated keys merge on top. That is what `Synesthia-Direct-Info.plist` is (Sparkle's three keys only); the App Store target still has no Info.plist file at all.
 
 **Privacy manifest**: `Synesthia/PrivacyInfo.xcprivacy` declares no tracking, no collected data, and one `UserDefaults` access reason. It is picked up automatically by the synchronized group. Its contents must stay in sync with the App Store Connect privacy answers.
 

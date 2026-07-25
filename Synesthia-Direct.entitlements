@@ -22,5 +22,28 @@
 	<array>
 		<string>com.apple.Music</string>
 	</array>
+	<!-- Sparkle. Only the `Synesthia Direct` target links it; the App Store
+	     target has no updater and none of these three entitlements.
+
+	     network.client is what lets the app fetch the appcast and the DMG
+	     itself. Sparkle's alternative is its Downloader.xpc service, which
+	     exists precisely so an app *without* this entitlement can still
+	     update — but Sparkle's own guidance is to pick one, and an app that
+	     genuinely does make network requests should say so. Do NOT also set
+	     SUEnableDownloaderService: with the entitlement present it is
+	     redundant, and Sparkle warns about enabling both.
+
+	     The mach-lookup exceptions let the sandboxed app reach Sparkle's
+	     Installer.xpc, which does the install from outside the sandbox.
+	     $(PRODUCT_BUNDLE_IDENTIFIER) expands at build time; the -spks/-spki
+	     suffixes are Sparkle's, not ours, and must be spelled exactly. This
+	     pair is required whenever SUEnableInstallerLauncherService is YES. -->
+	<key>com.apple.security.network.client</key>
+	<true/>
+	<key>com.apple.security.temporary-exception.mach-lookup.global-name</key>
+	<array>
+		<string>$(PRODUCT_BUNDLE_IDENTIFIER)-spks</string>
+		<string>$(PRODUCT_BUNDLE_IDENTIFIER)-spki</string>
+	</array>
 </dict>
 </plist>

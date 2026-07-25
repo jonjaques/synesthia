@@ -1,0 +1,25 @@
+{
+	// The Pages Functions and their helpers, type-checked against the Workers
+	// runtime instead of the browser.
+	//
+	// They need their own config because "lib": ["DOM"] and the Workers runtime
+	// types disagree on globals they both define. The visible symptom is
+	// `caches.default` failing to type-check: DOM's CacheStorage has no such
+	// property, Cloudflare's does, and whichever lib loads wins. Dropping DOM
+	// here lets the generated worker-configuration.d.ts be authoritative.
+	//
+	// tsconfig.json excludes functions/ and lib/ for the same reason.
+	"compilerOptions": {
+		"target": "ES2022",
+		"lib": ["ES2022"],
+		"module": "ESNext",
+		"moduleResolution": "Bundler",
+		"strict": true,
+		"noEmit": true,
+		"skipLibCheck": true,
+		"types": [],
+		"isolatedModules": true,
+		"verbatimModuleSyntax": true
+	},
+	"include": ["functions/**/*.ts", "lib/**/*.ts", "worker-configuration.d.ts"]
+}

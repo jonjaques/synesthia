@@ -24,6 +24,16 @@ export const SITE = {
  */
 export const APP_STORE_URL = 'https://apps.apple.com/app/id0000000000';
 
+/**
+ * The notarized direct download — the build that keeps the Music.app source,
+ * and the only one that updates itself via Sparkle.
+ *
+ * Not a real file path: `/download` is a Pages Function that redirects to the
+ * current DMG in R2 (see web/functions/download.ts), so this link keeps working
+ * across releases and the site never has to be rebuilt to publish one.
+ */
+export const DIRECT_DOWNLOAD_URL = '/download';
+
 /** Shown next to the download button. */
 export const RELEASE = {
 	version: '1.0',

@@ -1,5 +1,8 @@
 {
   "extends": "astro/tsconfigs/strict",
   "include": [".astro/types.d.ts", "**/*"],
-  "exclude": ["dist"]
+  // functions/ and lib/ run on the Workers runtime, not in a browser, and are
+  // checked by tsconfig.functions.json instead. Leaving them here would load
+  // the DOM lib over the Workers globals and mistype things like caches.default.
+  "exclude": ["dist", "functions", "lib", "worker-configuration.d.ts"]
 }

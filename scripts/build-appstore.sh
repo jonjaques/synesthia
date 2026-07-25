@@ -74,6 +74,21 @@ if strings "$ARCHIVED_APP/Contents/MacOS/$APP_NAME" | grep -q 'tell application 
 fi
 echo "  Music.app AppleScript: absent"
 
+# Sparkle is linked by the `Synesthia Direct` target only. If it ever shows up
+# here, the wrong target was archived — and an App Store app that bundles its
+# own updater (and an XPC service that installs code) is a rejection under
+# guideline 2.4.5. Check the framework, the link, and the Info.plist keys
+# separately: any one of them appearing alone still means something is wrong.
+[[ ! -d "$ARCHIVED_APP/Contents/Frameworks/Sparkle.framework" ]] \
+	|| fail "Sparkle.framework is embedded — the App Store build must not contain an updater"
+if otool -L "$ARCHIVED_APP/Contents/MacOS/$APP_NAME" | grep -qi sparkle; then
+	fail "the binary links Sparkle — wrong target archived (want scheme 'Synesthia', not 'Synesthia Direct')"
+fi
+if /usr/libexec/PlistBuddy -c "Print :SUFeedURL" "$ARCHIVED_APP/Contents/Info.plist" >/dev/null 2>&1; then
+	fail "SUFeedURL is in Info.plist — the App Store build must advertise no update feed"
+fi
+echo "  Sparkle              : absent (framework, link and Info.plist keys)"
+
 [[ -f "$ARCHIVED_APP/Contents/Resources/PrivacyInfo.xcprivacy" ]] \
 	|| fail "PrivacyInfo.xcprivacy is missing from the bundle"
 echo "  privacy manifest     : present"

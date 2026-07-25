@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Sparkle's Info.plist keys, for the `Synesthia Direct` target only.
+
+     This file exists because INFOPLIST_KEY_* does NOT accept arbitrary keys.
+     Xcode only recognises a fixed list of Apple-defined suffixes; anything else
+     (SUFeedURL, SUPublicEDKey, SUEnableInstallerLauncherService) is dropped
+     without a warning, and the app ships with no feed at all. Setting both
+     INFOPLIST_FILE and GENERATE_INFOPLIST_FILE = YES is the supported way out:
+     this file is the base, and the generated keys are merged on top of it. So
+     everything else still lives in build settings — only these three are here.
+
+     The App Store target has no Info.plist file and no Sparkle keys, which is
+     correct: it must not contain an updater. -->
+<plist version="1.0">
+<dict>
+	<!-- Served by web/functions/appcast.xml.ts out of the R2 releases bucket. -->
+	<key>SUFeedURL</key>
+	<string>https://synesthia.app/appcast.xml</string>
+
+	<!-- The EdDSA public half of the key that signs every appcast entry.
+	     Generate with `make sparkle-keys`, then paste the printed key here.
+	     scripts/build-direct.sh refuses to build while it still reads
+	     REPLACE_WITH_SPARKLE_PUBLIC_KEY, because an app shipped with a
+	     placeholder can never verify an update. -->
+	<key>SUPublicEDKey</key>
+	<string>REPLACE_WITH_SPARKLE_PUBLIC_KEY</string>
+
+	<!-- Required for a sandboxed app: routes installation through Sparkle's
+	     Installer.xpc, which runs outside the sandbox. Paired with the
+	     -spks/-spki mach-lookup exceptions in Synesthia-Direct.entitlements.
+	     Deliberately NOT enabling SUEnableDownloaderService — the app holds
+	     com.apple.security.network.client and does its own fetching. -->
+	<key>SUEnableInstallerLauncherService</key>
+	<true/>
+</dict>
+</plist>

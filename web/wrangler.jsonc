@@ -1,0 +1,40 @@
+{
+	// Cloudflare Pages configuration for synesthia.app.
+	//
+	// The site itself is a static Astro build; everything in functions/ exists to
+	// serve the *release* artifacts, which deliberately do not live in git:
+	//
+	//   /appcast.xml     the Sparkle feed          (R2: appcast.xml)
+	//   /download        302 to the current DMG    (R2: latest.json)
+	//   /downloads/*.dmg the DMGs themselves       (R2: downloads/…)
+	//
+	// Publishing a new version is therefore `make publish-release` — an R2 upload,
+	// with no site rebuild and no commit. See docs/distribution.md.
+	//
+	// TWO THINGS TO KNOW BEFORE THIS FILE GOES LIVE:
+	//
+	// 1. `name` must match the existing Pages project exactly, or the git-integrated
+	//    build will deploy to a project that isn't the one serving synesthia.app.
+	//    Check it with `npx wrangler pages project list`.
+	// 2. Once a Pages project has a Wrangler config file, that file becomes the
+	//    source of truth and the same fields become read-only in the dashboard.
+	//    Bindings added by hand in the dashboard will stop being applied.
+	"$schema": "./node_modules/wrangler/config-schema.json",
+	"name": "synesthia",
+	"pages_build_output_dir": "./dist",
+	"compatibility_date": "2026-07-25",
+
+	// Top level covers `wrangler pages dev`. Pages only knows two deployed
+	// environments, and bindings are NOT inherited from the top level into them,
+	// so the same bucket has to be spelled out in all three places.
+	"r2_buckets": [{ "binding": "RELEASES", "bucket_name": "synesthia-releases" }],
+
+	"env": {
+		"preview": {
+			"r2_buckets": [{ "binding": "RELEASES", "bucket_name": "synesthia-releases" }]
+		},
+		"production": {
+			"r2_buckets": [{ "binding": "RELEASES", "bucket_name": "synesthia-releases" }]
+		}
+	}
+}

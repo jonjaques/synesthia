@@ -20,7 +20,10 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-SCHEME="Synesthia"
+# The `Synesthia Direct` target is the one that links Sparkle. The plain
+# `Synesthia` target is the App Store build and has no updater — archiving that
+# one here would produce a direct download that can never update itself.
+SCHEME="Synesthia Direct"
 CONFIGURATION="Direct"
 APP_NAME="Synesthia"
 NOTARY_PROFILE="${NOTARY_PROFILE:-SYNESTHIA_NOTARY}"
@@ -74,6 +77,42 @@ if codesign -d --entitlements - --xml "$APP" 2>/dev/null | grep -q "get-task-all
 	fail "com.apple.security.get-task-allow is present — this is a debug signature"
 fi
 echo "Signature OK — universal: $(lipo -archs "$APP/Contents/MacOS/$APP_NAME")"
+
+step "Verifying Sparkle"
+# Everything below is silent-failure territory: the app launches, looks fine,
+# and simply never updates. Cheaper to catch here than in the field.
+[[ -d "$APP/Contents/Frameworks/Sparkle.framework" ]] \
+	|| fail "Sparkle.framework is not embedded — did you archive the 'Synesthia' target by mistake?"
+
+ED_KEY=$(/usr/libexec/PlistBuddy -c "Print :SUPublicEDKey" "$APP/Contents/Info.plist" 2>/dev/null || true)
+[[ -n "$ED_KEY" ]] \
+	|| fail "SUPublicEDKey is missing from Info.plist — Sparkle cannot verify any update"
+[[ "$ED_KEY" != "REPLACE_WITH_SPARKLE_PUBLIC_KEY" ]] \
+	|| fail "SUPublicEDKey is still the placeholder. Run 'make sparkle-keys' and paste the
+        printed public key into Synesthia-Direct-Info.plist. Shipping the
+        placeholder means no update will ever pass signature verification."
+
+FEED=$(/usr/libexec/PlistBuddy -c "Print :SUFeedURL" "$APP/Contents/Info.plist" 2>/dev/null || true)
+[[ -n "$FEED" ]] || fail "SUFeedURL is missing from Info.plist"
+[[ "$FEED" == https://* ]] || fail "SUFeedURL is not HTTPS: $FEED"
+
+# A sandboxed app needs Installer.xpc plus the two mach-lookup exceptions. If
+# the entitlements and the Info.plist switch disagree, updates fail at install
+# time — the download succeeds and then nothing happens.
+[[ -d "$APP/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Installer.xpc" ]] \
+	|| fail "Installer.xpc is missing from Sparkle.framework"
+APP_ENTS=$(codesign -d --entitlements - --xml "$APP" 2>/dev/null)
+grep -q -- "-spks" <<<"$APP_ENTS" && grep -q -- "-spki" <<<"$APP_ENTS" \
+	|| fail "the -spks/-spki mach-lookup exceptions are missing; a sandboxed app cannot reach Installer.xpc"
+
+# Notarization rejects nested code that isn't hardened, and the error it gives
+# names the XPC service rather than the app, which is confusing after the fact.
+for xpc in "$APP/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/"*.xpc; do
+	codesign -d --verbose=2 "$xpc" 2>&1 | grep -q "flags=.*runtime" \
+		|| fail "$(basename "$xpc") is not signed with the hardened runtime"
+done
+echo "  framework, Installer.xpc, EdDSA key, HTTPS feed and entitlements all present"
+echo "  feed: $FEED"
 
 step "Building $DMG"
 mkdir -p "$STAGE"
