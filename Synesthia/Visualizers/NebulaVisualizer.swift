@@ -19,6 +19,11 @@ import simd
 /// small CPU simulation: every frame `update` advances all particles and
 /// writes their positions/colors into a shared `MTLBuffer`, which the GPU
 /// then draws as point sprites on top of a shader-painted background.
+///
+/// Rendering is HDR: background and particles draw into a float16 offscreen
+/// target so additive pile-ups accumulate past 1.0, and a final tonemap pass
+/// (`nebulaTonemapFragment`) maps the result to the display with vibrance,
+/// Reinhard, and an S-curve — bright cores bloom instead of clipping.
 final class NebulaVisualizer: Visualizer {
     static let descriptor = VisualizerDescriptor(
         id: "nebula",
@@ -32,6 +37,7 @@ final class NebulaVisualizer: Visualizer {
             VisualizerOption(id: "spread", name: "Spread", range: 0.0...2.0, defaultValue: 1.0),
             VisualizerOption(id: "halos", name: "Halos", range: 0.0...2.0, defaultValue: 1.0),
             VisualizerOption(id: "impact", name: "Impact", range: 0.0...2.0, defaultValue: 1.0),
+            VisualizerOption(id: "form", name: "Form", range: 0.0...2.0, defaultValue: 1.0),
         ],
         make: { try NebulaVisualizer(device: $0, library: $1, pixelFormat: $2) })
 
@@ -57,14 +63,24 @@ final class NebulaVisualizer: Visualizer {
         var phase: Float
         var spin: Float
         var kick: Float
+        /// Per-particle multiplier on the body's target radius (the Form
+        /// slider scales its influence): shells become ragged clouds instead
+        /// of crisp spheres.
+        var bias: Float
     }
 
     private static let maxParticles = 4096
     /// Depth of the CPU→GPU buffer ring below.
     private static let inFlightFrames = 3
 
+    private let device: MTLDevice
     private let backgroundPipeline: MTLRenderPipelineState
     private let particlePipeline: MTLRenderPipelineState
+    /// Maps the HDR scene texture to the drawable (vibrance + tone mapping).
+    private let tonemapPipeline: MTLRenderPipelineState
+    /// Offscreen float16 target the scene renders into; recreated whenever
+    /// the drawable size changes (including adaptive-resolution steps).
+    private var hdrTexture: MTLTexture?
     /// Triple-buffered particle storage: each frame the CPU writes directly
     /// into the next buffer of the ring while the GPU may still be reading
     /// the previous frames' buffers. The semaphore blocks the CPU only if it
@@ -88,14 +104,21 @@ final class NebulaVisualizer: Visualizer {
     private var shockRadius: Float = 10
 
     init(device: MTLDevice, library: MTLLibrary, pixelFormat: MTLPixelFormat) throws {
+        self.device = device
+        // The scene pipelines target the float16 HDR texture, not the view's
+        // format; only the tonemap pass draws to the drawable.
         backgroundPipeline = try makeRenderPipeline(
             device: device, library: library,
             vertex: "fullscreenVertex", fragment: "nebulaBackgroundFragment",
-            pixelFormat: pixelFormat)
+            pixelFormat: .rgba16Float)
         particlePipeline = try makeRenderPipeline(
             device: device, library: library,
             vertex: "particleVertex", fragment: "particleFragment",
-            pixelFormat: pixelFormat, additiveBlending: true)
+            pixelFormat: .rgba16Float, additiveBlending: true)
+        tonemapPipeline = try makeRenderPipeline(
+            device: device, library: library,
+            vertex: "fullscreenVertex", fragment: "nebulaTonemapFragment",
+            pixelFormat: pixelFormat)
 
         var buffers = [MTLBuffer]()
         for _ in 0..<Self.inFlightFrames {
@@ -128,7 +151,8 @@ final class NebulaVisualizer: Visualizer {
                 band: i % AudioSnapshot.bandCount,
                 phase: Float.random(in: 0...6.28318, using: &rng),
                 spin: Float.random(in: 0.15...0.9, using: &rng) * (Bool.random(using: &rng) ? 1 : -1),
-                kick: 0)
+                kick: 0,
+                bias: Float.random(in: 0.7...1.35, using: &rng))
         }
     }
 
@@ -139,11 +163,14 @@ final class NebulaVisualizer: Visualizer {
         snapshot: AudioSnapshot
     ) {
         // p3 (orbit speed) and p4 (spread) are consumed inside `orbCenter`,
-        // p5 (halos) by the background shader, p6 (impact) in `update`.
+        // p5 (halos) by the background shader, p6 (impact) and p7 (form)
+        // in `update`.
         let density = uniforms.p0
         let glow = uniforms.p1
         let swirl = uniforms.p2
         let activeCount = max(64, Int(Float(Self.maxParticles) * density))
+
+        guard let hdr = hdrTarget(for: view) else { return }
 
         // Claim the next buffer in the ring; the GPU hands it back (via the
         // semaphore) when this frame's command buffer finishes executing.
@@ -166,11 +193,16 @@ final class NebulaVisualizer: Visualizer {
             activeCount: activeCount,
             uniforms: uniforms, snapshot: snapshot)
 
-        guard let pass = view.currentRenderPassDescriptor,
-            let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass)
-        else {
-            // No drawable means the GPU never sees this frame's buffer, so
-            // no completed handler will ever hand it back — do it here.
+        // Pass 1: the scene, into the offscreen HDR texture (no drawable
+        // needed yet).
+        let scenePass = MTLRenderPassDescriptor()
+        scenePass.colorAttachments[0].texture = hdr
+        scenePass.colorAttachments[0].loadAction = .clear
+        scenePass.colorAttachments[0].storeAction = .store
+        scenePass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
+        guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: scenePass) else {
+            // The GPU never sees this frame's buffer, so no completed
+            // handler will ever hand it back — do it here.
             inFlight.signal()
             return
         }
@@ -193,6 +225,34 @@ final class NebulaVisualizer: Visualizer {
         encoder.setVertexBytes(&u, length: MemoryLayout<VizUniforms>.stride, index: 1)
         encoder.drawPrimitives(type: .point, vertexStart: 0, vertexCount: activeCount)
         encoder.endEncoding()
+
+        // Pass 2: tonemap the HDR texture to the drawable. If no drawable is
+        // available this frame the scene work still commits harmlessly and
+        // the completed handler above returns the ring buffer.
+        guard let viewPass = view.currentRenderPassDescriptor,
+            let post = commandBuffer.makeRenderCommandEncoder(descriptor: viewPass)
+        else { return }
+        post.setRenderPipelineState(tonemapPipeline)
+        post.setFragmentTexture(hdr, index: 0)
+        post.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+        post.endEncoding()
+    }
+
+    /// Returns the cached HDR scene texture, recreating it when the drawable
+    /// size changes (window resizes, adaptive-resolution steps).
+    private func hdrTarget(for view: MTKView) -> MTLTexture? {
+        let width = Int(view.drawableSize.width)
+        let height = Int(view.drawableSize.height)
+        guard width > 0, height > 0 else { return nil }
+        if let texture = hdrTexture, texture.width == width, texture.height == height {
+            return texture
+        }
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .rgba16Float, width: width, height: height, mipmapped: false)
+        descriptor.usage = [.renderTarget, .shaderRead]
+        descriptor.storageMode = .private
+        hdrTexture = device.makeTexture(descriptor: descriptor)
+        return hdrTexture
     }
 
     private func update(
@@ -206,6 +266,10 @@ final class NebulaVisualizer: Visualizer {
         /// The Impact slider: scales the transient theatrics (comet flings
         /// and the shockwave) without touching the steady-state motion.
         let impact = uniforms.p6
+        /// The Form slider: how irregular the bodies are — 0 gives crisp
+        /// spheres and a flat disc, 2 ragged clouds, a strongly warped disc,
+        /// and a hard-stretched core.
+        let form = uniforms.p7
 
         // Fill this frame's per-band color table once, up front. The spectral
         // centroid steers the hue, so brighter music literally shifts color.
@@ -235,6 +299,11 @@ final class NebulaVisualizer: Visualizer {
         let bassCenter = Self.orbCenter(0, uniforms: uniforms)
         let midCenter = Self.orbCenter(1, uniforms: uniforms)
         let trebleCenter = Self.orbCenter(2, uniforms: uniforms)
+
+        // The core's stretch axis tumbles slowly; kicks elongate the core
+        // along it, so it reads as a pulsing ellipsoid, not a static ball.
+        let stretchAxis = simd_normalize(SIMD3<Float>(sin(time * 0.11), 0.35, cos(time * 0.13)))
+        let coreStretch = form * (0.30 + 0.35 * snapshot.beat)
 
         // Loop-invariant: one transcendental call instead of 4096.
         let kickDecay = exp(-dt * 2.8)
@@ -287,6 +356,9 @@ final class NebulaVisualizer: Visualizer {
             } else {
                 target = 0.60 + 1.2 * energy + 0.35 * snapshot.beat
             }
+            // Per-particle radius bias (Form slider): shells become ragged
+            // clouds instead of crisp spheres.
+            target *= 1 + (p.bias - 1) * form
             p.radius += (target - p.radius) * min(1, dt * (isBass ? 7 : 5))
 
             // Comets: a new treble transient flings a pseudo-random ~30% of
@@ -309,8 +381,17 @@ final class NebulaVisualizer: Visualizer {
             var offset = p.direction * p.radius
             if isMid {
                 // Flatten the mid shell into the disc by squashing the
-                // component along the galactic axis.
+                // component along the galactic axis...
                 offset -= galacticAxis * simd_dot(offset, galacticAxis) * 0.55
+                // ...then warp it like a real galaxy: an m=2 corrugation
+                // that slowly precesses, lifting opposite edges out of the
+                // plane (Form slider).
+                let azimuth: Float = atan2(offset.z, offset.x)
+                let corrugation: Float = sin(2 * azimuth + time * 0.35)
+                let warp: Float = 0.14 * form * corrugation * p.radius
+                offset += galacticAxis * warp
+            } else if isBass {
+                offset += stretchAxis * simd_dot(offset, stretchAxis) * coreStretch
             }
             let position = (isBass ? bassCenter : isTreble ? trebleCenter : midCenter) + offset
             var size: Float

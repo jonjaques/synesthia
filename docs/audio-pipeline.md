@@ -153,9 +153,11 @@ The beat detector is deliberately simple and works well for rhythmic music:
 
 ```mermaid
 flowchart LR
-    E["Instantaneous bass energy<br>(mean of bands 0–9)"] --> CMP{"> 1.3 × running average<br>and > absolute floor?"}
-    CMP -- yes --> SET["beat envelope := 1"]
+    E["Instantaneous bass energy<br>(mean of bands 0–9)"] --> CMP{"> 1.3 × running average,<br>> absolute floor,<br>and not latched?"}
+    CMP -- yes --> SET["beat envelope := 1<br>latch := on"]
     CMP -- no --> DECAY["envelope ×= 0.9 per pass"]
+    E --> REL{"< 1.1 × running average?"}
+    REL -- yes --> UNLATCH["latch := off"]
     E --> AVG["running average<br>(very slow-moving)"]
     AVG --> CMP
 ```
@@ -166,11 +168,21 @@ silence from triggering. The output is an **envelope**, not an event: it
 jumps to 1 and decays exponentially, so a visualizer can simply multiply
 things by `beat` and get a natural-looking pulse with free falloff.
 
+The latch makes each detection **one-shot**: after firing, the detector is
+disarmed until the energy falls back below 1.1× the average, and the
+1.1–1.3 band is the hysteresis. Without it, a _held_ bass note riding the
+trigger threshold (while the running average slowly catches up) re-fires
+every few passes and the envelope sawtooths 1 → 0.8 → 1 at several hertz —
+which edge-triggered consumers like Nebula's shockwave render as constant
+shaking. Real kick patterns dip between hits, so they re-arm every time;
+a sustained tone fires once and settles. `trebleBeat` uses the same latch.
+
 ### Silence behavior
 
 If no samples arrive for 250 ms (source stopped, permission revoked),
-`latest()` decays every value a little per frame instead of freezing the
-last loud frame on screen — the visuals gracefully dim to black. Switching
+`latest()` decays every value by elapsed wall time instead of freezing the
+last loud frame on screen — the visuals gracefully dim to black at the same
+speed whether the render loop pulls at 30 or 120 fps. Switching
 sources calls `reset()`, clearing everything instantly so the previous
 source's tail doesn't bleed into the new one.
 

@@ -564,11 +564,14 @@ static float3 nebulaOrbCenter(int body, constant VizUniforms& u) {
 // factor in z. Both the particle pass and the background pass project
 // through this, so the background's halos sit exactly behind the 3D bodies.
 static float3 nebulaProject(float3 world, constant VizUniforms& u) {
-    float yaw = u.time * 0.12 * u.speed;
-    // the spectral centroid leans the camera: dark music looks slightly up
-    // at the disc, bright music slightly down (centroid is smoothed, so this
-    // drifts rather than jitters)
-    float pitch = 0.30 * sin(u.time * 0.06 * u.speed) + 0.18 * (u.centroid - 0.5);
+    float t = u.time * u.speed;
+    // A non-uniform orbit around the whole cluster: the yaw speeds up and
+    // slows down instead of turning at a constant rate, the pitch swings
+    // from below the disc to high above it (leaned further by the spectral
+    // centroid — bright music looks down, dark music up), and the distance
+    // breathes in and out, so every pass frames the bodies differently.
+    float yaw = t * 0.14 + 0.55 * sin(t * 0.047);
+    float pitch = 0.55 * sin(t * 0.043) + 0.18 * (u.centroid - 0.5);
     float cy = cos(yaw), sy = sin(yaw);
     float cp = cos(pitch), sp = sin(pitch);
     float3x3 rotY = float3x3(float3(cy, 0.0, -sy), float3(0.0, 1.0, 0.0), float3(sy, 0.0, cy));
@@ -577,11 +580,11 @@ static float3 nebulaProject(float3 world, constant VizUniforms& u) {
     // Push the scene in front of the camera, then perspective-divide:
     // farther things land closer to center and draw smaller. The kick
     // envelope pulls the camera in, punching the whole frame on the beat.
-    pos.z += 3.4 - 0.35 * u.beat;
+    pos.z += 3.4 + 0.7 * sin(t * 0.037) - 0.35 * u.beat;
     float persp = 1.0 / max(pos.z, 0.25);
     float2 clip = pos.xy * persp * 1.6;
-    // slow roll so the scene never feels locked upright
-    clip = rot2(clip, 0.07 * sin(u.time * 0.05 * u.speed));
+    // slow two-frequency roll so the scene never feels locked upright
+    clip = rot2(clip, 0.09 * sin(t * 0.05) + 0.04 * sin(t * 0.013));
     return float3(clip, persp);
 }
 
@@ -704,4 +707,22 @@ fragment float4 particleFragment(ParticleOut in [[stage_in]],
     float a = exp(-d * d * 4.5) * smoothstep(1.0, 0.65, d);
     float3 col = in.color.rgb * a * in.color.a;
     return float4(col, a * in.color.a);
+}
+
+// Final pass for the nebula: the background and the additive particles are
+// rendered into a float16 HDR texture, and this maps it to the display —
+// exposure lift and vibrance while still HDR, Reinhard tone mapping, then a
+// gentle S-curve. Additive particle pile-ups roll into bloom-like highlights
+// instead of clipping hard at white.
+fragment float4 nebulaTonemapFragment(FSQuadOut in [[stage_in]],
+                                      texture2d<float> src [[texture(0)]]) {
+    constexpr sampler s(mag_filter::linear, min_filter::linear);
+    // texture rows run top-down while uv runs bottom-up, hence the flip
+    float3 col = src.sample(s, float2(in.uv.x, 1.0 - in.uv.y)).rgb;
+    col *= 1.35;
+    float luma = dot(col, float3(0.299, 0.587, 0.114));
+    col = max(mix(float3(luma), col, 1.4), 0.0);
+    col = col / (1.0 + col);
+    col = col * col * (3.0 - 2.0 * col);
+    return float4(col, 1.0);
 }
