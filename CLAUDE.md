@@ -37,7 +37,8 @@ Synesthia/
     │                             VizUniforms, palettes, persisted VisualizerSettings
     ├── Shaders.metal             ALL shader functions, compiled at build time (see below)
     ├── MetalVisualizerView.swift MetalRenderContext (optional), MTKView host, uniforms per
-    │                             frame, occlusion pausing, Reduce Motion damping
+    │                             frame, occlusion pausing, adaptive render scale, Reduce
+    │                             Motion damping
     └── {Nebula,Tunnel,Aurora}Visualizer.swift
 
 SynesthiaTests/                   Swift Testing bundle; AudioAnalyzer DSP coverage

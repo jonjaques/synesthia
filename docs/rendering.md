@@ -63,6 +63,19 @@ Details worth knowing:
   `enableSetNeedsDisplay = false`: the MTKView ticks continuously from a
   display link rather than waiting for SwiftUI invalidation — the visuals
   animate even when no UI state changes.
+- **Resolution adapts to GPU load** (dynamic resolution scaling, the same
+  trick console engines use). Every command buffer reports its measured GPU
+  time via `addCompletedHandler`; every half second the coordinator compares
+  the average against the frame budget (1 / `preferredFramesPerSecond`) and
+  steps the drawable along a 50–100%-of-native ladder — down when over 85%
+  of budget, up when the predicted cost (area ratio × average) fits under
+  60%, the gap being the hysteresis. `autoResizeDrawable` is off; the
+  coordinator owns `drawableSize`, and Core Animation scales the smaller
+  drawable up to the window. Fragment cost here is strictly per-pixel (the
+  tunnel sphere-traces 60 noise-laden steps for every one), so a 5K
+  fullscreen frame that would otherwise stutter instead renders at reduced
+  resolution and holds the display's full frame rate — soft, glowing
+  imagery upscales invisibly; dropped frames never do.
 - **`dt` is clamped** to 100 ms so a hiccup (debugger pause, window drag)
   doesn't make simulations take one giant step.
 - **Visualizers are lazy.** Only the selected visualizer exists; switching

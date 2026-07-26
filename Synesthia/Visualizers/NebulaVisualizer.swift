@@ -145,20 +145,18 @@ final class NebulaVisualizer: Visualizer {
         let swirl = uniforms.p2
         let activeCount = max(64, Int(Float(Self.maxParticles) * density))
 
-        guard let pass = view.currentRenderPassDescriptor,
-            let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass)
-        else { return }
-
         // Claim the next buffer in the ring; the GPU hands it back (via the
         // semaphore) when this frame's command buffer finishes executing.
         inFlight.wait()
-        let inFlight = self.inFlight
-        commandBuffer.addCompletedHandler { @Sendable _ in inFlight.signal() }
         bufferIndex = (bufferIndex + 1) % Self.inFlightFrames
         let particleBuffer = particleBuffers[bufferIndex]
 
         // The simulation writes straight into the GPU-visible buffer
-        // (.storageModeShared) — no intermediate array, no copy.
+        // (.storageModeShared) — no intermediate array, no copy. Run it
+        // *before* touching the drawable: `currentRenderPassDescriptor`
+        // blocks until Core Animation hands over one of its few drawables,
+        // so simulating first keeps that scarce drawable held only for
+        // encode-and-commit instead of for the whole frame's CPU work.
         update(
             into: particleBuffer.contents().bindMemory(
                 to: GPUParticle.self,
@@ -167,6 +165,17 @@ final class NebulaVisualizer: Visualizer {
             swirl: swirl, glow: glow,
             activeCount: activeCount,
             uniforms: uniforms, snapshot: snapshot)
+
+        guard let pass = view.currentRenderPassDescriptor,
+            let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass)
+        else {
+            // No drawable means the GPU never sees this frame's buffer, so
+            // no completed handler will ever hand it back — do it here.
+            inFlight.signal()
+            return
+        }
+        let inFlight = self.inFlight
+        commandBuffer.addCompletedHandler { @Sendable _ in inFlight.signal() }
 
         var u = uniforms
         encoder.setRenderPipelineState(backgroundPipeline)
@@ -226,6 +235,9 @@ final class NebulaVisualizer: Visualizer {
         let bassCenter = Self.orbCenter(0, uniforms: uniforms)
         let midCenter = Self.orbCenter(1, uniforms: uniforms)
         let trebleCenter = Self.orbCenter(2, uniforms: uniforms)
+
+        // Loop-invariant: one transcendental call instead of 4096.
+        let kickDecay = exp(-dt * 2.8)
 
         for i in 0..<activeCount {
             var p = cpuParticles[i]
@@ -291,7 +303,7 @@ final class NebulaVisualizer: Visualizer {
                 p.kick = max(p.kick, shockBoost * 0.9)
             }
             p.radius = min(p.radius + p.kick * dt, 5)
-            p.kick *= exp(-dt * 2.8)
+            p.kick *= kickDecay
             cpuParticles[i] = p
 
             var offset = p.direction * p.radius

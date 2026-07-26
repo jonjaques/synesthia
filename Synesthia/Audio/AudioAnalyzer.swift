@@ -137,6 +137,9 @@ nonisolated final class AudioAnalyzer: @unchecked Sendable {
     /// When samples last arrived; lets `latest()` fade the visuals out
     /// instead of freezing when the source stops.
     private var lastAppendTime: CFAbsoluteTime = 0
+    /// When `latest()` last ran, so the idle fade below can decay by elapsed
+    /// wall time instead of by call count.
+    private var lastLatestTime: CFAbsoluteTime = 0
 
     init() {
         fftSetup = vDSP_create_fftsetup(log2n, FFTRadix(kFFTRadix2))!
@@ -150,23 +153,33 @@ nonisolated final class AudioAnalyzer: @unchecked Sendable {
         defer { lock.unlock() }
         // Decay toward silence if the source stopped feeding us: without this
         // the last frame of audio would freeze on screen when capture stops.
-        // Repeated multiplication by <1 each frame gives an exponential fade.
-        if CFAbsoluteTimeGetCurrent() - lastAppendTime > 0.25 {
-            for i in smoothed.indices { smoothed[i] *= 0.92 }
-            beatEnvelope *= 0.9
-            trebleEnvelope *= 0.85
-            fluxEnvelope *= 0.85
+        // The decay factors are exponentials of *elapsed wall time*, not
+        // fixed per-call constants: this runs once per rendered frame, so a
+        // per-call factor would fade twice as fast on a 120 Hz display as on
+        // a 60 Hz one (the time constants below match the old per-frame
+        // factors at the original 60 fps).
+        let now = CFAbsoluteTimeGetCurrent()
+        if now - lastAppendTime > 0.25 {
+            let elapsed = Float(min(max(now - lastLatestTime, 0), 0.1))
+            let slow = exp(-elapsed / 0.20)  // ≈ ×0.92 per 60 fps frame
+            let mid = exp(-elapsed / 0.16)  // ≈ ×0.90
+            let fast = exp(-elapsed / 0.10)  // ≈ ×0.85
+            for i in smoothed.indices { smoothed[i] *= slow }
+            beatEnvelope *= mid
+            trebleEnvelope *= fast
+            fluxEnvelope *= fast
             snapshot.bands = smoothed
             snapshot.beat = beatEnvelope
             snapshot.trebleBeat = trebleEnvelope
             snapshot.flux = fluxEnvelope
-            snapshot.level *= 0.92
-            snapshot.bass *= 0.92
-            snapshot.mid *= 0.92
-            snapshot.treble *= 0.92
-            for i in snapshot.components.indices { snapshot.components[i] *= 0.92 }
-            for i in snapshot.waveform.indices { snapshot.waveform[i] *= 0.9 }
+            snapshot.level *= slow
+            snapshot.bass *= slow
+            snapshot.mid *= slow
+            snapshot.treble *= slow
+            for i in snapshot.components.indices { snapshot.components[i] *= slow }
+            for i in snapshot.waveform.indices { snapshot.waveform[i] *= mid }
         }
+        lastLatestTime = now
         return snapshot
     }
 

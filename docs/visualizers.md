@@ -88,10 +88,14 @@ pulsing with loudness:
 ### Spectrum Tunnel (`TunnelVisualizer` + `tunnelFragment`)
 
 Pure fullscreen shader; the Swift class is ~40 lines of pipeline setup. The
-shader converts each pixel to polar coordinates and maps _angle → spectrum
-band_ and _1/radius → depth_, which reads as flying down a tube whose walls
-are the live spectrum. Rings, spokes, dust motes, and flashes are layered on
-top, each tied to its own audio feature.
+shader sphere-traces a real 3D signed-distance field: a bore of varying
+radius around a centerline that snakes through space, so bends genuinely
+occlude and the far end is never visible. Each angular lane of the wall
+reads one spectrum band (bass at the floor, treble overhead, mirror-folded
+so there is no seam) and loud bands bulge the rock inward; crevice lighting
+comes free from the march's iteration count, and volumetric steam, kick
+light-walls, and audio-pumped exposure are layered on top, each tied to its
+own audio feature.
 
 ### Aurora (`AuroraVisualizer` + `auroraFragment`)
 

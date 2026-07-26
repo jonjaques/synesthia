@@ -235,8 +235,11 @@ static float2 tunnelCenter(float z, float bend) {
 
 // Mirror-folded angle around the bore (0 = floor, 1 = ceiling): band 0 and
 // band 63 never sit next to each other, so the spectrum wall has no seam.
+// The +0.25 phase puts the fold's minimum at angle -π/2 (straight down), so
+// the bass really is at the floor and the treble overhead as documented —
+// +0.75 (the obvious other choice) flips the whole spectrum upside down.
 static float tunnelFold(float angle) {
-    return 1.0 - fabs(fract(angle / 6.28318 + 0.75) * 2.0 - 1.0);
+    return 1.0 - fabs(fract(angle / 6.28318 + 0.25) * 2.0 - 1.0);
 }
 
 // The signed-distance field: positive inside the air of the tunnel, zero at
