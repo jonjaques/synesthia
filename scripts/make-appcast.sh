@@ -61,13 +61,26 @@ shopt -u nullglob
 # every older version's entry — including the ones users are updating *from*.
 if [[ $OFFLINE -eq 0 ]]; then
 	step "Fetching the published appcast so history is preserved"
-	if wrangler_r2 r2 object get "$R2_BUCKET/appcast.xml" \
-		--file "$RELEASES_DIR/appcast.xml" 2>/dev/null; then
-		echo "  merged with the live feed"
+	# Fetched to a scratch file, not straight over the local appcast. A failed
+	# `r2 object get` still creates a zero-byte file, so writing directly would
+	# either hand generate_appcast an empty feed to parse or clobber a good local
+	# one — losing exactly the history this step exists to preserve.
+	FETCHED="$RELEASES_DIR/.appcast-fetched.xml"
+	rm -f "$FETCHED"
+	if wrangler_r2 r2 object get "$R2_BUCKET/appcast.xml" --file "$FETCHED" 2>/dev/null \
+		&& [[ -s "$FETCHED" ]]; then
+		mv -f "$FETCHED" "$RELEASES_DIR/appcast.xml"
+		echo "  merged with the live feed ($(wc -c <"$RELEASES_DIR/appcast.xml" | tr -d ' ') bytes)"
 	else
-		echo "  no published appcast yet — generating a fresh one"
-		echo "  (if this is NOT your first release, stop: publishing now would"
-		echo "   truncate the feed. Check your R2 credentials and bucket name.)"
+		rm -f "$FETCHED"
+		if [[ -s "$RELEASES_DIR/appcast.xml" ]]; then
+			echo "  could not fetch the published feed — keeping the local appcast.xml"
+			echo "  (verify it still lists every shipped version before publishing)"
+		else
+			echo "  no published appcast yet — generating a fresh one"
+			echo "  (if this is NOT your first release, stop: publishing now would"
+			echo "   truncate the feed. Check your R2 credentials and bucket name.)"
+		fi
 	fi
 fi
 

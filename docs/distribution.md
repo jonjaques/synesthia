@@ -103,10 +103,34 @@ make direct        # …plus notarize and staple
 ```
 
 Archives the `Synesthia Direct` target in `Direct`, exports with Developer ID,
-verifies the signature and hardened runtime, checks the Sparkle wiring (see
-below), builds a compressed DMG with an `/Applications` symlink, submits it to
-Apple's notary service, staples the ticket to **both** the app and the DMG, then
-confirms Gatekeeper accepts it.
+verifies the signature, hardened runtime and Sparkle wiring, then:
+
+1. notarizes the **app** and staples its ticket
+2. builds a compressed DMG with an `/Applications` symlink, from the now-stapled app
+3. **signs the DMG** with the same Developer ID identity
+4. notarizes the **DMG** and staples its ticket
+5. asserts Gatekeeper accepts both (`--type open` for the image, `--type exec`
+   for the app)
+
+Two non-obvious things are load-bearing in that order, and both produced real
+failures before they were fixed:
+
+**`hdiutil` produces an unsigned disk image, and notarizing it is not a
+substitute for signing it.** A stapled but unsigned DMG fails
+`spctl --assess --context context:primary-signature` with
+`source=no usable signature` — Gatekeeper's primary-signature path looks for a
+signature and there isn't one. Signing it changes the reason to
+`Unnotarized Developer ID` and then, once notarized, to `Notarized Developer ID`.
+Sign *before* notarizing: signing rewrites the file, which would invalidate a
+ticket already stapled to it.
+
+**The app has to be notarized and stapled before the DMG is built**, because the
+DMG is made from a copy. Stapling the app afterwards leaves the copy inside the
+DMG without a ticket, so the app the user actually drags to `/Applications` can
+only be validated online — and Sparkle, which extracts that app out of the DMG
+and installs it, inherits the same problem. This is why there are two trips to
+the notary service rather than one; they are separate files with separate
+hashes and each needs its own submission.
 
 ---
 

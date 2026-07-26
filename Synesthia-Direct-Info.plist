@@ -24,7 +24,7 @@
 	     REPLACE_WITH_SPARKLE_PUBLIC_KEY, because an app shipped with a
 	     placeholder can never verify an update. -->
 	<key>SUPublicEDKey</key>
-	<string>REPLACE_WITH_SPARKLE_PUBLIC_KEY</string>
+	<string>kH73yLMppQptxrGFGEY77WIluXuKSxNn+vov14v3GTU=</string>
 
 	<!-- Required for a sandboxed app: routes installation through Sparkle's
 	     Installer.xpc, which runs outside the sandbox. Paired with the

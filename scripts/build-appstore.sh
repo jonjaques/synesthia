@@ -59,17 +59,27 @@ case "$ARCH_LIST" in
 	*) fail "archive is not universal (got: $ARCH_LIST); macOS 26 still supports Intel" ;;
 esac
 
-if codesign -d --entitlements - --xml "$ARCHIVED_APP" 2>/dev/null | grep -q "get-task-allow"; then
+# Capture once, then match against the variables. Piping into `grep -q` here is
+# actively unsafe: with `set -o pipefail`, a grep that MATCHES exits early, the
+# producer dies of SIGPIPE, the pipeline reports non-zero, and `if` reads that as
+# "nothing found" — so every one of these assertions would fail open at exactly
+# the moment something had leaked. Same trap that broke the hardened-runtime
+# check in build-direct.sh.
+ARCHIVE_ENTS=$(codesign -d --entitlements - --xml "$ARCHIVED_APP" 2>/dev/null || true)
+ARCHIVE_STRINGS=$(strings "$ARCHIVED_APP/Contents/MacOS/$APP_NAME" || true)
+ARCHIVE_LIBS=$(otool -L "$ARCHIVED_APP/Contents/MacOS/$APP_NAME" || true)
+
+if grep -q "get-task-allow" <<<"$ARCHIVE_ENTS"; then
 	fail "com.apple.security.get-task-allow survived into the archive"
 fi
 echo "  get-task-allow       : absent"
 
-if codesign -d --entitlements - --xml "$ARCHIVED_APP" 2>/dev/null | grep -q "apple-events"; then
+if grep -q "apple-events" <<<"$ARCHIVE_ENTS"; then
 	fail "Apple Events entitlements are present — this must be the Direct config, not Release"
 fi
 echo "  apple-events         : absent (correct for the App Store build)"
 
-if strings "$ARCHIVED_APP/Contents/MacOS/$APP_NAME" | grep -q 'tell application "Music"'; then
+if grep -q 'tell application "Music"' <<<"$ARCHIVE_STRINGS"; then
 	fail "AppleScript source is compiled in — MUSIC_APP_SOURCE leaked into Release"
 fi
 echo "  Music.app AppleScript: absent"
@@ -81,7 +91,7 @@ echo "  Music.app AppleScript: absent"
 # separately: any one of them appearing alone still means something is wrong.
 [[ ! -d "$ARCHIVED_APP/Contents/Frameworks/Sparkle.framework" ]] \
 	|| fail "Sparkle.framework is embedded — the App Store build must not contain an updater"
-if otool -L "$ARCHIVED_APP/Contents/MacOS/$APP_NAME" | grep -qi sparkle; then
+if grep -qi sparkle <<<"$ARCHIVE_LIBS"; then
 	fail "the binary links Sparkle — wrong target archived (want scheme 'Synesthia', not 'Synesthia Direct')"
 fi
 if /usr/libexec/PlistBuddy -c "Print :SUFeedURL" "$ARCHIVED_APP/Contents/Info.plist" >/dev/null 2>&1; then

@@ -107,6 +107,13 @@ make web-typecheck web-cf-types                             # the Pages Function
 
 **AVFAudio callbacks must be built in a `nonisolated` context, or they trap.** `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` means a closure written inline inside a main-actor method is *itself* inferred main-actor. AVAudioEngine calls tap blocks and `scheduleFile` completion handlers on a realtime audio thread, so Swift 6's isolation check fires and the app dies with `EXC_BREAKPOINT` in `swift_task_checkIsolatedSwift` — on the very first buffer, with a stack that blames AVFAudio rather than the closure. Build these blocks from a `nonisolated` factory (`makeAnalyzerTap`, `FilePlayer.loopCompletion()`), never inline. Wrapping the body in `Task { @MainActor in … }` does **not** help: the trap happens on entry, before the `Task` is ever reached. Spell the return type `@Sendable () -> Void`; the `AVAudioNodeCompletionHandler` typealias isn't marked `@Sendable` and the call site warns.
 
+**Never pipe into `grep -q` in a `set -o pipefail` script.** `grep -q` exits the instant it matches, which closes the pipe, kills the producer with SIGPIPE (exit 141), and — because every release script sets `pipefail` — turns a *successful* match into a failed pipeline. This has bitten twice, and the second time was worse than the first:
+
+- `codesign -d --verbose=2 "$APP" 2>&1 | grep -q "flags=.*runtime"` reported "hardened runtime is not enabled" on an app that had it. (Note `codesign -d` writes everything to **stderr**, hence the `2>&1`.)
+- The `if producer | grep -q LEAK; then fail; fi` form fails **open**: the leak makes grep match, SIGPIPE makes the pipeline non-zero, `if` reads that as "clean", and the guard silently doesn't fire. `strings $BINARY | grep -q 'tell application "Music"'` — the most important App Store assertion in the project — was silently passing on a binary that *did* contain the string. Whether it bites depends on whether the producer's output exceeds the 64 KB pipe buffer, so small-output checks race benignly and look fine.
+
+Capture first, match against the variable: `OUT=$(producer 2>&1 || true)` then `grep -q PATTERN <<<"$OUT"`. A herestring is not a pipe, so there is nothing to SIGPIPE. Same root cause as the `tr … | head -c 4` note in the screenshots section.
+
 **AppleScript constants don't coerce to text.** `player state as text` throws; `player state is playing` compares fine. Map constants to strings via comparisons inside the script (see `MusicController.poll()`). This bug is invisible from Swift — the script just returns nil.
 
 **Music artwork**: prefer `raw data of artwork 1` (original JPEG/PNG), fall back to `data`; artwork lags track changes so the poll retries up to 3× per track.

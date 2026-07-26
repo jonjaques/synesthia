@@ -185,18 +185,30 @@ wrangler_r2 r2 object put "$R2_BUCKET/appcast.xml" \
 	>/dev/null
 
 step "Verifying what users will actually get"
-# The feed is cached at the edge for five minutes, so a check immediately after
-# upload can legitimately still show the old one. These fetches are about
-# reachability, not freshness.
-for url in "$FEED_URL" "$SITE_URL/download"; do
-	code=$(curl -s -o /dev/null -w '%{http_code}' -L "$url" || echo "000")
-	echo "  $url → $code"
-	case "$url:$code" in
-		*:200|*:302) ;;
-		*) echo "     (expected 200/302 — if this is a fresh setup, confirm the R2" ;
-		   echo "      binding is attached to the Pages project and redeploy)" ;;
-	esac
-done
+# Check the CONTENT, not just the status code. If the Pages Functions aren't
+# deployed, the static site answers these same paths with the homepage HTML and
+# a cheerful 200 — indistinguishable from success if you only look at the code.
+#
+# The feed is edge-cached for five minutes, so this proves reachability and
+# shape, not that the bytes are already the ones just uploaded.
+FEED_BODY=$(curl -fsS "$FEED_URL" 2>/dev/null || true)
+if grep -q "<rss" <<<"$FEED_BODY"; then
+	echo "  $FEED_URL → serving the appcast"
+else
+	echo "  $FEED_URL → NOT the appcast (got $(wc -c <<<"$FEED_BODY" | tr -d ' ') bytes)"
+	echo "     The Pages Function is probably not deployed — the static site is"
+	echo "     answering instead. Check the latest deployment succeeded."
+fi
+
+# No -L: /download must answer with a redirect, not render something.
+DL_CODE=$(curl -s -o /dev/null -w '%{http_code}' "$SITE_URL/download" || echo "000")
+DL_TO=$(curl -s -o /dev/null -w '%{redirect_url}' "$SITE_URL/download" || true)
+if [[ "$DL_CODE" == "302" ]]; then
+	echo "  $SITE_URL/download → 302 $DL_TO"
+else
+	echo "  $SITE_URL/download → $DL_CODE (expected 302)"
+	echo "     503 means latest.json is missing; 200 means the Function is not deployed."
+fi
 
 step "Published"
 echo "  Version : $LATEST_SHORT (build $LATEST_BUILD)"
