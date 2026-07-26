@@ -386,9 +386,51 @@ disagree — with DOM loaded, `caches.default` doesn't type-check.
 
 ---
 
+## Versioning
+
+Two settings, duplicated across every target × configuration — **nine copies of
+each** — in `Synesthia.xcodeproj/project.pbxproj`:
+
+| Build setting | Info.plist key | What it does |
+|---|---|---|
+| `CURRENT_PROJECT_VERSION` | `CFBundleVersion` | the build number; what Sparkle (`sparkle:version`) and the App Store compare |
+| `MARKETING_VERSION` | `CFBundleShortVersionString` | the display version; also **names the DMG** |
+
+There is no `Info.plist` to edit, and `agvtool` cannot help — it needs
+`VERSIONING_SYSTEM = apple-generic`, which this project does not set. Editing by
+hand in Xcode only touches the selected target, which is how `Synesthia Direct`
+(the one that actually ships) ends up on a stale number.
+
+```bash
+make bump                 # patch: 1.0 -> 1.0.1
+make bump BUMP=minor      #        1.0.1 -> 1.1
+make bump BUMP=major      #        1.1 -> 2.0
+make bump BUMP=2.5        # explicit
+make bump ARGS=--dry-run  # preview
+```
+
+The build number is always incremented by one, whatever the level. A trailing
+`.0` is dropped, so a minor bump renders `1.1`, not `1.1.0`. The script refuses
+to run if the nine copies have drifted apart, and updates `RELEASE.version` in
+`web/src/consts.ts` too. `RELEASE.size` is *not* updated — the DMG's size is
+only known after `make direct`.
+
+### Always bump the marketing version, not just the build
+
+`build-direct.sh` names the DMG `Synesthia-<MARKETING_VERSION>.dmg`, so two
+releases sharing a marketing version collide on one filename in R2. Left
+unchecked that is silent corruption: `make appcast` would sign the *new* bytes
+while the bucket kept serving the *old* ones, and every client would fail EdDSA
+verification and simply never update.
+
+`publish-release.sh` compares SHA-256 against the published object and **hard
+fails** rather than skipping when they differ. Skipping on filename alone is
+what would have hidden it.
+
 ## Shipping a release, end to end
 
 ```bash
+make bump                         # or BUMP=minor / BUMP=major
 make direct                       # archive, sign, notarize, staple, DMG
 make appcast                      # fetch live feed, add the new version, sign
 make publish-dry-run              # see exactly what would be uploaded

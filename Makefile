@@ -8,6 +8,7 @@
 #   CONFIGURATION   Debug (default) | Direct | Release — see docs/distribution.md
 #   DESTINATION     xcodebuild -destination for `make test`
 #   ARGS            Extra flags forwarded to the script a target wraps
+#   BUMP            patch (default) | minor | major | an explicit version, for `make bump`
 
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
@@ -21,6 +22,7 @@ DIRECT_SCHEME := Synesthia Direct
 CONFIGURATION ?= Debug
 DESTINATION   ?= platform=macOS
 ARGS          ?=
+BUMP          ?= patch
 
 # Where xcodebuild actually put Synesthia.app for $(CONFIGURATION). Resolved
 # lazily (`=`, not `:=`) so targets that never need it don't pay the ~2 s.
@@ -30,7 +32,7 @@ BUILT_PRODUCTS_DIR = $(shell xcodebuild -project $(PROJECT) -scheme $(SCHEME) \
 
 .PHONY: help build build-direct run test clean app-path \
         demo-track screenshots check-metadata \
-        appstore appstore-upload direct direct-fast \
+        appstore appstore-upload direct direct-fast bump \
         sparkle-keys appcast publish-release publish-dry-run \
         web-install web-dev web-build web-preview web-assets \
         web-typecheck web-cf-types
@@ -86,6 +88,9 @@ direct: ## Archive, sign, notarize, staple and package the direct build (Direct 
 
 direct-fast: ## Same, but skip notarization (local smoke test)
 	./scripts/build-direct.sh --skip-notarize
+
+bump: ## Bump the version everywhere: BUMP=patch|minor|major|<version> (default patch)
+	./scripts/bump-version.sh $(BUMP) $(ARGS)
 
 sparkle-keys: ## One-time: create the Sparkle EdDSA signing key and print the public half
 	./scripts/sparkle-keys.sh $(ARGS)
