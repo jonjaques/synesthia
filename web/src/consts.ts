@@ -69,7 +69,7 @@ export const APP_STORE_AVAILABLE = false;
 
 /** Shown next to the download button. */
 export const RELEASE = {
-  version: "1.0",
+  version: "1.0.1",
   // The deployment target is 26.0, not 26.5 — the only API pinning the floor
   // is `glassEffect`, which is a 26.0 API.
   requires: "macOS 26 or later",

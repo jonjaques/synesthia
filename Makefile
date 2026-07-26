@@ -44,7 +44,7 @@ ifdef CI
 SIGNING := CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM= PROVISIONING_PROFILE_SPECIFIER=
 endif
 
-.PHONY: help build build-direct run test clean app-path \
+.PHONY: help build bump build-direct run test clean app-path \
         install healthcheck lint format \
         demo-track screenshots check-metadata \
         appstore appstore-upload direct direct-fast bump \

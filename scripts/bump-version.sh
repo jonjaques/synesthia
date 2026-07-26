@@ -129,8 +129,21 @@ sed -i '' \
 
 # The website shows the marketing version next to the download button. Not
 # load-bearing, but it is the number users quote back at you in bug reports.
+#
+# Both quote styles are matched, and whichever the file already uses is
+# preserved (\2 in the replacement). web/ has no Prettier config, so its .ts
+# files get Prettier's defaults — double quotes — while the hand-written .astro
+# files use single quotes and are never checked at all (prettier-plugin-astro
+# isn't installed, so Prettier skips them). A single-quote-only pattern matched
+# nothing here, and sed exits 0 on zero substitutions, so the bump silently
+# skipped the website until the verify step below caught it.
+#
+# The closing quote is NOT a back-reference to the opening one: `sed -E` is
+# POSIX ERE, which has no back-references in the *pattern* — `\2` there matches
+# nothing and the substitution quietly does nothing again. `\2` in the
+# replacement is fine, and is what carries the original quote style over.
 if [[ -f "$CONSTS" ]]; then
-	sed -i '' "s/^\([[:space:]]*\)version: '[^']*',/\1version: '$NEW_MV',/" "$CONSTS"
+	sed -i '' -E "s/^([[:space:]]*)version: (['\"])[^'\"]*['\"],/\1version: \2$NEW_MV\2,/" "$CONSTS"
 fi
 
 # --------------------------------------------------------------------- verify
@@ -146,9 +159,9 @@ AFTER_BUILD=$(read_setting CURRENT_PROJECT_VERSION)
 echo "  project.pbxproj : all $MV_COUNT/$BUILD_COUNT settings now $NEW_MV / $NEW_BUILD"
 
 if [[ -f "$CONSTS" ]]; then
-	grep -q "version: '$NEW_MV'," "$CONSTS" \
+	grep -qF "version: \"$NEW_MV\"," "$CONSTS" || grep -qF "version: '$NEW_MV'," "$CONSTS" \
 		|| fail "$CONSTS still shows the old version"
-	echo "  consts.ts       : RELEASE.version = '$NEW_MV'"
+	echo "  consts.ts       : RELEASE.version = $NEW_MV"
 fi
 
 step "Done"
