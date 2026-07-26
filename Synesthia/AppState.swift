@@ -54,7 +54,23 @@ final class AppState {
     }
 
     var inputDevices: [AudioInputDevice] = []
-    var selectedInputDeviceID: AudioDeviceID?
+    /// Changing the device while already listening retargets the capture
+    /// engine immediately — the engine itself only reads the ID at start.
+    var selectedInputDeviceID: AudioDeviceID? {
+        didSet {
+            guard selectedInputDeviceID != oldValue, sourceKind == .inputDevice, isCapturing
+            else { return }
+            Task {
+                inputCapture.stop()
+                do {
+                    try await inputCapture.start(deviceID: selectedInputDeviceID)
+                } catch {
+                    isCapturing = false
+                    setStatus(error.localizedDescription)
+                }
+            }
+        }
+    }
     private(set) var fileURL: URL?
     private(set) var isCapturing = false { didSet { refreshPowerAssertion() } }
     /// Mirrors `FilePlayer.isPlaying`; the player isn't observable on its own.
@@ -92,6 +108,16 @@ final class AppState {
         visualizerID = VisualizerRegistry.descriptor(id: storedViz)?.id ?? VisualizerRegistry.all[0].id
         showsWelcome = !UserDefaults.standard.bool(forKey: Self.welcomeKey)
         fileURL = resolveBookmarkedFile()
+        systemCapture.onExternalStop = { [weak self] in self?.handleSystemCaptureStopped() }
+    }
+
+    /// The SCK stream died without us stopping it (permission revoked, display
+    /// reconfigured). Without this the app would keep the display awake and
+    /// render at full rate while showing a frozen, silent canvas.
+    private func handleSystemCaptureStopped() {
+        guard isCapturing else { return }
+        isCapturing = false
+        setStatus("System audio capture stopped. Press play to reconnect.")
     }
 
     func onAppear() {
@@ -241,15 +267,20 @@ final class AppState {
                 }
             }
         case .audioFile:
-            if fileURL == nil {
-                openFilePanel()
-            } else {
+            if let fileURL {
                 do {
+                    // After a relaunch the bookmark restored fileURL, but the
+                    // player has nothing loaded yet.
+                    if filePlayer.currentURL != fileURL {
+                        try filePlayer.load(url: fileURL)
+                    }
                     try filePlayer.togglePlayPause()
                     isFilePlaying = filePlayer.isPlaying
                 } catch {
                     setStatus(error.localizedDescription)
                 }
+            } else {
+                openFilePanel()
             }
         }
     }

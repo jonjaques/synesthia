@@ -1,20 +1,27 @@
 import Metal
 import MetalKit
 
-/// Layered aurora ribbons: each ribbon rides the live waveform and glows with
-/// the energy of its own slice of the spectrum, over a smoky noise backdrop.
+/// A night sky where every element is an instrument. Up to eight aurora
+/// ribbons, one per register — sub-bass at the bottom of the sky through air
+/// at the top — each with its own motion personality (lows fat and slow,
+/// jumping on the kick; mids carrying the waveform and answering onsets;
+/// highs thin and fast, shivering on hi-hats) and each shaded along its
+/// length by the fine spectrum inside its own range. Above them a
+/// three-depth star field twinkles with the air band, and every hi-hat and
+/// kick lights a different constellation.
 ///
 /// Like Spectrum Tunnel this is a fullscreen-shader visualizer (see
-/// `auroraFragment` in Shaders.metal); it's the only one that also feeds
-/// the shader the 256-point waveform, which shapes the ribbons.
+/// `auroraFragment` in Shaders.metal), fed the uniforms, the 64-band array,
+/// and the 256-point waveform that shapes the ribbons.
 final class AuroraVisualizer: Visualizer {
     static let descriptor = VisualizerDescriptor(
         id: "aurora",
         name: "Aurora",
-        tagline: "Waveform ribbons glowing with their slice of the spectrum",
+        tagline: "One aurora ribbon per instrument under a percussive sky",
         options: [
-            VisualizerOption(id: "layers", name: "Ribbons", range: 2...10, defaultValue: 7),
+            VisualizerOption(id: "layers", name: "Ribbons", range: 2...8, defaultValue: 8),
             VisualizerOption(id: "height", name: "Wave height", range: 0.05...0.6, defaultValue: 0.28),
+            VisualizerOption(id: "stars", name: "Stars", range: 0.0...2.0, defaultValue: 1.0),
         ],
         make: { try AuroraVisualizer(device: $0, library: $1, pixelFormat: $2) })
 

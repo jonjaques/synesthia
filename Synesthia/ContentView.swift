@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import CoreAudio
 import SwiftUI
 
@@ -8,6 +9,14 @@ private let chromeIdleDelay: Duration = .seconds(3)
 /// Smallest window the chrome can lay out in without clipping: the transport pod
 /// is the widest indivisible element.
 let minimumContentSize = CGSize(width: 460, height: 380)
+
+/// Every pod along the bottom is exactly this tall. The three used to size
+/// themselves from their own contents, which left the badge, the transport and
+/// the visualizer controls at three unrelated heights — bottom-aligned but
+/// visibly ragged in the wide layout, and three different silhouettes when
+/// stacked. One height makes them read as a single band. It is set by the
+/// badge, the only pod carrying two lines of text next to artwork.
+let chromePodHeight: CGFloat = 56
 
 /// How the three bottom pods arrange themselves, chosen from the viewport width.
 enum ChromeLayout {
@@ -165,6 +174,7 @@ struct ContentView: View {
                     controlsPod
                     visualizerPod
                 }
+                .frame(maxWidth: .infinity)
             }
         }
         .padding(.horizontal, 16)
@@ -190,12 +200,15 @@ struct ContentView: View {
     }
 
     /// Keeps the badge clear of the centered transport pod in the wide layout,
-    /// and merely readable in the others.
+    /// and merely readable in the others. Never `.infinity`: a full-width frame
+    /// pins the badge to the leading edge while the pods below it center, which
+    /// is exactly the lopsidedness the compact layout is trying to avoid. A
+    /// finite cap lets the frame shrink to the badge and the stack center it.
     private var badgeMaxWidth: CGFloat {
         switch layout {
         case .wide: max(220, (viewportWidth - 400) / 2 - 28)
         case .medium: 420
-        case .compact: .infinity
+        case .compact: max(240, viewportWidth - 40)
         }
     }
 
@@ -231,6 +244,99 @@ extension View {
             .contentShape(.rect)
             .padding(.horizontal, -horizontal)
             .padding(.vertical, -vertical)
+    }
+}
+
+// MARK: - Chrome vocabulary
+
+extension View {
+    /// The foreground treatment every pod's contents share. The shadow is
+    /// invisible against the dark material and does the work when a bright
+    /// frame pushes the glass light — white-on-glass over an arbitrary moving
+    /// canvas has no guaranteed contrast otherwise. Apply it *inside*
+    /// `chromeGlass`, or the shadow lands on the capsule instead of the glyphs.
+    func chromeForeground() -> some View {
+        foregroundStyle(.white)
+            .shadow(color: .black.opacity(0.35), radius: 3, y: 1)
+    }
+}
+
+/// Leading symbol plus name, shared by the source menu and the visualizer menu
+/// so the two pods carry identical weight. The symbol is a step dimmer than the
+/// name and a step heavier than its default, which reads as more present than
+/// the old full-white regular glyph while leaving the word as the emphasis.
+private struct PodMenuLabel: View {
+    let symbol: String
+    let title: String
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: symbol)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.72))
+                .frame(width: 17)
+            Text(title)
+                .font(.callout.weight(.semibold))
+        }
+        .hitTarget(horizontal: 4, vertical: 10)
+    }
+}
+
+/// The hairline between groups inside a pod. A plain `Divider()` picks up the
+/// system separator colour, which over glass reads as a hard dark scratch;
+/// this is a soft white rule at the height of the icon buttons beside it.
+private struct PodDivider: View {
+    var body: some View {
+        Capsule()
+            .fill(.white.opacity(0.18))
+            .frame(width: 1, height: 20)
+            .padding(.horizontal, 2)
+    }
+}
+
+/// Shared look for the glyph buttons in the bottom pods: a uniform circular hit
+/// target, a semibold glyph, and a soft disc on hover and press. The fixed
+/// frame is what keeps previous/next, options and fullscreen optically
+/// identical across two pods that don't otherwise know about each other — and
+/// it replaces `hitTarget`, which grew the tap area without making the buttons
+/// look like peers.
+///
+/// `prominent` is the transport's play/pause: already a filled disc, so it
+/// takes no hover backing and stays at full white while its neighbours sit
+/// back at 78%.
+struct ChromeIconButtonStyle: ButtonStyle {
+    var size: CGFloat = 15
+    var prominent = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        Glyph(configuration: configuration, size: size, prominent: prominent)
+    }
+
+    private struct Glyph: View {
+        let configuration: ButtonStyleConfiguration
+        let size: CGFloat
+        let prominent: Bool
+        @State private var hovering = false
+
+        var body: some View {
+            let diameter = prominent ? size + 6 : 32
+
+            configuration.label
+                .font(.system(size: size, weight: .semibold))
+                .foregroundStyle(.white.opacity(prominent || hovering ? 1 : 0.78))
+                .frame(width: diameter, height: diameter)
+                .background {
+                    if !prominent {
+                        Circle()
+                            .fill(.white.opacity(configuration.isPressed ? 0.18 : hovering ? 0.1 : 0))
+                    }
+                }
+                .scaleEffect(configuration.isPressed ? 0.92 : 1)
+                .contentShape(.circle)
+                .onHover { hovering = $0 }
+                .animation(.easeOut(duration: 0.12), value: hovering)
+                .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
+        }
     }
 }
 
@@ -271,13 +377,19 @@ private struct ChromeGlass<S: InsettableShape>: ViewModifier {
 
 struct NowPlayingBadge: View {
     let info: NowPlayingInfo
-    /// Drops the album line and shrinks the artwork when vertical room is tight.
+    /// Drops the album from the subtitle when horizontal room is tight.
     var compact = false
 
-    private var artSize: CGFloat { compact ? 40 : 52 }
+    /// The badge's own corner, and the inset its artwork sits at. The artwork's
+    /// radius is the difference between them, so the two curves stay concentric
+    /// — the same rule the system uses for anything nested in a rounded window.
+    private static let cornerRadius: CGFloat = 16
+    private static let inset: CGFloat = 6
+
+    private var artSize: CGFloat { chromePodHeight - Self.inset * 2 }
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
             Group {
                 if let artwork = info.artwork {
                     Image(nsImage: artwork)
@@ -287,35 +399,47 @@ struct NowPlayingBadge: View {
                     ZStack {
                         Rectangle().fill(.white.opacity(0.08))
                         Image(systemName: "music.note")
-                            .font(.title2)
-                            .foregroundStyle(.white.opacity(0.5))
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(.white.opacity(0.55))
                     }
                 }
             }
             .frame(width: artSize, height: artSize)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .clipShape(.rect(cornerRadius: Self.cornerRadius - Self.inset))
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 1) {
                 Text(info.title)
                     .font(.headline)
-                if !info.artist.isEmpty {
-                    Text(info.artist)
-                        .font(.subheadline)
-                        .opacity(0.85)
-                }
-                if !compact, !info.album.isEmpty {
-                    Text(info.album)
-                        .font(.caption)
-                        .opacity(0.6)
-                }
+                subtitle
             }
-            .foregroundStyle(.white)
             .lineLimit(1)
             .padding(.trailing, 6)
         }
-        .padding(8)
-        .fixedSize(horizontal: false, vertical: true)
-        .chromeGlass(in: .rect(cornerRadius: 16))
+        .chromeForeground()
+        .padding(Self.inset)
+        .frame(height: chromePodHeight)
+        .chromeGlass(in: .rect(cornerRadius: Self.cornerRadius))
+    }
+
+    /// Artist and album share one line — three stacked lines no longer fit the
+    /// shared pod height, and a dimmer album beside the artist gives the badge
+    /// the same two-step hierarchy the pods have.
+    @ViewBuilder
+    private var subtitle: some View {
+        HStack(spacing: 5) {
+            if !info.artist.isEmpty {
+                Text(info.artist)
+                    .foregroundStyle(.white.opacity(0.82))
+                    .layoutPriority(1)
+            }
+            if !compact, !info.album.isEmpty {
+                if !info.artist.isEmpty {
+                    Text(verbatim: "·").foregroundStyle(.white.opacity(0.4))
+                }
+                Text(info.album).foregroundStyle(.white.opacity(0.55))
+            }
+        }
+        .font(.subheadline)
     }
 }
 
@@ -330,7 +454,7 @@ struct ControlsPod: View {
     var body: some View {
         @Bindable var state = appState
 
-        HStack(spacing: 14) {
+        HStack(spacing: 8) {
             Menu {
                 Picker("Audio Source", selection: $state.sourceKind) {
                     ForEach(AudioSourceKind.allCases) { kind in
@@ -354,26 +478,24 @@ struct ControlsPod: View {
                     Button("Choose File…") { appState.openFilePanel() }
                 }
             } label: {
-                Label(appState.sourceKind.label, systemImage: appState.sourceKind.symbol)
-                    .hitTarget(horizontal: 4, vertical: 10)
+                PodMenuLabel(symbol: appState.sourceKind.symbol, title: appState.sourceKind.label)
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
 
-            Divider().frame(height: 20)
+            PodDivider()
 
             CaptureButton()
 
             if appState.showsTransport {
-                Divider().frame(height: 20)
+                PodDivider()
 
                 Button {
                     appState.previousTrack()
                 } label: {
                     Image(systemName: "backward.fill")
-                        .hitTarget()
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(ChromeIconButtonStyle())
                 .help("Previous track")
                 .accessibilityLabel("Previous track")
 
@@ -381,10 +503,9 @@ struct ControlsPod: View {
                     appState.togglePlay()
                 } label: {
                     Image(systemName: appState.isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                        .font(.system(size: 34))
-                        .hitTarget(horizontal: 6, vertical: 4)
+                        .contentTransition(.symbolEffect(.replace))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(ChromeIconButtonStyle(size: 32, prominent: true))
                 .help(appState.isPlaying ? "Pause" : "Play")
                 .accessibilityLabel(appState.isPlaying ? "Pause" : "Play")
 
@@ -392,17 +513,16 @@ struct ControlsPod: View {
                     appState.nextTrack()
                 } label: {
                     Image(systemName: "forward.fill")
-                        .hitTarget()
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(ChromeIconButtonStyle())
                 .help("Next track")
                 .accessibilityLabel("Next track")
             }
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 10)
+        .chromeForeground()
+        .padding(.horizontal, 14)
+        .frame(height: chromePodHeight)
         .chromeGlass(in: .capsule, interactive: true)
-        .foregroundStyle(.white)
     }
 }
 
@@ -422,14 +542,15 @@ struct CaptureButton: View {
             appState.toggleCapture()
         } label: {
             Image(systemName: symbol)
-                .font(.system(size: 22))
                 // Active: white glyph inside a purple disc, like the menu bar chip.
                 .symbolRenderingMode(active ? .palette : .monochrome)
+                // Applied inside the label so it wins over the button style's
+                // own dimming — capture is a primary action and stays lit.
                 .foregroundStyle(.white, Self.captureTint)
                 .shadow(color: Self.captureTint.opacity(active ? 0.7 : 0), radius: 6)
-                .hitTarget()
+                .contentTransition(.symbolEffect(.replace))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(ChromeIconButtonStyle(size: 24, prominent: true))
         .animation(.easeInOut(duration: 0.2), value: active)
         .help(helpText)
         .accessibilityLabel(helpText)
@@ -460,11 +581,14 @@ struct VisualizerPod: View {
     @Environment(AppState.self) private var appState
     /// Owned by ContentView so the chrome stays up while the popover is open.
     @Binding var optionsShown: Bool
+    /// Only so the toggle can show the direction it will move in. Read once on
+    /// appear because the window may already be fullscreen when the pod is built.
+    @State private var isFullScreen = false
 
     var body: some View {
         @Bindable var state = appState
 
-        HStack(spacing: 12) {
+        HStack(spacing: 8) {
             Menu {
                 Picker("Visualizer", selection: $state.visualizerID) {
                     ForEach(VisualizerRegistry.all) { descriptor in
@@ -474,25 +598,19 @@ struct VisualizerPod: View {
                 .pickerStyle(.inline)
                 .labelsHidden()
             } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "sparkles")
-                    Text(currentVisualizerName)
-                        .fontWeight(.medium)
-                }
-                .hitTarget(horizontal: 4, vertical: 10)
+                PodMenuLabel(symbol: "sparkles", title: currentVisualizerName)
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
 
-            Divider().frame(height: 20)
+            PodDivider()
 
             Button {
                 optionsShown.toggle()
             } label: {
                 Image(systemName: "slider.horizontal.3")
-                    .hitTarget()
             }
-            .buttonStyle(.plain)
+            .buttonStyle(ChromeIconButtonStyle())
             .help("Visualizer options")
             .accessibilityLabel("Visualizer options")
             .popover(isPresented: $optionsShown, arrowEdge: .top) {
@@ -502,17 +620,30 @@ struct VisualizerPod: View {
             Button {
                 NSApp.keyWindow?.toggleFullScreen(nil)
             } label: {
-                Image(systemName: "arrow.up.left.and.arrow.down.right")
-                    .hitTarget()
+                Image(
+                    systemName: isFullScreen
+                        ? "arrow.down.right.and.arrow.up.left"
+                        : "arrow.up.left.and.arrow.down.right"
+                )
+                .contentTransition(.symbolEffect(.replace))
             }
-            .buttonStyle(.plain)
-            .help("Toggle full screen")
-            .accessibilityLabel("Toggle full screen")
+            .buttonStyle(ChromeIconButtonStyle())
+            .help(isFullScreen ? "Exit full screen" : "Enter full screen")
+            .accessibilityLabel(isFullScreen ? "Exit full screen" : "Enter full screen")
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 10)
+        .chromeForeground()
+        .padding(.horizontal, 14)
+        .frame(height: chromePodHeight)
         .chromeGlass(in: .capsule, interactive: true)
-        .foregroundStyle(.white)
+        .onAppear {
+            isFullScreen = NSApp.keyWindow?.styleMask.contains(.fullScreen) ?? false
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { _ in
+            isFullScreen = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { _ in
+            isFullScreen = false
+        }
     }
 
     private var currentVisualizerName: String {

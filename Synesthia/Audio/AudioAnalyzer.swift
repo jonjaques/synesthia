@@ -130,13 +130,25 @@ nonisolated final class AudioAnalyzer: @unchecked Sendable {
     // Running averages and decaying envelopes for the transient detectors.
     private var beatAverage: Float = 0
     private var beatEnvelope: Float = 0
+    /// One-shot latches with hysteresis: set on the pass that fires the
+    /// envelope, cleared only once the energy falls back below the release
+    /// threshold. While set, the detector cannot re-fire — without this a
+    /// *held* note hovering at the trigger threshold re-fires every few
+    /// passes and the envelope sawtooths 1 → 0.8 → 1 at several hertz,
+    /// which the visualizers faithfully render as constant shaking (Nebula's
+    /// edge-triggered shockwaves and comets are the worst hit).
+    private var beatLatched = false
     private var trebleAverage: Float = 0
     private var trebleEnvelope: Float = 0
+    private var trebleLatched = false
     private var fluxEnvelope: Float = 0
     private var centroidSmoothed: Float = 0.4
     /// When samples last arrived; lets `latest()` fade the visuals out
     /// instead of freezing when the source stops.
     private var lastAppendTime: CFAbsoluteTime = 0
+    /// When `latest()` last ran, so the idle fade below can decay by elapsed
+    /// wall time instead of by call count.
+    private var lastLatestTime: CFAbsoluteTime = 0
 
     init() {
         fftSetup = vDSP_create_fftsetup(log2n, FFTRadix(kFFTRadix2))!
@@ -150,23 +162,33 @@ nonisolated final class AudioAnalyzer: @unchecked Sendable {
         defer { lock.unlock() }
         // Decay toward silence if the source stopped feeding us: without this
         // the last frame of audio would freeze on screen when capture stops.
-        // Repeated multiplication by <1 each frame gives an exponential fade.
-        if CFAbsoluteTimeGetCurrent() - lastAppendTime > 0.25 {
-            for i in smoothed.indices { smoothed[i] *= 0.92 }
-            beatEnvelope *= 0.9
-            trebleEnvelope *= 0.85
-            fluxEnvelope *= 0.85
+        // The decay factors are exponentials of *elapsed wall time*, not
+        // fixed per-call constants: this runs once per rendered frame, so a
+        // per-call factor would fade twice as fast on a 120 Hz display as on
+        // a 60 Hz one (the time constants below match the old per-frame
+        // factors at the original 60 fps).
+        let now = CFAbsoluteTimeGetCurrent()
+        if now - lastAppendTime > 0.25 {
+            let elapsed = Float(min(max(now - lastLatestTime, 0), 0.1))
+            let slow = exp(-elapsed / 0.20)  // ≈ ×0.92 per 60 fps frame
+            let mid = exp(-elapsed / 0.16)  // ≈ ×0.90
+            let fast = exp(-elapsed / 0.10)  // ≈ ×0.85
+            for i in smoothed.indices { smoothed[i] *= slow }
+            beatEnvelope *= mid
+            trebleEnvelope *= fast
+            fluxEnvelope *= fast
             snapshot.bands = smoothed
             snapshot.beat = beatEnvelope
             snapshot.trebleBeat = trebleEnvelope
             snapshot.flux = fluxEnvelope
-            snapshot.level *= 0.92
-            snapshot.bass *= 0.92
-            snapshot.mid *= 0.92
-            snapshot.treble *= 0.92
-            for i in snapshot.components.indices { snapshot.components[i] *= 0.92 }
-            for i in snapshot.waveform.indices { snapshot.waveform[i] *= 0.9 }
+            snapshot.level *= slow
+            snapshot.bass *= slow
+            snapshot.mid *= slow
+            snapshot.treble *= slow
+            for i in snapshot.components.indices { snapshot.components[i] *= slow }
+            for i in snapshot.waveform.indices { snapshot.waveform[i] *= mid }
         }
+        lastLatestTime = now
         return snapshot
     }
 
@@ -181,8 +203,10 @@ nonisolated final class AudioAnalyzer: @unchecked Sendable {
         recent = [Float](repeating: 0, count: fftSize)
         beatAverage = 0
         beatEnvelope = 0
+        beatLatched = false
         trebleAverage = 0
         trebleEnvelope = 0
+        trebleLatched = false
         fluxEnvelope = 0
         centroidSmoothed = 0.4
     }
@@ -369,15 +393,19 @@ nonisolated final class AudioAnalyzer: @unchecked Sendable {
 
         // Treble-transient envelope (hi-hats/snare snap): same scheme as the
         // bass beat detector below, but over the top of the spectrum and with
-        // a faster decay, since treble events are shorter.
+        // a faster decay, since treble events are shorter. A real hi-hat is
+        // over in a couple of passes, so its energy dips below the release
+        // threshold and re-arms the latch well before the next hit.
         let trebleRange = componentRanges[6].lowerBound..<AudioSnapshot.bandCount
         var trebleInstant: Float = 0
         for b in trebleRange { trebleInstant += raw[b] }
         trebleInstant /= Float(trebleRange.count)
         trebleAverage = trebleAverage * 0.96 + trebleInstant * 0.04
-        if trebleInstant > trebleAverage * 1.35, trebleInstant > 0.10 {
+        if !trebleLatched, trebleInstant > trebleAverage * 1.35, trebleInstant > 0.10 {
+            trebleLatched = true
             trebleEnvelope = 1
         } else {
+            if trebleInstant < trebleAverage * 1.1 { trebleLatched = false }
             trebleEnvelope *= 0.80
         }
 
@@ -391,12 +419,19 @@ nonisolated final class AudioAnalyzer: @unchecked Sendable {
         // Beat detection: compare the instantaneous bass energy to its own
         // slow-moving average; a value 30% above average (and above an
         // absolute floor, so silence can't trigger) means a bass transient —
-        // in practice, the kick drum. The envelope latches to 1 and decays.
+        // in practice, the kick drum. The envelope jumps to 1 and decays —
+        // once per onset: the latch blocks re-firing until the energy drops
+        // back below 1.1× the average (the 1.1…1.3 band is the hysteresis).
+        // A sustained bass note therefore fires exactly one pulse and then
+        // settles, instead of strobing while its level rides the threshold;
+        // real kick patterns dip between hits, so they re-arm every time.
         let instant = raw[0..<10].reduce(0, +) / 10
         beatAverage = beatAverage * 0.975 + instant * 0.025
-        if instant > beatAverage * 1.3, instant > 0.15 {
+        if !beatLatched, instant > beatAverage * 1.3, instant > 0.15 {
+            beatLatched = true
             beatEnvelope = 1
         } else {
+            if instant < beatAverage * 1.1 { beatLatched = false }
             beatEnvelope *= 0.9
         }
 

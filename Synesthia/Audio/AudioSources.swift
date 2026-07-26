@@ -168,6 +168,11 @@ final class SystemAudioCapture: NSObject, SCStreamDelegate, SCStreamOutput {
     /// Serial queue SCK delivers sample buffers on (off the main thread).
     private let sampleQueue = DispatchQueue(label: "synesthia.system-audio")
     private(set) var isRunning = false
+    /// Called (on the main actor) after the stream is torn down *externally* —
+    /// permission revoked, display reconfigured — never for a normal `stop()`.
+    /// Lets the owner resync `isCapturing`, the power assertion, and the UI,
+    /// which would otherwise all stay stuck claiming capture is live.
+    var onExternalStop: (() -> Void)?
 
     init(analyzer: AudioAnalyzer) {
         self.analyzer = analyzer
@@ -242,8 +247,20 @@ final class SystemAudioCapture: NSObject, SCStreamDelegate, SCStreamOutput {
     }
 
     nonisolated func stream(_ stream: SCStream, didStopWithError error: Error) {
-        // Stream was torn down externally (e.g. permission revoked); UI state
-        // resyncs the next time the user toggles capture.
+        // Stream was torn down externally (e.g. permission revoked). Identity
+        // travels as an ObjectIdentifier because SCStream itself isn't
+        // Sendable, so it can't cross into the main-actor task.
+        let stopped = ObjectIdentifier(stream)
+        Task { @MainActor in self.handleExternalStop(of: stopped) }
+    }
+
+    /// Ignores errors from a stream we already replaced or shut down: only the
+    /// *current* stream dying means capture state must resync.
+    private func handleExternalStop(of stopped: ObjectIdentifier) {
+        guard let stream, ObjectIdentifier(stream) == stopped else { return }
+        self.stream = nil
+        isRunning = false
+        onExternalStop?()
     }
 }
 
@@ -404,6 +421,15 @@ final class FilePlayer {
     private var tapInstalled = false
     private(set) var currentURL: URL?
     private(set) var isPlaying = false
+    /// Whether the player still holds scheduled audio. `player.isPlaying` is
+    /// false both when *paused* (queue intact) and when *stopped* (queue
+    /// cleared); scheduling on resume-from-pause would queue a duplicate pass
+    /// of the file on top of the paused one's remainder.
+    private var hasQueuedAudio = false
+    /// Bumped whenever the queue is cleared (`stop()` / `load()`), so a loop
+    /// completion fired by the *old* queue can tell it's stale and must not
+    /// schedule into the new one.
+    private var generation = 0
 
     init(analyzer: AudioAnalyzer) {
         self.analyzer = analyzer
@@ -434,10 +460,11 @@ final class FilePlayer {
             engine.prepare()
             try engine.start()
         }
-        if !player.isPlaying {
+        if !hasQueuedAudio {
             scheduleLoop(file)
-            player.play()
+            hasQueuedAudio = true
         }
+        player.play()
         isPlaying = true
     }
 
@@ -448,6 +475,8 @@ final class FilePlayer {
 
     func stop() {
         player.stop()
+        generation += 1
+        hasQueuedAudio = false
         isPlaying = false
     }
 
@@ -458,8 +487,7 @@ final class FilePlayer {
     /// Jump back to the start of the file (used as "previous/next track").
     func restart() throws {
         guard file != nil else { throw AudioSourceError.noFileLoaded }
-        player.stop()
-        isPlaying = false
+        stop()
         try play()
     }
 
@@ -467,7 +495,7 @@ final class FilePlayer {
     /// the main actor and schedules the next pass — an infinite loop that
     /// stops naturally when `isPlaying` goes false or the file is swapped.
     private func scheduleLoop(_ file: AVAudioFile) {
-        player.scheduleFile(file, at: nil, completionHandler: loopCompletion())
+        player.scheduleFile(file, at: nil, completionHandler: loopCompletion(generation: generation))
     }
 
     /// The completion block AVAudioEngine calls when one pass finishes.
@@ -480,10 +508,12 @@ final class FilePlayer {
     /// Spelled `@Sendable () -> Void` rather than `AVAudioNodeCompletionHandler`
     /// because that SDK typealias is not itself marked `@Sendable`, which the
     /// concurrency checker flags at the call site.
-    private nonisolated func loopCompletion() -> @Sendable () -> Void {
+    private nonisolated func loopCompletion(generation: Int) -> @Sendable () -> Void {
         { [weak self] in
             Task { @MainActor in
-                guard let self, self.isPlaying, let file = self.file else { return }
+                guard let self, self.generation == generation, self.isPlaying,
+                    let file = self.file
+                else { return }
                 self.scheduleLoop(file)
             }
         }

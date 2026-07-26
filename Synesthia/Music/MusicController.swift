@@ -130,7 +130,15 @@ final class MusicController {
                 return stateText
             end tell
             """)
-        guard let text = result?.stringValue else { return }
+        guard let text = result?.stringValue else {
+            // The script failed (most plausibly Automation was revoked
+            // mid-session). Leaving the previous answers up would show a
+            // frozen track badge for music we can no longer see.
+            isPlaying = false
+            track = nil
+            artwork = nil
+            return
+        }
         let parts = text.components(separatedBy: "\n")
         isPlaying = parts.first == "playing"
         if parts.count >= 5 {

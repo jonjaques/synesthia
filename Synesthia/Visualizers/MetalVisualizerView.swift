@@ -58,6 +58,10 @@ struct MetalVisualizerView: NSViewRepresentable {
         // We never read the framebuffer back; letting Metal know enables
         // memoryless/optimized storage for it.
         view.framebufferOnly = true
+        // The coordinator owns the drawable size (see updateDrawableSize):
+        // it renders at a fraction of native resolution when the GPU can't
+        // hold the frame budget, and the layer scales the result up.
+        view.autoResizeDrawable = false
         view.layer?.backgroundColor = .black
         coordinator.attach(to: view)
         return view
@@ -81,6 +85,19 @@ struct MetalVisualizerView: NSViewRepresentable {
         /// Slow-moving copies of the level features, used only in Reduce Motion
         /// so brightness drifts instead of strobing.
         private var smoothed = SIMD4<Float>(repeating: 0)
+
+        /// The rungs of the adaptive-resolution ladder (see `adaptResolution`):
+        /// the drawable renders at this fraction of native pixels per axis, so
+        /// the bottom rung costs a quarter of the top one. Discrete steps with
+        /// hysteresis, not a continuous scale, so the size isn't twitching
+        /// every adjustment window.
+        private static let renderScales: [CGFloat] = [0.5, 0.625, 0.75, 0.875, 1.0]
+        private var renderScaleIndex = renderScales.count - 1
+        /// Measured GPU time per frame, fed by command-buffer completion
+        /// handlers on Metal's completion thread and drained on the main
+        /// thread every adjustment window.
+        private let gpuTimer = GPUFrameTimer()
+        private var lastScaleCheck = CACurrentMediaTime()
 
         init(appState: AppState, context: MetalRenderContext) {
             self.appState = appState
@@ -138,8 +155,10 @@ struct MetalVisualizerView: NSViewRepresentable {
         /// audio snapshot + tuning into a `VizUniforms`, let the visualizer
         /// encode its drawing, then present.
         func draw(in view: MTKView) {
-            guard view.drawableSize.width > 0, view.drawableSize.height > 0 else { return }
             updateFrameRate(view)
+            adaptResolution(view)
+            updateDrawableSize(view)
+            guard view.drawableSize.width > 0, view.drawableSize.height > 0 else { return }
 
             // Visualizers are built lazily and torn down on switch; only the
             // selected one holds GPU resources.
@@ -148,6 +167,11 @@ struct MetalVisualizerView: NSViewRepresentable {
                 guard let descriptor = VisualizerRegistry.descriptor(id: wantedID) else { return }
                 visualizer = try? descriptor.make(context.device, context.library, view.colorPixelFormat)
                 visualizerID = wantedID
+                // Every visualizer has its own cost profile; start the new one
+                // at full resolution and let the controller re-adapt from
+                // fresh measurements.
+                renderScaleIndex = Self.renderScales.count - 1
+                gpuTimer.reset()
             }
             guard let visualizer,
                 let descriptor = VisualizerRegistry.descriptor(id: wantedID)
@@ -184,7 +208,7 @@ struct MetalVisualizerView: NSViewRepresentable {
             uniforms.sensitivity = Float(tuning.sensitivity)
             uniforms.speed = Float(tuning.speed)
             uniforms.palette = Float(tuning.paletteIndex)
-            for (index, option) in descriptor.options.prefix(4).enumerated() {
+            for (index, option) in descriptor.options.prefix(8).enumerated() {
                 uniforms.setParameter(index, to: Float(tuning.value(for: option)))
             }
             applyReduceMotionIfNeeded(to: &uniforms, dt: dt)
@@ -194,6 +218,10 @@ struct MetalVisualizerView: NSViewRepresentable {
             // and commit. `commit` is asynchronous — the CPU moves on while
             // the GPU renders.
             guard let commandBuffer = context.queue.makeCommandBuffer() else { return }
+            let timer = gpuTimer
+            commandBuffer.addCompletedHandler { @Sendable buffer in
+                timer.record(buffer.gpuEndTime - buffer.gpuStartTime)
+            }
             visualizer.draw(
                 in: view, commandBuffer: commandBuffer,
                 uniforms: uniforms, snapshot: snapshot)
@@ -221,15 +249,64 @@ struct MetalVisualizerView: NSViewRepresentable {
             }
         }
 
+        /// Dynamic resolution scaling, the trick console engines use to hold
+        /// frame rate: when the measured GPU time can't fit the frame budget,
+        /// shrink the drawable instead of dropping frames. Every pixel of
+        /// these visualizers is computed from scratch by heavy fragment
+        /// shaders (the tunnel sphere-traces 60 steps of layered noise per
+        /// pixel), so cost scales directly with area — and the soft, glowing
+        /// imagery survives upscaling far better than it survives stutter.
+        ///
+        /// Every half second, compare the average measured GPU time against
+        /// the current budget (1 / `preferredFramesPerSecond`): over 85% of
+        /// budget steps one rung down the ladder; a *predicted* cost (area
+        /// ratio × average) under 60% steps back up. The 85/60 gap is the
+        /// hysteresis that keeps the scale from ping-ponging at a boundary.
+        private func adaptResolution(_ view: MTKView) {
+            let now = CACurrentMediaTime()
+            guard now - lastScaleCheck >= 0.5 else { return }
+            lastScaleCheck = now
+            guard let average = gpuTimer.drain(minimumSamples: 10) else { return }
+            let budget = 1.0 / Double(max(view.preferredFramesPerSecond, 1))
+            let scales = Self.renderScales
+            if average > budget * 0.85, renderScaleIndex > 0 {
+                renderScaleIndex -= 1
+            } else if renderScaleIndex < scales.count - 1 {
+                let growth = scales[renderScaleIndex + 1] / scales[renderScaleIndex]
+                if average * Double(growth * growth) < budget * 0.6 {
+                    renderScaleIndex += 1
+                }
+            }
+        }
+
+        /// Keeps the drawable at (view bounds × backing scale × render
+        /// scale). `autoResizeDrawable` is off, so nothing else writes
+        /// `drawableSize`; run every frame, this also covers live resize and
+        /// the window moving to a display with a different backing scale.
+        /// The shaders need no cooperation — `uniforms.resolution` is derived
+        /// from `drawableSize`, so aspect math stays correct automatically.
+        private func updateDrawableSize(_ view: MTKView) {
+            let backingScale =
+                view.window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
+            let scale = backingScale * Self.renderScales[renderScaleIndex]
+            let target = CGSize(
+                width: (view.bounds.width * scale).rounded(),
+                height: (view.bounds.height * scale).rounded())
+            guard target.width >= 1, target.height >= 1 else { return }
+            if view.drawableSize != target {
+                view.drawableSize = target
+            }
+        }
+
         /// Honors the system Reduce Motion setting. A beat-reactive visualizer
         /// that flashes on every transient carries a genuine photosensitivity
         /// risk, so when Reduce Motion is on we damp the transient features
         /// (which drive the flashing), slow the animation clock, and smooth the
         /// sustained ones so brightness drifts rather than strobes.
         ///
-        /// Done entirely on the CPU: `VizUniforms` is a fixed 96-byte contract
-        /// shared with Shaders.metal, so adding a flag field would mean
-        /// touching every shader.
+        /// Done entirely on the CPU: `VizUniforms` is a fixed 112-byte
+        /// contract shared with Shaders.metal, so adding a flag field would
+        /// mean touching every shader.
         private func applyReduceMotionIfNeeded(to uniforms: inout VizUniforms, dt: Float) {
             guard reduceMotion else { return }
             uniforms.speed *= 0.5
@@ -249,6 +326,47 @@ struct MetalVisualizerView: NSViewRepresentable {
             uniforms.treble = smoothed.z
             uniforms.level = smoothed.w
         }
+    }
+}
+
+/// Lock-guarded accumulator for measured GPU frame times. `record` is called
+/// from Metal's command-buffer completion thread, `drain`/`reset` from the
+/// main-thread render loop — hence `nonisolated` (the project default would
+/// otherwise pin every member to the main actor) and the hand-rolled lock,
+/// the same discipline as `AudioAnalyzer`.
+private nonisolated final class GPUFrameTimer: @unchecked Sendable {
+    private let lock = NSLock()
+    private var total: Double = 0
+    private var count = 0
+
+    func record(_ seconds: Double) {
+        // A failed or empty command buffer reports zero timestamps; don't
+        // let it drag the average toward "everything is fine".
+        guard seconds > 0 else { return }
+        lock.lock()
+        total += seconds
+        count += 1
+        lock.unlock()
+    }
+
+    /// Average seconds of GPU time per frame since the last drain, then
+    /// starts a fresh window; nil until `minimumSamples` frames have
+    /// reported, so one adjustment window can't act on noise.
+    func drain(minimumSamples: Int) -> Double? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard count >= minimumSamples else { return nil }
+        let average = total / Double(count)
+        total = 0
+        count = 0
+        return average
+    }
+
+    func reset() {
+        lock.lock()
+        total = 0
+        count = 0
+        lock.unlock()
     }
 }
 
