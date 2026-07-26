@@ -374,13 +374,13 @@ first release lands — that is the point of serving the artifacts from R2.
 ### Local testing
 
 ```bash
-make web-build
-cd web && npx wrangler pages dev ./dist
+cd web && npm run build
+npx wrangler pages dev ./dist
 # seed the local (simulated) bucket:
 npx wrangler r2 object put synesthia-releases/appcast.xml --file … --local
 ```
 
-`make web-typecheck` checks the Functions against the Workers runtime.
+`npm run typecheck` (in `web/`) checks the Functions against the Workers runtime.
 `web/tsconfig.functions.json` exists because the DOM lib and the Workers globals
 disagree — with DOM loaded, `caches.default` doesn't type-check.
 

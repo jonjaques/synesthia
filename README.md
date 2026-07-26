@@ -83,10 +83,13 @@ and `npx wrangler login` for the Cloudflare side.
 
 ```bash
 git clone git@github.com:jonjaques/synesthia.git && cd synesthia
-make install     # npm deps: root formatting tools + the website
+make install     # npm deps for the root: Prettier
 make build       # Debug build of the App Store target
 make test        # 19 Swift Testing cases over AudioAnalyzer
 ```
+
+The website is a separate project with its own lockfile — `cd web && npm ci`,
+then `npm run dev`. See [web/README.md](web/README.md).
 
 Xcode works normally too — open `Synesthia.xcodeproj` and pick a scheme.
 **Any `.swift` file you add anywhere under `Synesthia/` is compiled
@@ -98,50 +101,63 @@ references by hand.
 ```bash
 make run                  # build, then launch the app
 make build-direct         # the Sparkle-enabled build, for updater work
-make web-dev              # Astro dev server for the website
-make lint                 # run this before committing
+make lint                 # check formatting
 make format               # fix what lint complains about
+make healthcheck          # run this before pushing: lint + test + build-direct
 ```
 
-`make lint` covers the whole repo: `swift format lint --strict` over every
-Swift file, Prettier over everything else, `astro check` over the site, and a
-TypeScript pass over the Cloudflare Functions against the Workers runtime.
-`make format` fixes the first two in place. Split targets exist when you only
-want one half — `lint-swift`/`format-swift` and `lint-web`/`format-web`.
+`make lint` is formatting only: Prettier across everything outside `web/`, then
+`swift format lint --strict` over the app, the tests and `scripts/shotkit.swift`
+— under `--strict` any diagnostic, down to indentation, is an error. `make
+format` fixes both in place. swift-format ships inside the Xcode toolchain, so
+there is nothing to install, and Xcode's own **Editor ▸ Structure ▸ Format File
+with swift-format** reads the same `.swift-format` at the repo root. On top of
+formatting, the build is a gate too: every configuration is expected to compile
+with **zero warnings**.
 
-swift-format ships inside the Xcode toolchain, so there is nothing to install,
-and Xcode's own **Editor ▸ Structure ▸ Format File with swift-format** reads
-the same `.swift-format` at the repo root. On top of formatting, the build is
-still a gate: every configuration is expected to compile with **zero
-warnings**.
+`make healthcheck` is the whole PR gate in one target — lint, the test suite,
+then the Direct build — and is exactly what CI runs.
+
+### CI
+
+[`.github/workflows/healthcheck.yml`](.github/workflows/healthcheck.yml) runs on
+every pull request push, as two independent jobs matching the two projects in
+the repo:
+
+| Job     | Runner          | What it does                                                           |
+| ------- | --------------- | ---------------------------------------------------------------------- |
+| `web`   | `ubuntu-latest` | Everything from inside `web/`: `npm ci`, `check`, `typecheck`, `build` |
+| `apple` | `macos-26`      | `make install && make healthcheck`                                     |
+
+The runner has no signing identity, so the Makefile ad-hoc signs whenever `CI`
+is set — enough for the sandbox, and the real releases are signed by
+`scripts/build-direct.sh` on a machine that has the certificates.
 
 ### Every target
 
 `make` on its own lists them. Each is a thin wrapper around `xcodebuild` or a
 script in `scripts/`, and every script stays runnable directly with `--help`.
 
-| Target                                | What it does                                                                 |
-| ------------------------------------- | ---------------------------------------------------------------------------- |
-| `build`                               | Build the App Store target. `CONFIGURATION=Debug` by default                 |
-| `build-direct`                        | Build `Synesthia Direct` — the only target that links Sparkle                |
-| `run`                                 | Build, then open the resulting `.app`                                        |
-| `test`                                | The `SynesthiaTests` Swift Testing suite                                     |
-| `clean`                               | `xcodebuild clean` plus `rm -rf build/`                                      |
-| `app-path`                            | Print where the built `.app` actually landed for this `CONFIGURATION`        |
-| `install`                             | `npm ci` at the root and in `web/`                                           |
-| `lint` · `format`                     | Check / fix formatting everywhere, plus the non-Swift type checks            |
-| `lint-swift` · `format-swift`         | Just swift-format, over the app, the tests and `scripts/shotkit.swift`       |
-| `lint-web` · `format-web`             | Just Prettier, `astro check` and the Functions `tsc` pass                    |
-| `demo-track`                          | Regenerate the bundled 32 s demo loop, deterministically                     |
-| `screenshots`                         | Drive the real UI and capture every visualizer (see below)                   |
-| `check-metadata`                      | Check the App Store listing drafts against Apple's field limits              |
-| `bump`                                | Raise the version everywhere it is recorded — see [Releasing](#releasing)    |
-| `direct` · `direct-fast`              | Notarized direct-download build; `-fast` skips the notary round trip         |
-| `appstore` · `appstore-upload`        | Archive and validate the store build, optionally upload it                   |
-| `sparkle-keys`                        | One-time: create the EdDSA update-signing key                                |
-| `appcast`                             | Regenerate the signed Sparkle feed into `build/releases`                     |
-| `publish-release` · `publish-dry-run` | Upload the release to R2, or show what would go                              |
-| `web-*`                               | The Astro site: `dev`, `build`, `preview`, `assets`, `typecheck`, `cf-types` |
+| Target                                | What it does                                                              |
+| ------------------------------------- | ------------------------------------------------------------------------- |
+| `build`                               | Build the App Store target. `CONFIGURATION=Debug` by default              |
+| `build-direct`                        | Build `Synesthia Direct` — the only target that links Sparkle             |
+| `run`                                 | Build, then open the resulting `.app`                                     |
+| `test`                                | The `SynesthiaTests` Swift Testing suite                                  |
+| `clean`                               | `xcodebuild clean` plus `rm -rf build/`                                   |
+| `app-path`                            | Print where the built `.app` actually landed for this `CONFIGURATION`     |
+| `install`                             | `npm install` at the root — Prettier, nothing else                        |
+| `healthcheck`                         | The PR gate: `lint`, `test`, `build-direct`                               |
+| `lint` · `format`                     | Check / fix formatting: Prettier, then swift-format                       |
+| `demo-track`                          | Regenerate the bundled 32 s demo loop, deterministically                  |
+| `screenshots`                         | Drive the real UI and capture every visualizer (see below)                |
+| `check-metadata`                      | Check the App Store listing drafts against Apple's field limits           |
+| `bump`                                | Raise the version everywhere it is recorded — see [Releasing](#releasing) |
+| `direct` · `direct-fast`              | Notarized direct-download build; `-fast` skips the notary round trip      |
+| `appstore` · `appstore-upload`        | Archive and validate the store build, optionally upload it                |
+| `sparkle-keys`                        | One-time: create the EdDSA update-signing key                             |
+| `appcast`                             | Regenerate the signed Sparkle feed into `build/releases`                  |
+| `publish-release` · `publish-dry-run` | Upload the release to R2, or show what would go                           |
 
 Variables: **`CONFIGURATION`** (`Debug` default, then `Direct` and `Release` —
 [docs/distribution.md](docs/distribution.md) explains why the store and direct

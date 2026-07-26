@@ -66,13 +66,10 @@ make test             # xcodebuild test -destination 'platform=macOS'
 make clean            # xcodebuild clean + rm -rf build/
 make app-path         # print the built .app path for CONFIGURATION
 
-make install          # npm ci at the root (Prettier) and in web/
-make lint             # swift-format lint + prettier --check + astro check + Functions tsc
-make format           # swift-format --in-place + prettier --write across the repo
-make lint-swift       # …just `swift format lint --strict` (config: .swift-format)
-make format-swift     # …just `swift format --in-place`
-make lint-web         # …just the non-Swift half
-make format-web       # …just prettier --write
+make install          # npm install at the root (Prettier only; web/ installs itself)
+make healthcheck      # the PR gate: lint + test + build-direct, in that order
+make lint             # prettier --check, then `swift format lint --strict`
+make format           # prettier --write, then `swift format --in-place`
 
 make demo-track       # python3 scripts/make_demo_loop.py
 make screenshots      # scripts/take-screenshots.sh → web/src/assets/screenshots
@@ -86,9 +83,9 @@ make sparkle-keys     # one-time: create the EdDSA signing key (back it up!)
 make appcast          # regenerate the signed Sparkle appcast into build/releases
 make publish-release  # upload DMGs + appcast + latest.json to R2 (publish-dry-run first)
 
-make web-install web-dev web-build web-preview web-assets   # the Astro site in web/
-make web-typecheck web-cf-types                             # the Pages Functions in web/functions/
 ```
+
+**`web/` is not driven from the Makefile.** It is a self-contained project with its own `package.json`, lockfile and Prettier config (the root `.prettierignore` ignores it), so run its scripts from inside it: `cd web && npm ci`, then `npm run dev|build|check|typecheck|assets|cf-types`. See `web/AGENTS.md`.
 
 `ARGS=` forwards flags to the wrapped script (`make screenshots ARGS="--only nebula --1x"`). `BUILT_PRODUCTS_DIR` is resolved from `xcodebuild -showBuildSettings`, not globbed out of DerivedData, so `run`/`app-path` are correct for any configuration.
 
@@ -96,7 +93,7 @@ make web-typecheck web-cf-types                             # the Pages Function
 
 ### Formatting
 
-Swift is formatted by **swift-format**, which ships inside the Xcode toolchain (`swift format`) — nothing to install, no SPM dependency, no `Package.swift`. `make format-swift` rewrites `Synesthia/`, `SynesthiaTests/` and `scripts/shotkit.swift` in place; `make lint-swift` is the read-only gate and passes `--strict`, so **any** diagnostic (including plain indentation) is an error. Both are folded into `make format` / `make lint` alongside Prettier, mirroring how the web side works.
+Swift is formatted by **swift-format**, which ships inside the Xcode toolchain (`swift format`) — nothing to install, no SPM dependency, no `Package.swift`. `make format` runs Prettier and then rewrites `Synesthia/`, `SynesthiaTests/` and `scripts/shotkit.swift` in place; `make lint` is the read-only half and passes `--strict`, so **any** diagnostic (including plain indentation) is an error.
 
 `.swift-format` at the repo root is the config, and Xcode's own _Editor ▸ Structure ▸ Format File with swift-format_ picks up the same file. Where it deviates from swift-format's defaults, it does so to match the code that was already here:
 
@@ -105,6 +102,15 @@ Swift is formatted by **swift-format**, which ships inside the Xcode toolchain (
 - **`UseSynthesizedInitializer` is off** (memberwise initializers here are written out deliberately) and `reflowMultilineStringLiterals` stays at `never`, so the embedded AppleScript in `MusicController.swift` is never rewrapped. swift-format does still re-indent multiline string _literals_ and hoist them onto their own argument line; that is expected and harmless.
 
 `Shaders.metal` is not Swift and no formatter touches it — keep it tidy by hand.
+
+### CI
+
+`.github/workflows/healthcheck.yml` is the only workflow and runs on every pull request push, as two jobs mirroring the two projects in the repo: **`web`** on `ubuntu-latest` runs `npm ci && npm run check && npm run typecheck && npm run build` from inside `web/`, and **`apple`** on `macos-26` runs `make install && make healthcheck`. Keep `make healthcheck` as the single macOS entry point — new checks belong inside it, not as extra workflow steps, so that what CI runs is what a developer can run locally.
+
+Two things the runner needs that a developer's machine already has:
+
+- **No signing identity.** `CODE_SIGN_STYLE=Automatic` + `DEVELOPMENT_TEAM` fails on a runner with no certificate or profile, so the Makefile appends `$(SIGNING)` — ad-hoc signing (`CODE_SIGN_IDENTITY=-`) — to `build`, `build-direct` and `test` whenever `CI` is set, which Actions does. Ad-hoc is enough for the sandbox to launch the test host; it disables the hardened runtime, which is why the real releases still go through `scripts/build-direct.sh` on a machine with the certificates.
+- **The Metal toolchain**, since `Shaders.metal` compiles at build time. The workflow runs `xcodebuild -downloadComponent MetalToolchain` before building; drop that step if the runner images start shipping it.
 
 ### Screenshots
 

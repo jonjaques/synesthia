@@ -36,13 +36,19 @@ BUILT_PRODUCTS_DIR = $(shell xcodebuild -project $(PROJECT) -scheme $(SCHEME) \
 SWIFT_FORMAT  := swift format
 SWIFT_SOURCES := Synesthia SynesthiaTests scripts/shotkit.swift
 
+# CI runners have no signing identity and no provisioning profile, so automatic
+# signing fails before a single file compiles. Ad-hoc signing (`-`) still
+# satisfies the sandbox, which is all `make test` needs. GitHub Actions (and
+# most other CI) exports CI=true; locally this is empty and nothing changes.
+ifdef CI
+SIGNING := CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM= PROVISIONING_PROFILE_SPECIFIER=
+endif
+
 .PHONY: help build build-direct run test clean app-path \
-        install lint format lint-swift format-swift lint-web format-web \
+        install healthcheck lint format \
         demo-track screenshots check-metadata \
         appstore appstore-upload direct direct-fast bump \
-        sparkle-keys appcast publish-release publish-dry-run \
-        web-install web-dev web-build web-preview web-assets \
-        web-typecheck web-cf-types
+        sparkle-keys appcast publish-release publish-dry-run
 
 help: ## List the available targets
 	@printf '\033[1mSynesthia\033[0m — make targets\n\n'
@@ -56,16 +62,16 @@ help: ## List the available targets
 # ==== App
 
 build: ## Build the App Store app (CONFIGURATION=Debug by default)
-	xcodebuild -project $(PROJECT) -scheme $(SCHEME) -configuration $(CONFIGURATION) build
+	xcodebuild -project $(PROJECT) -scheme $(SCHEME) -configuration $(CONFIGURATION) $(SIGNING) build
 
 build-direct: ## Build the Sparkle-enabled direct app (same product name — see docs)
-	xcodebuild -project $(PROJECT) -scheme "$(DIRECT_SCHEME)" -configuration $(CONFIGURATION) build
+	xcodebuild -project $(PROJECT) -scheme "$(DIRECT_SCHEME)" -configuration $(CONFIGURATION) $(SIGNING) build
 
 run: build ## Build and launch the app
 	open "$(BUILT_PRODUCTS_DIR)/Synesthia.app"
 
 test: ## Run the SynesthiaTests suite
-	xcodebuild test -project $(PROJECT) -scheme $(SCHEME) -destination '$(DESTINATION)'
+	xcodebuild test -project $(PROJECT) -scheme $(SCHEME) -destination '$(DESTINATION)' $(SIGNING)
 
 clean: ## Clean the Xcode build and the release output in build/
 	xcodebuild -project $(PROJECT) -scheme $(SCHEME) clean
@@ -76,29 +82,21 @@ app-path: ## Print the built app's path for the current CONFIGURATION
 
 # ==== Checks
 
-install: ## Install npm dependencies: root formatting tools + the website
-	npm ci
-	cd web && npm ci
+install: ## Install npm dependencies: root formatting tools
+	npm install
 
-lint: lint-swift lint-web ## Check everything: Swift style, Prettier, Astro/TS types
+# The PR quality gate: what .github/workflows/healthcheck.yml runs on the
+# macOS side, as `make install && make healthcheck`. Order matters — the cheap
+# check fails first. `web/` is its own project and is gated separately.
+healthcheck: lint test build-direct ## Everything a PR has to pass: lint, tests, both builds
 
-format: format-swift format-web ## Reformat everything in place (Swift + Prettier)
-
-lint-swift: ## Diagnose Swift style without writing (any diagnostic fails the build)
-	$(SWIFT_FORMAT) lint --configuration .swift-format \
+lint: ## Check formatting without writing: Prettier, then swift-format --strict
+	npm run format:check && $(SWIFT_FORMAT) lint --configuration .swift-format \
 		--recursive --parallel --strict $(SWIFT_SOURCES)
 
-format-swift: ## Reformat Swift in place with swift-format (.swift-format)
-	$(SWIFT_FORMAT) --configuration .swift-format \
+format: ## Reformat in place: Prettier, then swift-format (.swift-format)
+	npm run format && $(SWIFT_FORMAT) --configuration .swift-format \
 		--recursive --parallel --in-place $(SWIFT_SOURCES)
-
-lint-web: ## Check the non-Swift tree: formatting, Astro/TS types, Functions types
-	npm run format:check
-	cd web && npm run astro check
-	cd web && npm run typecheck
-
-format-web: ## Reformat with Prettier in place (Markdown, TS, Astro, JSON, CSS)
-	npm run format
 
 # ==== Assets
 
@@ -139,26 +137,3 @@ publish-dry-run: ## …show what publish-release would upload, without uploading
 
 check-metadata: ## Check docs/app-store-metadata.md against App Store field limits
 	python3 scripts/check-metadata.py
-
-# ==== Website  (web/)
-
-web-install: ## Install the website's npm dependencies
-	cd web && npm ci
-
-web-dev: ## Run the Astro dev server
-	cd web && npm run dev
-
-web-build: ## Build the static site into web/dist
-	cd web && npm run build
-
-web-preview: ## Serve the built site locally
-	cd web && npm run preview
-
-web-assets: ## Regenerate icons/OG images in web/public from assets/
-	cd web && npm run assets
-
-web-typecheck: ## Type-check the Pages Functions against the Workers runtime
-	cd web && npm run typecheck
-
-web-cf-types: ## Regenerate web/worker-configuration.d.ts after editing wrangler.jsonc
-	cd web && npm run cf-types
