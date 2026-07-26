@@ -31,6 +31,7 @@ BUILT_PRODUCTS_DIR = $(shell xcodebuild -project $(PROJECT) -scheme $(SCHEME) \
 	| awk -F' = ' '/ BUILT_PRODUCTS_DIR = /{print $$2; exit}')
 
 .PHONY: help build build-direct run test clean app-path \
+        install lint format \
         demo-track screenshots check-metadata \
         appstore appstore-upload direct direct-fast bump \
         sparkle-keys appcast publish-release publish-dry-run \
@@ -66,6 +67,20 @@ clean: ## Clean the Xcode build and the release output in build/
 
 app-path: ## Print the built app's path for the current CONFIGURATION
 	@echo "$(BUILT_PRODUCTS_DIR)/Synesthia.app"
+
+# ==== Checks
+
+install: ## Install npm dependencies: root formatting tools + the website
+	npm ci
+	cd web && npm ci
+
+lint: ## Check everything non-Swift: formatting, Astro/TS types, Functions types
+	npm run format:check
+	cd web && npm run astro check
+	cd web && npm run typecheck
+
+format: ## Reformat with Prettier in place (Markdown, TS, Astro, JSON, CSS)
+	npm run format
 
 # ==== Assets
 

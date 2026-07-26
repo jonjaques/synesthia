@@ -59,17 +59,15 @@ one and the constraints behind them.
 
 ## Shipping
 
-1. **[Prerelease report](prerelease-report.md)** — the state of play as of
-   2026-07-25: what landed, two crashes found and fixed while testing, the
-   verification evidence, and exactly what still needs a human. Read this first
-   if you're picking the release back up.
-2. **[App Store launch plan](app-store-launch-plan.md)** — the working
-   document the report executes against: blockers, quality gaps, and the App
-   Store Connect checklist. Check items off as they close.
-3. **[Distribution](distribution.md)** — how one target produces two different
-   binaries, why the Music.app feature exists in only one of them, and the
-   build/notarize/appcast pipelines.
-4. **[App Store metadata](app-store-metadata.md)** — drafts of every listing
+1. **[Launch plan](app-store-launch-plan.md)** — the single working document:
+   what has shipped, what is still blocked, what needs a human, the decisions
+   behind the shape of it all, and the verification evidence. **Read this first
+   if you're picking the release back up.** The direct download is live; the
+   App Store submission is not.
+2. **[Distribution](distribution.md)** — how two targets produce two different
+   binaries, why the Music.app feature and Sparkle exist in only one of them,
+   versioning, and the build/notarize/publish pipelines.
+3. **[App Store metadata](app-store-metadata.md)** — drafts of every listing
    field plus the review notes. Length-checked by `scripts/check-metadata.py`.
 
 ---

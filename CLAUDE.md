@@ -66,6 +66,10 @@ make test             # xcodebuild test -destination 'platform=macOS'
 make clean            # xcodebuild clean + rm -rf build/
 make app-path         # print the built .app path for CONFIGURATION
 
+make install          # npm ci at the root (Prettier) and in web/
+make lint             # prettier --check + astro check + Functions tsc — everything non-Swift
+make format           # prettier --write across the repo
+
 make demo-track       # python3 scripts/make_demo_loop.py
 make screenshots      # scripts/take-screenshots.sh → web/src/assets/screenshots
 make check-metadata   # scripts/check-metadata.py

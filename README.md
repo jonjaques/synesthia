@@ -55,35 +55,91 @@ control bar. Settings persist across launches.
   permission must be granted (System Settings › Privacy & Security ›
   Automation › Synesthia › Music).
 
-## Building
+## Contributing
 
-Everything runs through `make` (`make` on its own lists the targets); each
-target is a thin wrapper around `xcodebuild` or a script in `scripts/`, which
-stay runnable directly.
+### What you need
+
+Everything below is either bundled with macOS/Xcode or one command away. There
+is no dependency you have to hunt down.
+
+|                               | Why                                                      | How                                            |
+| ----------------------------- | -------------------------------------------------------- | ---------------------------------------------- |
+| **macOS 26** (Tahoe) or later | the deployment target is 26.0                            | —                                              |
+| **Xcode 26.6+**               | Swift 6.3 toolchain, `SDKROOT = macosx`                  | Mac App Store, or `brew install --cask xcodes` |
+| Command line tools            | `xcodebuild`, `codesign`, `hdiutil`, `sips`, `afconvert` | `xcode-select --install`                       |
+| **Metal Toolchain**           | compiles `Shaders.metal` at build time                   | `xcodebuild -downloadComponent MetalToolchain` |
+| **Node ≥ 22.12**              | the website and the Cloudflare tooling                   | `brew install node`                            |
+| Python 3                      | `make demo-track`, `make check-metadata`                 | ships with macOS; stdlib only, no pip installs |
+
+Sparkle's command line tools (`generate_appcast`, `sign_update`) are **not**
+installed separately — they arrive with the Swift Package Manager artifact the
+moment you build the `Synesthia Direct` target, and the scripts find them there.
+
+Only if you are cutting a release you also need an Apple Developer Program
+membership, the certificates in [docs/distribution.md](docs/distribution.md),
+and `npx wrangler login` for the Cloudflare side.
+
+### First run
 
 ```bash
-make build                 # Debug build          (CONFIGURATION=Direct|Release)
-make run                   # build, then launch
-make test                  # the SynesthiaTests suite
-make clean
+git clone git@github.com:jonjaques/synesthia.git && cd synesthia
+make install     # npm deps: root formatting tools + the website
+make build       # Debug build of the App Store target
+make test        # 19 Swift Testing cases over AudioAnalyzer
 ```
 
-| Target                                                                 | What it does                                                                         |
-| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `build` · `run` · `test` · `clean`                                     | Xcode build, launch, Swift Testing suite, clean                                      |
-| `app-path`                                                             | Print the built `.app`'s path for the current `CONFIGURATION`                        |
-| `demo-track`                                                           | Regenerate `Resources/DemoLoop.m4a` (deterministic; needs `afconvert`)               |
-| `screenshots`                                                          | Capture every visualizer, windowed and fullscreen, into `web/src/assets/screenshots` |
-| `appstore` · `appstore-upload`                                         | Archive + validate the Mac App Store build, optionally upload                        |
-| `direct` · `direct-fast`                                               | Notarized direct-download build + DMG; `-fast` skips notarization                    |
-| `appcast`                                                              | Regenerate the signed Sparkle appcast from the DMGs in `build/`                      |
-| `check-metadata`                                                       | Check the App Store listing drafts against Apple's field limits                      |
-| `web-install` · `web-dev` · `web-build` · `web-preview` · `web-assets` | The Astro site in `web/`                                                             |
+Xcode works normally too — open `Synesthia.xcodeproj` and pick a scheme.
+**Any `.swift` file you add anywhere under `Synesthia/` is compiled
+automatically**; the project uses a synchronized file group, so never add file
+references by hand.
 
-Variables: `CONFIGURATION` (`Debug` default, then `Direct` and `Release` — see
-[docs/distribution.md](docs/distribution.md) for why the App Store and direct
-builds differ), `DESTINATION`, and `ARGS` to forward flags to the wrapped
-script — e.g. `make screenshots ARGS="--size 1440x900 --only nebula"`.
+### Everyday workflow
+
+```bash
+make run                  # build, then launch the app
+make build-direct         # the Sparkle-enabled build, for updater work
+make web-dev              # Astro dev server for the website
+make lint                 # run this before committing
+make format               # fix what lint complains about
+```
+
+`make lint` covers everything that isn't Swift: Prettier across the whole
+repo, `astro check` over the site, and a TypeScript pass over the Cloudflare
+Functions against the Workers runtime. Swift has no linter here — the build
+itself is the gate, and all configurations are expected to compile with **zero
+warnings**.
+
+### Every target
+
+`make` on its own lists them. Each is a thin wrapper around `xcodebuild` or a
+script in `scripts/`, and every script stays runnable directly with `--help`.
+
+| Target                                | What it does                                                                 |
+| ------------------------------------- | ---------------------------------------------------------------------------- |
+| `build`                               | Build the App Store target. `CONFIGURATION=Debug` by default                 |
+| `build-direct`                        | Build `Synesthia Direct` — the only target that links Sparkle                |
+| `run`                                 | Build, then open the resulting `.app`                                        |
+| `test`                                | The `SynesthiaTests` Swift Testing suite                                     |
+| `clean`                               | `xcodebuild clean` plus `rm -rf build/`                                      |
+| `app-path`                            | Print where the built `.app` actually landed for this `CONFIGURATION`        |
+| `install`                             | `npm ci` at the root and in `web/`                                           |
+| `lint` · `format`                     | Check / fix formatting and non-Swift types                                   |
+| `demo-track`                          | Regenerate the bundled 32 s demo loop, deterministically                     |
+| `screenshots`                         | Drive the real UI and capture every visualizer (see below)                   |
+| `check-metadata`                      | Check the App Store listing drafts against Apple's field limits              |
+| `bump`                                | Raise the version everywhere it is recorded — see [Releasing](#releasing)    |
+| `direct` · `direct-fast`              | Notarized direct-download build; `-fast` skips the notary round trip         |
+| `appstore` · `appstore-upload`        | Archive and validate the store build, optionally upload it                   |
+| `sparkle-keys`                        | One-time: create the EdDSA update-signing key                                |
+| `appcast`                             | Regenerate the signed Sparkle feed into `build/releases`                     |
+| `publish-release` · `publish-dry-run` | Upload the release to R2, or show what would go                              |
+| `web-*`                               | The Astro site: `dev`, `build`, `preview`, `assets`, `typecheck`, `cf-types` |
+
+Variables: **`CONFIGURATION`** (`Debug` default, then `Direct` and `Release` —
+[docs/distribution.md](docs/distribution.md) explains why the store and direct
+builds differ), **`BUMP`** for `make bump`, **`DESTINATION`** for `make test`,
+and **`ARGS`** to forward flags to the wrapped script, e.g.
+`make screenshots ARGS="--only nebula"`.
 
 ### Screenshots
 
@@ -99,6 +155,68 @@ Privacy & Security: **Accessibility** (resize the window, move the pointer so
 the auto-hiding chrome reappears) and **Screen & System Audio Recording**
 (`screencapture` itself). The script checks both up front and tells you what's
 missing. `./scripts/take-screenshots.sh --help` lists the options.
+
+## Releasing
+
+Synesthia ships through two independent channels, built from **two targets over
+three configurations**. The short version: `Synesthia Direct` / `Direct` is the
+notarized download from synesthia.app and is the only one with Sparkle and the
+Music.app integration; `Synesthia` / `Release` is the Mac App Store build and
+contains neither. [docs/distribution.md](docs/distribution.md) has the full
+rationale; [docs/app-store-launch-plan.md](docs/app-store-launch-plan.md) tracks
+what is still outstanding.
+
+### 1. Cut a version
+
+```bash
+make bump                 # patch: 1.0 -> 1.0.1
+make bump BUMP=minor      #        1.0.1 -> 1.1
+make bump BUMP=major      #        1.1 -> 2.0
+make bump BUMP=2.5        # or set it explicitly
+```
+
+The version lives in `project.pbxproj` as build settings, duplicated across
+every target and configuration — **nine copies of each**. `make bump` writes
+them all, always increments the build number, refuses to run if they have
+drifted apart, and updates the website's `RELEASE.version` too.
+
+> **Always let the marketing version move, not just the build number.** The DMG
+> is named `Synesthia-<version>.dmg`, so two releases sharing a version collide
+> on one filename in R2. `publish-release` hard-fails on that rather than
+> silently serving old bytes under a new signature.
+
+### 2. Release the direct download
+
+```bash
+make test                 # nothing ships that hasn't passed
+make direct               # archive, sign, notarize app + DMG, staple, verify
+make appcast              # add it to the signed Sparkle feed
+make publish-dry-run      # confirm what is about to be uploaded
+make publish-release      # DMGs first, then latest.json, then the appcast
+```
+
+Order is not cosmetic. `make direct` notarizes twice — the app before the disk
+image is built, so the copy users drag out of the DMG carries its own ticket,
+then the signed DMG itself. `publish-release` uploads artifacts **before** the
+appcast, because the appcast is the announcement: the moment it lists a
+version, installed copies start fetching that URL.
+
+Afterwards, update `RELEASE.size` in `web/src/consts.ts` from the byte count
+`make direct` printed, then commit and push — Cloudflare Pages deploys the site
+from git, while the release artifacts themselves live in R2 and need no rebuild.
+
+### 3. Release to the Mac App Store
+
+```bash
+make check-metadata       # listing copy against Apple's field limits
+make appstore             # archive, assert, export
+make appstore-upload      # …and send it to App Store Connect
+```
+
+`make appstore` refuses to continue unless the archive is universal, carries no
+`get-task-allow`, no Apple Events entitlement, no `tell application "Music"`
+string, and **no Sparkle** — the store build must not ship an updater. Flip
+`APP_STORE_AVAILABLE` in `web/src/consts.ts` once review actually passes.
 
 ## How it works
 
@@ -153,5 +271,5 @@ shader as `VizUniforms.p0…p3`. Audio data arrives as a 64-float band array, a
 - **Screen saver target** reusing the same render stack.
 - **String Catalog localization** — UI strings are currently literals; the
   project has `STRING_CATALOG_GENERATE_SYMBOLS` enabled and should migrate.
-- **Tests**: the analyzer (band mapping, beat detection) is pure enough to unit
-  test once a test target exists.
+- **Visualizer test coverage** — `SynesthiaTests` covers `AudioAnalyzer`
+  thoroughly; the Metal visualizers have none and are much harder to assert on.
