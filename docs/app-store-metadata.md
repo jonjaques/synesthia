@@ -102,10 +102,10 @@ First release.
 
 ## Support and marketing URLs
 
-| Field | Value |
-|---|---|
-| Support URL | `https://synesthia.app/support` |
-| Marketing URL | `https://synesthia.app` |
+| Field              | Value                           |
+| ------------------ | ------------------------------- |
+| Support URL        | `https://synesthia.app/support` |
+| Marketing URL      | `https://synesthia.app`         |
 | Privacy Policy URL | `https://synesthia.app/privacy` |
 
 ## Copyright

@@ -16,12 +16,12 @@ that need a human in front of the running app.
 
 Four questions gated materially different work. Answers, and what followed:
 
-| Question | Decision | Consequence |
-|---|---|---|
-| B5 — Apple Events | **Feature-flag it** | New `Direct` build configuration; App Store build contains no Music.app integration at all |
-| B4 — demo audio | **Synthesize and bundle a clip** | `scripts/make_demo_loop.py` generates a 32 s loop; no licensing question |
-| B7 — trademark | **Proceed under the current name** | Research recorded below; left open |
-| §6 — distribution | **Both App Store and direct** | Full notarization pipeline built; Sparkle written but not linked |
+| Question          | Decision                           | Consequence                                                                                |
+| ----------------- | ---------------------------------- | ------------------------------------------------------------------------------------------ |
+| B5 — Apple Events | **Feature-flag it**                | New `Direct` build configuration; App Store build contains no Music.app integration at all |
+| B4 — demo audio   | **Synthesize and bundle a clip**   | `scripts/make_demo_loop.py` generates a 32 s loop; no licensing question                   |
+| B7 — trademark    | **Proceed under the current name** | Research recorded below; left open                                                         |
+| §6 — distribution | **Both App Store and direct**      | Full notarization pipeline built; Sparkle written but not linked                           |
 
 One research finding closed off a third option for B5: **MusicKit cannot
 replace Apple Events on macOS.** `SystemMusicPlayer` is unavailable on the
@@ -34,15 +34,18 @@ shipping the entitlement and cutting the feature.
 ## 2. Blockers closed
 
 ### B1 — bundle identifier
+
 `jonjaques.Synesthia` → **`com.jonjaques.Synesthia`** across every
 configuration. Registering the App ID remains portal work (see §6).
 
 ### B3 — `fatalError` on missing Metal
+
 Replaced with an optional `MetalRenderContext.shared` and a
 `MetalUnavailableView`. No launch path can now crash on a Mac (or VM) without a
 Metal device.
 
 ### B4 — dead on arrival for a reviewer
+
 New `.demo` audio source, **default on first launch**, playing a loop bundled
 with the app. It needs no permission of any kind, so the canvas is alive before
 anything can be denied. A first-run `WelcomeView` names each permission, says
@@ -53,26 +56,29 @@ rights to third-party audio in a submission. It is also tuned for the job — th
 arrangement keeps energy in every band the analyzer reports.
 
 ### B5 — `temporary-exception.apple-events`
+
 Feature-flagged behind `MUSIC_APP_SOURCE`, which is **off** in `Release` and on
 in `Direct` and `Debug`.
 
-| | `Release` (App Store) | `Direct` | `Debug` |
-|---|---|---|---|
-| `MUSIC_APP_SOURCE` | off | on | on |
-| Entitlements file | `Synesthia.entitlements` | `Synesthia-Direct.entitlements` | `Synesthia-Direct.entitlements` |
-| `automation.apple-events` | **no** | yes | yes |
-| `temporary-exception.apple-events` | **no** | yes | yes |
-| `NSAppleEventsUsageDescription` | absent | present | present |
+|                                    | `Release` (App Store)    | `Direct`                        | `Debug`                         |
+| ---------------------------------- | ------------------------ | ------------------------------- | ------------------------------- |
+| `MUSIC_APP_SOURCE`                 | off                      | on                              | on                              |
+| Entitlements file                  | `Synesthia.entitlements` | `Synesthia-Direct.entitlements` | `Synesthia-Direct.entitlements` |
+| `automation.apple-events`          | **no**                   | yes                             | yes                             |
+| `temporary-exception.apple-events` | **no**                   | yes                             | yes                             |
+| `NSAppleEventsUsageDescription`    | absent                   | present                         | present                         |
 
-`scripts/build-appstore.sh` asserts against the *built archive* that none of it
+`scripts/build-appstore.sh` asserts against the _built archive_ that none of it
 leaked — no Apple Events entitlement, and no `tell application "Music"` string
 compiled into the binary.
 
 ### B6 — unused music-library entitlement
+
 `com.apple.security.assets.music.read-only` removed. Hand regression-testing of
 the Music path is outstanding (§6).
 
 ### §3 — quality gaps
+
 All actionable items done:
 
 - **Power** — MTKView pauses entirely on occlusion/miniaturize; drops to 30 fps
@@ -103,6 +109,7 @@ coverage of the Metal visualizers.
 The most valuable outcome of the session, and neither was in the plan.
 
 ### Every `FilePlayer` launch crashed
+
 `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` means a closure written inline
 inside a main-actor method is itself inferred main-actor. AVAudioEngine invokes
 tap blocks on a realtime audio thread, so Swift 6's isolation check trapped —
@@ -113,6 +120,7 @@ Latent before this pass because nothing started a `FilePlayer` at launch. The
 demo source does, so it fired every time.
 
 ### The same bug in the loop-completion handler
+
 `scheduleFile`'s completion block had the identical defect and would have
 killed the app 32 s in, at the first loop point. The existing
 `Task { @MainActor … }` hop did **not** help: the trap happens on entry, before
@@ -155,25 +163,25 @@ itself) and was replaced with one that measures the analyzer's actual output.
 
 ## 5. Verification evidence
 
-| Check | Result |
-|---|---|
-| `Release` / `Direct` / `Debug` builds | succeed, **zero warnings** |
-| `xcodebuild test` | 19/19 pass |
-| Archive is universal | `x86_64 arm64` |
-| `get-task-allow` in archive | absent |
-| Apple Events entitlements in `Release` | absent |
-| AppleScript string in `Release` binary | absent |
-| `PrivacyInfo.xcprivacy` in bundle | present |
-| `DemoLoop.m4a` in bundle | present |
-| `ITSAppUsesNonExemptEncryption` | present |
-| App launches and stays up | yes |
-| Demo plays / assertion held | 2 assertions held while playing |
-| Survives loop restarts | 95 s, 3 loop points, no crash reports |
-| Demo track spectral content | energy in all three bands, 0 silent windows, −18.3 dBFS RMS |
-| Web site builds | 3 pages, both new ones in the sitemap |
-| Metadata field lengths | all within Apple's limits |
+| Check                                  | Result                                                      |
+| -------------------------------------- | ----------------------------------------------------------- |
+| `Release` / `Direct` / `Debug` builds  | succeed, **zero warnings**                                  |
+| `xcodebuild test`                      | 19/19 pass                                                  |
+| Archive is universal                   | `x86_64 arm64`                                              |
+| `get-task-allow` in archive            | absent                                                      |
+| Apple Events entitlements in `Release` | absent                                                      |
+| AppleScript string in `Release` binary | absent                                                      |
+| `PrivacyInfo.xcprivacy` in bundle      | present                                                     |
+| `DemoLoop.m4a` in bundle               | present                                                     |
+| `ITSAppUsesNonExemptEncryption`        | present                                                     |
+| App launches and stays up              | yes                                                         |
+| Demo plays / assertion held            | 2 assertions held while playing                             |
+| Survives loop restarts                 | 95 s, 3 loop points, no crash reports                       |
+| Demo track spectral content            | energy in all three bands, 0 silent windows, −18.3 dBFS RMS |
+| Web site builds                        | 3 pages, both new ones in the sitemap                       |
+| Metadata field lengths                 | all within Apple's limits                                   |
 
-**What was *not* verified: anything visual.** There is no screen-recording
+**What was _not_ verified: anything visual.** There is no screen-recording
 permission in this environment, so not a single pixel of the UI was seen. See
 §6.5.
 
@@ -182,7 +190,8 @@ permission in this environment, so not a single pixel of the UI was seen. See
 ## 6. Outstanding — needs a human
 
 ### 6.1 B2 — distribution signing (**the one hard blocker**)
-The only certificate on this machine is *Apple Development*. Both release
+
+The only certificate on this machine is _Apple Development_. Both release
 scripts archive successfully and stop at export:
 
 ```
@@ -198,6 +207,7 @@ Connect record. Then a throwaway upload, to flush out validation errors while
 there is still time to react.
 
 ### 6.2 B7 — trademark
+
 A USPTO search turns up no registered mark for "Synesthesia" in the software
 class. That is **not clearance**: the product demonstrably exists and sells, so
 common-law rights are likely, and confusing similarity is judged on overall
@@ -207,30 +217,35 @@ Nothing in the repo is name-dependent except listing copy and the domain, so a
 rename stays cheap right up until submission.
 
 ### 6.3 Mail routing
+
 `support@synesthia.app` and `privacy@synesthia.app` are now published on both
 required pages and **neither has mail routing**. Apple checks that the support
 URL resolves; a dead support address is a review risk as well as a bad look.
 
 ### 6.4 Screenshots and preview video
+
 Not possible here. The plan is right that the preview video is the
 high-leverage asset — a static screenshot of a visualizer sells nothing.
 
 ### 6.5 Look at the app
+
 Everything above was verified structurally. Unverified by eye or ear:
 
 - the first-run welcome sheet's layout and wording
-- whether the demo track *sounds* good, as opposed to measuring well
+- whether the demo track _sounds_ good, as opposed to measuring well
 - whether Reduce Motion actually looks calmer
 - whether VoiceOver actually reads the new labels
 
 ### 6.6 Sparkle's final step
+
 `Synesthia/Updater.swift` is written and guarded on `canImport(Sparkle)`, so it
 compiles to nothing today and lights up when the package is linked. Linking is
-left deliberately undone: SPM attaches a package to *every* configuration, and
+left deliberately undone: SPM attaches a package to _every_ configuration, and
 Sparkle must stay out of the App Store build. That needs a target decision, not
 a script — both options are laid out in `docs/distribution.md`.
 
 ### 6.7 Regression-test the Music path
+
 B6's follow-up: with Music.app running, in the `Direct` configuration, by hand.
 
 ---
@@ -248,23 +263,23 @@ Store listing:
 
 ## 8. Artifacts added
 
-| Path | Purpose |
-|---|---|
-| `Synesthia-Direct.entitlements` | Direct/Debug entitlements, incl. Apple Events |
-| `Synesthia/WelcomeView.swift` | First-run permission explainer |
-| `Synesthia/Updater.swift` | Sparkle glue, guarded |
-| `Synesthia/Resources/DemoLoop.m4a` | Generated 32 s demo loop (512 KB) |
-| `SynesthiaTests/` | Swift Testing bundle |
-| `scripts/make_demo_loop.py` | Deterministic demo-track synthesizer |
-| `scripts/build-appstore.sh` | Archive, assert, export, validate, upload |
-| `scripts/build-direct.sh` | Archive, Developer ID, DMG, notarize, staple |
-| `scripts/make-appcast.sh` | Sparkle appcast generation |
-| `scripts/check-metadata.py` | App Store field length checker |
-| `scripts/ExportOptions-*.plist` | Export configurations |
-| `docs/distribution.md` | The two-configuration split, end to end |
-| `docs/app-store-metadata.md` | Every listing field + review notes |
-| `web/src/pages/privacy.astro` | Required App Store page |
-| `web/src/pages/support.astro` | Required App Store page |
-| `web/src/layouts/Legal.astro` | Prose layout for both |
+| Path                               | Purpose                                       |
+| ---------------------------------- | --------------------------------------------- |
+| `Synesthia-Direct.entitlements`    | Direct/Debug entitlements, incl. Apple Events |
+| `Synesthia/WelcomeView.swift`      | First-run permission explainer                |
+| `Synesthia/Updater.swift`          | Sparkle glue, guarded                         |
+| `Synesthia/Resources/DemoLoop.m4a` | Generated 32 s demo loop (512 KB)             |
+| `SynesthiaTests/`                  | Swift Testing bundle                          |
+| `scripts/make_demo_loop.py`        | Deterministic demo-track synthesizer          |
+| `scripts/build-appstore.sh`        | Archive, assert, export, validate, upload     |
+| `scripts/build-direct.sh`          | Archive, Developer ID, DMG, notarize, staple  |
+| `scripts/make-appcast.sh`          | Sparkle appcast generation                    |
+| `scripts/check-metadata.py`        | App Store field length checker                |
+| `scripts/ExportOptions-*.plist`    | Export configurations                         |
+| `docs/distribution.md`             | The two-configuration split, end to end       |
+| `docs/app-store-metadata.md`       | Every listing field + review notes            |
+| `web/src/pages/privacy.astro`      | Required App Store page                       |
+| `web/src/pages/support.astro`      | Required App Store page                       |
+| `web/src/layouts/Legal.astro`      | Prose layout for both                         |
 
 `CLAUDE.md` and `docs/app-store-launch-plan.md` were updated to match.

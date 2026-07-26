@@ -7,7 +7,7 @@ off, and delete sections as they stop being true. See
 and what it left open.
 
 Scope: the macOS app and its App Store submission. The marketing site in `web/`
-is tracked separately, except for the two pages the App Store *requires* (now
+is tracked separately, except for the two pages the App Store _requires_ (now
 built — see [App Store Connect checklist](#4-app-store-connect-checklist)).
 
 **Everything that can be done without an Apple Developer portal login is
@@ -25,36 +25,36 @@ a launch smoke test.
 
 ### Earlier pass
 
-| Change | Rationale |
-|---|---|
+| Change                                     | Rationale                                                                            |
+| ------------------------------------------ | ------------------------------------------------------------------------------------ |
 | `MACOSX_DEPLOYMENT_TARGET` 26.5 → **26.0** | `glassEffect` is a 26.0 API; 26.5 excluded nearly every macOS 26 user for no reason. |
-| `SWIFT_VERSION` 5.0 → **6.0** | Isolation violations reachable from the audio thread are now errors. |
-| `nonisolated struct AudioSnapshot` | Removed 48 of 50 build warnings; latent data-race diagnostics. |
-| `ITSAppUsesNonExemptEncryption = NO` | Pre-answers export compliance on every upload. |
-| `NSHumanReadableCopyright` filled in | Surfaces in About and Get Info. |
-| Added `Synesthia/PrivacyInfo.xcprivacy` | No tracking, no collected data, one `UserDefaults` reason. |
-| Added a shared scheme | `xcodebuild -list` returned nothing on a clean checkout. |
+| `SWIFT_VERSION` 5.0 → **6.0**              | Isolation violations reachable from the audio thread are now errors.                 |
+| `nonisolated struct AudioSnapshot`         | Removed 48 of 50 build warnings; latent data-race diagnostics.                       |
+| `ITSAppUsesNonExemptEncryption = NO`       | Pre-answers export compliance on every upload.                                       |
+| `NSHumanReadableCopyright` filled in       | Surfaces in About and Get Info.                                                      |
+| Added `Synesthia/PrivacyInfo.xcprivacy`    | No tracking, no collected data, one `UserDefaults` reason.                           |
+| Added a shared scheme                      | `xcodebuild -list` returned nothing on a clean checkout.                             |
 
 ### This pass
 
-| Blocker | What was done |
-|---|---|
-| **B1** bundle ID | `jonjaques.Synesthia` → **`com.jonjaques.Synesthia`** in every configuration. |
-| **B3** Metal `fatalError` | Replaced with `MetalRenderContext.shared` (optional) and a `MetalUnavailableView`. No launch path can crash on a missing GPU. |
-| **B4** dead on arrival | New **`.demo` source**, default on first launch, playing a 32 s loop bundled with the app. Zero permissions. Plus a first-run `WelcomeView` naming every permission with deep links into the right System Settings pane. |
-| **B5** Apple Events | **Feature-flagged.** `MUSIC_APP_SOURCE` is off in `Release`, so the App Store build contains no `MusicController`, no AppleScript, and neither Apple Events entitlement. `Direct` keeps the feature. |
-| **B6** unused entitlement | `com.apple.security.assets.music.read-only` removed. |
-| Quality: power | MTKView pauses on occlusion/miniaturize; drops to 30 fps when inactive or idle; runs at the display's full rate (incl. 120 Hz ProMotion) only while audio flows. |
-| Quality: sleep | `beginActivity(.idleDisplaySleepDisabled)` held **only** while audio is flowing, released the moment it stops. |
-| Quality: photosensitivity | Reduce Motion honored — clock slowed, transients damped to 25%, level features smoothed with a 0.4 s time constant. Done CPU-side to preserve the 96-byte `VizUniforms` contract. |
-| Quality: VoiceOver | `accessibilityLabel` on all 14 icon-only buttons; chrome no longer auto-hides while VoiceOver is running. |
-| Quality: Help menu | Replaces the dead default; opens the explainer, the Support URL, and the Privacy URL. |
-| Quality: file persistence | Security-scoped bookmark, refreshed when stale. |
-| Quality: build warning | `ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME` cleared. **All three configurations now build with zero warnings.** |
-| Test target | **`SynesthiaTests`** (Swift Testing), 19 tests over `AudioAnalyzer`, all passing. |
-| Distribution | `build-appstore.sh`, `build-direct.sh`, `make-appcast.sh`, both export plists, and `docs/distribution.md`. |
-| Metadata | `docs/app-store-metadata.md` — every listing field plus review notes, length-checked by `scripts/check-metadata.py`. |
-| Web | `/privacy` and `/support` built and linked from the footer. |
+| Blocker                   | What was done                                                                                                                                                                                                            |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **B1** bundle ID          | `jonjaques.Synesthia` → **`com.jonjaques.Synesthia`** in every configuration.                                                                                                                                            |
+| **B3** Metal `fatalError` | Replaced with `MetalRenderContext.shared` (optional) and a `MetalUnavailableView`. No launch path can crash on a missing GPU.                                                                                            |
+| **B4** dead on arrival    | New **`.demo` source**, default on first launch, playing a 32 s loop bundled with the app. Zero permissions. Plus a first-run `WelcomeView` naming every permission with deep links into the right System Settings pane. |
+| **B5** Apple Events       | **Feature-flagged.** `MUSIC_APP_SOURCE` is off in `Release`, so the App Store build contains no `MusicController`, no AppleScript, and neither Apple Events entitlement. `Direct` keeps the feature.                     |
+| **B6** unused entitlement | `com.apple.security.assets.music.read-only` removed.                                                                                                                                                                     |
+| Quality: power            | MTKView pauses on occlusion/miniaturize; drops to 30 fps when inactive or idle; runs at the display's full rate (incl. 120 Hz ProMotion) only while audio flows.                                                         |
+| Quality: sleep            | `beginActivity(.idleDisplaySleepDisabled)` held **only** while audio is flowing, released the moment it stops.                                                                                                           |
+| Quality: photosensitivity | Reduce Motion honored — clock slowed, transients damped to 25%, level features smoothed with a 0.4 s time constant. Done CPU-side to preserve the 96-byte `VizUniforms` contract.                                        |
+| Quality: VoiceOver        | `accessibilityLabel` on all 14 icon-only buttons; chrome no longer auto-hides while VoiceOver is running.                                                                                                                |
+| Quality: Help menu        | Replaces the dead default; opens the explainer, the Support URL, and the Privacy URL.                                                                                                                                    |
+| Quality: file persistence | Security-scoped bookmark, refreshed when stale.                                                                                                                                                                          |
+| Quality: build warning    | `ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME` cleared. **All three configurations now build with zero warnings.**                                                                                                     |
+| Test target               | **`SynesthiaTests`** (Swift Testing), 19 tests over `AudioAnalyzer`, all passing.                                                                                                                                        |
+| Distribution              | `build-appstore.sh`, `build-direct.sh`, `make-appcast.sh`, both export plists, and `docs/distribution.md`.                                                                                                               |
+| Metadata                  | `docs/app-store-metadata.md` — every listing field plus review notes, length-checked by `scripts/check-metadata.py`.                                                                                                     |
+| Web                       | `/privacy` and `/support` built and linked from the footer.                                                                                                                                                              |
 
 ### Two real bugs found while testing
 
@@ -86,7 +86,7 @@ running past three consecutive loop points with no crash reports.
 ### B2 — Distribution signing does not exist yet
 
 **The only remaining hard blocker, and it needs an Apple Developer login.**
-The only certificate on this machine is *Apple Development*. Both release
+The only certificate on this machine is _Apple Development_. Both release
 scripts archive successfully and stop at export:
 
 ```
@@ -197,7 +197,7 @@ Ordered by what blocks the most.
    builds, assertions against the built bundle, power assertions, crash
    reports, and unit tests:
    - the first-run welcome sheet's layout and wording
-   - the demo track's *sound* (verified only as levels and per-band energy)
+   - the demo track's _sound_ (verified only as levels and per-band energy)
    - Reduce Motion actually looking calmer
    - VoiceOver actually reading the new labels
 6. **Sparkle's final step.** The code is written and guarded on

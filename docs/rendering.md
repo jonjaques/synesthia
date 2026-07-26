@@ -81,7 +81,7 @@ shader-compilation cost.
 Historical note: the shaders used to live in a Swift string compiled at
 launch with `device.makeLibrary(source:)`, because this machine lacked the
 offline Metal toolchain. That runtime-compilation path is still the intended
-mechanism for future *external* visualizer plugins, which would ship their
+mechanism for future _external_ visualizer plugins, which would ship their
 own MSL source and compile it at load time.
 
 ## The CPU→GPU contract: `VizUniforms`
@@ -100,8 +100,8 @@ flowchart LR
 
 The struct exists **twice**: once in Swift (`VisualizerCore.swift`) and once
 in MSL (`Shaders.metal`). The GPU receives the Swift struct's raw bytes
-and reinterprets them as the MSL struct, so *the two layouts must stay
-byte-identical* — same fields, same order, currently 24 floats / 96 bytes.
+and reinterprets them as the MSL struct, so _the two layouts must stay
+byte-identical_ — same fields, same order, currently 24 floats / 96 bytes.
 Adding a field means updating both and keeping the sizes in sync; a mismatch
 doesn't crash, it silently shifts every subsequent field into the wrong
 shader variable.
@@ -129,7 +129,7 @@ These are the graphics idioms you'll meet in the shaders, all standard:
 - **Point sprites** (Nebula): the GPU can rasterize a single vertex as a
   screen-aligned square (`point_size`); the fragment shader shades a
   Gaussian falloff to turn the square into a soft glowing dot.
-- **Additive blending** (Nebula's particles): fragments are *added* to the
+- **Additive blending** (Nebula's particles): fragments are _added_ to the
   framebuffer instead of replacing it, so overlapping particles brighten
   like overlapping lights. Configured in `makeRenderPipeline`.
 - **Reinhard tone mapping** (`c/(1+c)`): all that additive glow can exceed
@@ -138,10 +138,10 @@ These are the graphics idioms you'll meet in the shaders, all standard:
 
 ## Where the pixels come from, per visualizer
 
-| Visualizer | CPU work per frame | GPU passes |
-|---|---|---|
-| Spectrum Tunnel | none (just uniforms) | 1 fullscreen fragment shader |
-| Aurora | none (just uniforms) | 1 fullscreen fragment shader |
-| Nebula | simulate ≤ 4096 particles, write to shared buffer | fullscreen background + additive point sprites |
+| Visualizer      | CPU work per frame                                | GPU passes                                     |
+| --------------- | ------------------------------------------------- | ---------------------------------------------- |
+| Spectrum Tunnel | none (just uniforms)                              | 1 fullscreen fragment shader                   |
+| Aurora          | none (just uniforms)                              | 1 fullscreen fragment shader                   |
+| Nebula          | simulate ≤ 4096 particles, write to shared buffer | fullscreen background + additive point sprites |
 
 See [Visualizers](visualizers.md) for how each one turns audio into imagery.

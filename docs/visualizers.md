@@ -45,10 +45,10 @@ classDiagram
 
 Two pieces, deliberately separated:
 
-- **`VisualizerDescriptor`** — a cheap static *value*: identity, UI strings,
+- **`VisualizerDescriptor`** — a cheap static _value_: identity, UI strings,
   up to four option sliders, and a factory closure. Descriptors for every
   visualizer exist all the time (they populate menus).
-- **The `Visualizer` class** — the expensive *instance* holding GPU
+- **The `Visualizer` class** — the expensive _instance_ holding GPU
   pipelines and buffers. Only the selected one exists; it's built by
   `descriptor.make` when chosen and deallocated when switched away.
 
@@ -71,25 +71,25 @@ switching visualizers restores each one's own look, including its palette).
 
 ## How the audio maps to visuals
 
-All three built-ins follow the same philosophy — *different registers drive
-different elements*, so the picture decomposes the music rather than just
+All three built-ins follow the same philosophy — _different registers drive
+different elements_, so the picture decomposes the music rather than just
 pulsing with loudness:
 
-| Audio feature | Nebula | Spectrum Tunnel | Aurora |
-|---|---|---|---|
-| `bands[64]` | one band per particle | tunnel wall brightness by angle | ribbon glow by height |
-| `waveform[256]` | — | — | ribbon displacement |
-| `beat` (kick) | core particles surge | forward lurch + center flash | scene brightness lift |
-| `trebleBeat` (hi-hat) | outer particles flicker | glints at tunnel mouth | sparkle field |
-| `flux` (any onset) | swirl speeds up, core flares | whole scene lifts | shimmer |
-| `centroid` (brightness) | hue shift | hue shift | hue shift |
-| sub-bands (`subBass`…`air`) | mid-particle flicker | camera sway, spokes, fine rings | fog, haze, stars, rays, ripple |
+| Audio feature               | Nebula                       | Spectrum Tunnel                 | Aurora                         |
+| --------------------------- | ---------------------------- | ------------------------------- | ------------------------------ |
+| `bands[64]`                 | one band per particle        | tunnel wall brightness by angle | ribbon glow by height          |
+| `waveform[256]`             | —                            | —                               | ribbon displacement            |
+| `beat` (kick)               | core particles surge         | forward lurch + center flash    | scene brightness lift          |
+| `trebleBeat` (hi-hat)       | outer particles flicker      | glints at tunnel mouth          | sparkle field                  |
+| `flux` (any onset)          | swirl speeds up, core flares | whole scene lifts               | shimmer                        |
+| `centroid` (brightness)     | hue shift                    | hue shift                       | hue shift                      |
+| sub-bands (`subBass`…`air`) | mid-particle flicker         | camera sway, spokes, fine rings | fog, haze, stars, rays, ripple |
 
 ### Spectrum Tunnel (`TunnelVisualizer` + `tunnelFragment`)
 
 Pure fullscreen shader; the Swift class is ~40 lines of pipeline setup. The
-shader converts each pixel to polar coordinates and maps *angle → spectrum
-band* and *1/radius → depth*, which reads as flying down a tube whose walls
+shader converts each pixel to polar coordinates and maps _angle → spectrum
+band_ and _1/radius → depth_, which reads as flying down a tube whose walls
 are the live spectrum. Rings, spokes, dust motes, and flashes are layered on
 top, each tied to its own audio feature.
 
@@ -97,7 +97,7 @@ top, each tied to its own audio feature.
 
 Also a pure fullscreen shader, and the only consumer of the waveform. A
 night-sky scene is built in layers (gradient, stars, haze, fog), then N
-horizontal ribbons are drawn; ribbon *i* is displaced vertically by the
+horizontal ribbons are drawn; ribbon _i_ is displaced vertically by the
 waveform and brightened by its own slice of the spectrum — lows at the
 bottom, highs at the top.
 

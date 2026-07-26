@@ -22,12 +22,12 @@ every visual, so bass, mids, and treble each shape the picture differently.
 
 ### Audio sources (control bar, left menu)
 
-| Source | What it does | Metadata shown |
-|---|---|---|
-| **Music app** | Controls Music.app, taps system audio | Title, artist, album, artwork |
-| **System audio** | Visualizes anything the Mac plays (Spotify, browser…) | — |
-| **Audio input** | Mic, line-in, or any input device (picker in menu) | Device name |
-| **Audio file** | Plays a local file in-app, loops it | Filename |
+| Source           | What it does                                          | Metadata shown                |
+| ---------------- | ----------------------------------------------------- | ----------------------------- |
+| **Music app**    | Controls Music.app, taps system audio                 | Title, artist, album, artwork |
+| **System audio** | Visualizes anything the Mac plays (Spotify, browser…) | —                             |
+| **Audio input**  | Mic, line-in, or any input device (picker in menu)    | Device name                   |
+| **Audio file**   | Plays a local file in-app, loops it                   | Filename                      |
 
 Capture auto-attaches on launch for the System audio source, and auto-latches
 onto Music if it's already playing when the app opens. Track metadata and
@@ -36,11 +36,11 @@ know what's playing.
 
 ### Visualizers
 
-| Name | Idea | Options |
-|---|---|---|
-| **Nebula** | 3D orbiting particle cloud; each particle is bound to a frequency band and flares when its band hits | Density, Glow, Swirl |
-| **Spectrum Tunnel** | Flight through a tube whose angular slices are the live spectrum | Twist, Glow |
-| **Aurora** | Layered ribbons riding the waveform, each glowing with its slice of the spectrum | Ribbons, Wave height |
+| Name                | Idea                                                                                                 | Options              |
+| ------------------- | ---------------------------------------------------------------------------------------------------- | -------------------- |
+| **Nebula**          | 3D orbiting particle cloud; each particle is bound to a frequency band and flares when its band hits | Density, Glow, Swirl |
+| **Spectrum Tunnel** | Flight through a tube whose angular slices are the live spectrum                                     | Twist, Glow          |
+| **Aurora**          | Layered ribbons riding the waveform, each glowing with its slice of the spectrum                     | Ribbons, Wave height |
 
 All visualizers share global **Sensitivity**, **Speed**, and five color
 **palettes** (Prism, Ember, Ocean, Violet, Mono) — see the slider icon in the
@@ -68,17 +68,17 @@ make test                  # the SynesthiaTests suite
 make clean
 ```
 
-| Target | What it does |
-|---|---|
-| `build` · `run` · `test` · `clean` | Xcode build, launch, Swift Testing suite, clean |
-| `app-path` | Print the built `.app`'s path for the current `CONFIGURATION` |
-| `demo-track` | Regenerate `Resources/DemoLoop.m4a` (deterministic; needs `afconvert`) |
-| `screenshots` | Capture every visualizer, windowed and fullscreen, into `web/src/assets/screenshots` |
-| `appstore` · `appstore-upload` | Archive + validate the Mac App Store build, optionally upload |
-| `direct` · `direct-fast` | Notarized direct-download build + DMG; `-fast` skips notarization |
-| `appcast` | Regenerate the signed Sparkle appcast from the DMGs in `build/` |
-| `check-metadata` | Check the App Store listing drafts against Apple's field limits |
-| `web-install` · `web-dev` · `web-build` · `web-preview` · `web-assets` | The Astro site in `web/` |
+| Target                                                                 | What it does                                                                         |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `build` · `run` · `test` · `clean`                                     | Xcode build, launch, Swift Testing suite, clean                                      |
+| `app-path`                                                             | Print the built `.app`'s path for the current `CONFIGURATION`                        |
+| `demo-track`                                                           | Regenerate `Resources/DemoLoop.m4a` (deterministic; needs `afconvert`)               |
+| `screenshots`                                                          | Capture every visualizer, windowed and fullscreen, into `web/src/assets/screenshots` |
+| `appstore` · `appstore-upload`                                         | Archive + validate the Mac App Store build, optionally upload                        |
+| `direct` · `direct-fast`                                               | Notarized direct-download build + DMG; `-fast` skips notarization                    |
+| `appcast`                                                              | Regenerate the signed Sparkle appcast from the DMGs in `build/`                      |
+| `check-metadata`                                                       | Check the App Store listing drafts against Apple's field limits                      |
+| `web-install` · `web-dev` · `web-build` · `web-preview` · `web-assets` | The Astro site in `web/`                                                             |
 
 Variables: `CONFIGURATION` (`Debug` default, then `Direct` and `Release` — see
 [docs/distribution.md](docs/distribution.md) for why the App Store and direct
