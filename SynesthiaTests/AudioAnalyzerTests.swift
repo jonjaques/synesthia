@@ -1,5 +1,6 @@
-import Testing
 import Foundation
+import Testing
+
 @testable import Synesthia
 
 /// Tests for the DSP pipeline: the log-spaced band mapping and the derived
@@ -28,11 +29,13 @@ struct AudioAnalyzerTests {
 
     /// Feeds `passes` windows of a continuous sine wave and returns the final
     /// snapshot.
-    private func feedSine(frequency: Double,
-                          amplitude: Float = 0.5,
-                          passes: Int = 16,
-                          sampleRate: Double = sampleRate,
-                          into analyzer: AudioAnalyzer = AudioAnalyzer()) -> AudioSnapshot {
+    private func feedSine(
+        frequency: Double,
+        amplitude: Float = 0.5,
+        passes: Int = 16,
+        sampleRate: Double = sampleRate,
+        into analyzer: AudioAnalyzer = AudioAnalyzer()
+    ) -> AudioSnapshot {
         var phase = 0.0
         let delta = 2.0 * .pi * frequency / sampleRate
         var buffer = [Float](repeating: 0, count: Self.windowSize)
@@ -48,8 +51,10 @@ struct AudioAnalyzerTests {
         return analyzer.latest()
     }
 
-    private func feedSilence(passes: Int = 16,
-                             into analyzer: AudioAnalyzer) -> AudioSnapshot {
+    private func feedSilence(
+        passes: Int = 16,
+        into analyzer: AudioAnalyzer
+    ) -> AudioSnapshot {
         let buffer = [Float](repeating: 0, count: Self.windowSize)
         for _ in 0..<passes {
             buffer.withUnsafeBufferPointer {
@@ -79,16 +84,18 @@ struct AudioAnalyzerTests {
     /// transient detectors: those average energy across a ten-band range, so a
     /// single-bin tone barely moves the mean. Real hi-hats are broadband, and
     /// so is this.
-    private func feedNoise(amplitude: Float = 0.5,
-                           passes: Int = 4,
-                           into analyzer: AudioAnalyzer) -> AudioSnapshot {
+    private func feedNoise(
+        amplitude: Float = 0.5,
+        passes: Int = 4,
+        into analyzer: AudioAnalyzer
+    ) -> AudioSnapshot {
         // Small LCG rather than SystemRandomNumberGenerator, so a failure is
         // always reproducible.
-        var state: UInt64 = 0x2545F4914F6CDD1D
+        var state: UInt64 = 0x2545_F491_4F6C_DD1D
         var buffer = [Float](repeating: 0, count: Self.windowSize)
         for _ in 0..<passes {
             for i in 0..<Self.windowSize {
-                state = state &* 6364136223846793005 &+ 1442695040888963407
+                state = state &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
                 let unit = Float(Double(state >> 33) / Double(1 << 31)) - 0.5
                 buffer[i] = amplitude * unit * 2
             }
@@ -118,8 +125,9 @@ struct AudioAnalyzerTests {
         let actual = peakBand(snapshot)
         // ±2 bands: a band near 1 kHz is only ~95 Hz wide and the Hann window
         // spreads a little energy into its neighbours.
-        #expect(abs(actual - expected) <= 2,
-                "\(frequency) Hz peaked at band \(actual), expected ≈\(expected)")
+        #expect(
+            abs(actual - expected) <= 2,
+            "\(frequency) Hz peaked at band \(actual), expected ≈\(expected)")
     }
 
     /// Below ~844 Hz the geometric bands would be narrower than one FFT bin,
@@ -131,8 +139,9 @@ struct AudioAnalyzerTests {
     @Test func lowBandsAreBinLimited() {
         let low = peakBand(feedSine(frequency: 100))
         let slightlyHigher = peakBand(feedSine(frequency: 125))
-        #expect(slightlyHigher > low,
-                "100 Hz and 125 Hz should occupy different bands, both landed at \(low)")
+        #expect(
+            slightlyHigher > low,
+            "100 Hz and 125 Hz should occupy different bands, both landed at \(low)")
         // …and they stay near the bottom of the spectrum, which is what the
         // bass/mid/treble split depends on.
         #expect(low < AudioSnapshot.bandCount / 4)
@@ -154,8 +163,9 @@ struct AudioAnalyzerTests {
     @Test func octavesSpanEqualBandCounts() {
         let low = peakBand(feedSine(frequency: 2_000)) - peakBand(feedSine(frequency: 1_000))
         let high = peakBand(feedSine(frequency: 8_000)) - peakBand(feedSine(frequency: 4_000))
-        #expect(abs(low - high) <= 2,
-                "octave 1k→2k spans \(low) bands, 4k→8k spans \(high)")
+        #expect(
+            abs(low - high) <= 2,
+            "octave 1k→2k spans \(low) bands, 4k→8k spans \(high)")
     }
 
     /// The mapping depends on the sample rate — bin N is a different frequency
@@ -210,8 +220,10 @@ struct AudioAnalyzerTests {
         for (index, value) in snapshot.bands.enumerated() {
             #expect(value >= 0 && value <= 1, "band \(index) = \(value)")
         }
-        for value in [snapshot.level, snapshot.bass, snapshot.mid, snapshot.treble,
-                      snapshot.beat, snapshot.trebleBeat, snapshot.flux, snapshot.centroid] {
+        for value in [
+            snapshot.level, snapshot.bass, snapshot.mid, snapshot.treble,
+            snapshot.beat, snapshot.trebleBeat, snapshot.flux, snapshot.centroid,
+        ] {
             #expect(value >= 0 && value <= 1)
         }
         for value in snapshot.components {
@@ -238,8 +250,9 @@ struct AudioAnalyzerTests {
     @Test func beatFiresOnBassNotTreble() {
         let bass = feedSine(frequency: 60, amplitude: 0.9, passes: 4)
         let treble = feedSine(frequency: 12_000, amplitude: 0.9, passes: 4)
-        #expect(bass.beat > treble.beat,
-                "bass beat \(bass.beat) should exceed treble beat \(treble.beat)")
+        #expect(
+            bass.beat > treble.beat,
+            "bass beat \(bass.beat) should exceed treble beat \(treble.beat)")
     }
 
     /// The treble detector is the mirror image, and is what hi-hats drive.
@@ -251,8 +264,9 @@ struct AudioAnalyzerTests {
     @Test func trebleBeatFiresOnBroadbandTrebleNotBass() {
         let noise = feedNoise(amplitude: 0.7, into: AudioAnalyzer())
         let bass = feedSine(frequency: 60, amplitude: 0.9, passes: 4)
-        #expect(noise.trebleBeat > 0,
-                "broadband noise should fire the treble transient detector")
+        #expect(
+            noise.trebleBeat > 0,
+            "broadband noise should fire the treble transient detector")
         #expect(noise.trebleBeat > bass.trebleBeat)
     }
 
@@ -268,8 +282,9 @@ struct AudioAnalyzerTests {
         let analyzer = AudioAnalyzer()
         let onset = feedSine(frequency: 440, amplitude: 0.8, passes: 2, into: analyzer)
         let settled = feedSine(frequency: 440, amplitude: 0.8, passes: 40, into: analyzer)
-        #expect(settled.flux < onset.flux,
-                "flux should fall from \(onset.flux) once the tone is steady, got \(settled.flux)")
+        #expect(
+            settled.flux < onset.flux,
+            "flux should fall from \(onset.flux) once the tone is steady, got \(settled.flux)")
     }
 
     // MARK: - Lifecycle
@@ -314,8 +329,9 @@ struct AudioAnalyzerTests {
         let empty = [Float]()
         empty.withUnsafeBufferPointer {
             // A zero-length append must be a no-op, not a crash.
-            analyzer.append($0.baseAddress ?? UnsafePointer(bitPattern: 0x1000)!,
-                            count: 0, sampleRate: Self.sampleRate)
+            analyzer.append(
+                $0.baseAddress ?? UnsafePointer(bitPattern: 0x1000)!,
+                count: 0, sampleRate: Self.sampleRate)
         }
         #expect(analyzer.latest().level == 0)
     }

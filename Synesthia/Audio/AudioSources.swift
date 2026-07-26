@@ -1,8 +1,8 @@
-import Foundation
 import AVFoundation
-import ScreenCaptureKit
 import CoreAudio
 import CoreMedia
+import Foundation
+import ScreenCaptureKit
 
 /// The places audio can come from. Exactly one is active at a time
 /// (`AppState.sourceKind`); all of them end up funneling PCM buffers into the
@@ -110,11 +110,12 @@ enum PrivacyPermission: String, Identifiable, CaseIterable {
 
     /// Deep link into the exact System Settings pane.
     var settingsURL: URL? {
-        let anchor = switch self {
-        case .screenAndSystemAudio: "Privacy_ScreenCapture"
-        case .automation: "Privacy_Automation"
-        case .microphone: "Privacy_Microphone"
-        }
+        let anchor =
+            switch self {
+            case .screenAndSystemAudio: "Privacy_ScreenCapture"
+            case .automation: "Privacy_Automation"
+            case .microphone: "Privacy_Microphone"
+            }
         return URL(string: "x-apple.systempreferences:com.apple.preference.security?\(anchor)")
     }
 }
@@ -143,7 +144,8 @@ enum AudioSourceError: LocalizedError {
         switch self {
         case .noDisplay: "No display available for system audio capture."
         case .noInputDevice: "No audio input device found."
-        case .microphoneDenied: "Microphone access was denied. Enable it in System Settings › Privacy & Security › Microphone."
+        case .microphoneDenied:
+            "Microphone access was denied. Enable it in System Settings › Privacy & Security › Microphone."
         case .noFileLoaded: "No audio file loaded."
         }
     }
@@ -214,9 +216,11 @@ final class SystemAudioCapture: NSObject, SCStreamDelegate, SCStreamOutput {
     /// SCK's per-buffer callback, invoked on `sampleQueue`. `nonisolated`
     /// because the project defaults everything to the main actor and this
     /// must run on the capture queue instead.
-    nonisolated func stream(_ stream: SCStream,
-                            didOutputSampleBuffer sampleBuffer: CMSampleBuffer,
-                            of type: SCStreamOutputType) {
+    nonisolated func stream(
+        _ stream: SCStream,
+        didOutputSampleBuffer sampleBuffer: CMSampleBuffer,
+        of type: SCStreamOutputType
+    ) {
         guard type == .audio, sampleBuffer.isValid else { return }
         let analyzer = self.analyzer
         // Wrap the sample buffer's audio memory directly (no copy); it stays
@@ -225,11 +229,14 @@ final class SystemAudioCapture: NSObject, SCStreamDelegate, SCStreamOutput {
         // silently fails here — see CLAUDE.md — so don't "simplify" this.)
         try? sampleBuffer.withAudioBufferList { audioBufferList, _ in
             guard let asbd = sampleBuffer.formatDescription?.audioStreamBasicDescription,
-                  asbd.mSampleRate > 0,
-                  let format = AVAudioFormat(standardFormatWithSampleRate: asbd.mSampleRate,
-                                             channels: asbd.mChannelsPerFrame),
-                  let pcm = AVAudioPCMBuffer(pcmFormat: format,
-                                             bufferListNoCopy: audioBufferList.unsafePointer) else { return }
+                asbd.mSampleRate > 0,
+                let format = AVAudioFormat(
+                    standardFormatWithSampleRate: asbd.mSampleRate,
+                    channels: asbd.mChannelsPerFrame),
+                let pcm = AVAudioPCMBuffer(
+                    pcmFormat: format,
+                    bufferListNoCopy: audioBufferList.unsafePointer)
+            else { return }
             analyzer.appendMono(from: pcm)
         }
     }
@@ -278,12 +285,18 @@ enum AudioInputDeviceList {
             mScope: kAudioObjectPropertyScopeGlobal,
             mElement: kAudioObjectPropertyElementMain)
         var size: UInt32 = 0
-        guard AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject),
-                                             &address, 0, nil, &size) == noErr else { return [] }
+        guard
+            AudioObjectGetPropertyDataSize(
+                AudioObjectID(kAudioObjectSystemObject),
+                &address, 0, nil, &size) == noErr
+        else { return [] }
         let count = Int(size) / MemoryLayout<AudioDeviceID>.size
         var ids = [AudioDeviceID](repeating: 0, count: count)
-        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject),
-                                         &address, 0, nil, &size, &ids) == noErr else { return [] }
+        guard
+            AudioObjectGetPropertyData(
+                AudioObjectID(kAudioObjectSystemObject),
+                &address, 0, nil, &size, &ids) == noErr
+        else { return [] }
         // The list includes outputs (speakers, displays); keep only devices
         // that actually have input streams.
         return ids.compactMap { id in
@@ -310,7 +323,8 @@ enum AudioInputDeviceList {
         var name: Unmanaged<CFString>?
         var size = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
         guard AudioObjectGetPropertyData(id, &address, 0, nil, &size, &name) == noErr,
-              let cf = name?.takeRetainedValue() else { return nil }
+            let cf = name?.takeRetainedValue()
+        else { return nil }
         return cf as String
     }
 }
@@ -344,9 +358,10 @@ final class InputDeviceCapture {
         // underlying audio unit at that device ID.
         if let deviceID, let unit = input.audioUnit {
             var id = deviceID
-            AudioUnitSetProperty(unit, kAudioOutputUnitProperty_CurrentDevice,
-                                 kAudioUnitScope_Global, 0, &id,
-                                 UInt32(MemoryLayout<AudioDeviceID>.size))
+            AudioUnitSetProperty(
+                unit, kAudioOutputUnitProperty_CurrentDevice,
+                kAudioUnitScope_Global, 0, &id,
+                UInt32(MemoryLayout<AudioDeviceID>.size))
         }
         let format = input.inputFormat(forBus: 0)
         guard format.sampleRate > 0, format.channelCount > 0 else {
@@ -355,8 +370,9 @@ final class InputDeviceCapture {
         // The tap block runs on an audio thread, so it is built by a
         // nonisolated factory (see makeAnalyzerTap) rather than written inline;
         // it captures only the analyzer, never `self`.
-        input.installTap(onBus: 0, bufferSize: 1024, format: format,
-                         block: makeAnalyzerTap(analyzer))
+        input.installTap(
+            onBus: 0, bufferSize: 1024, format: format,
+            block: makeAnalyzerTap(analyzer))
         engine.prepare()
         try engine.start()
         self.engine = engine
@@ -410,8 +426,9 @@ final class FilePlayer {
         guard let file else { throw AudioSourceError.noFileLoaded }
         if !engine.isRunning {
             if !tapInstalled {
-                engine.mainMixerNode.installTap(onBus: 0, bufferSize: 1024, format: nil,
-                                                block: makeAnalyzerTap(analyzer))
+                engine.mainMixerNode.installTap(
+                    onBus: 0, bufferSize: 1024, format: nil,
+                    block: makeAnalyzerTap(analyzer))
                 tapInstalled = true
             }
             engine.prepare()

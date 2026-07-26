@@ -1,9 +1,9 @@
 import Foundation
-import SwiftUI
 import Metal
 import MetalKit
-import simd
 import Observation
+import SwiftUI
+import simd
 
 // MARK: - Shared uniforms
 // Layout must match `VizUniforms` in Shaders.metal exactly
@@ -99,10 +99,11 @@ struct VisualizerDescriptor: Identifiable {
 /// additionally offers the full 64-band array and waveform for visualizers
 /// that want more than the scalar features.
 protocol Visualizer: AnyObject {
-    func draw(in view: MTKView,
-              commandBuffer: MTLCommandBuffer,
-              uniforms: VizUniforms,
-              snapshot: AudioSnapshot)
+    func draw(
+        in view: MTKView,
+        commandBuffer: MTLCommandBuffer,
+        uniforms: VizUniforms,
+        snapshot: AudioSnapshot)
 }
 
 enum VisualizerRegistry {
@@ -198,7 +199,8 @@ final class VisualizerSettings {
 
     init() {
         if let data = UserDefaults.standard.data(forKey: Self.storageKey),
-           let decoded = try? JSONDecoder().decode([String: VisualizerTuning].self, from: data) {
+            let decoded = try? JSONDecoder().decode([String: VisualizerTuning].self, from: data)
+        {
             tunings = decoded
         } else {
             tunings = Self.migratedLegacyTunings()
@@ -217,15 +219,19 @@ final class VisualizerSettings {
 
     /// Two-way binding into one field of a visualizer's tuning, so SwiftUI
     /// sliders/pickers can edit the stored value directly.
-    func binding<V>(_ visualizer: String,
-                    _ keyPath: WritableKeyPath<VisualizerTuning, V>) -> Binding<V> {
-        Binding(get: { self.tuning(for: visualizer)[keyPath: keyPath] },
-                set: { value in self.update(visualizer) { $0[keyPath: keyPath] = value } })
+    func binding<V>(
+        _ visualizer: String,
+        _ keyPath: WritableKeyPath<VisualizerTuning, V>
+    ) -> Binding<V> {
+        Binding(
+            get: { self.tuning(for: visualizer)[keyPath: keyPath] },
+            set: { value in self.update(visualizer) { $0[keyPath: keyPath] = value } })
     }
 
     func binding(_ visualizer: String, option: VisualizerOption) -> Binding<Double> {
-        Binding(get: { self.tuning(for: visualizer).value(for: option) },
-                set: { value in self.update(visualizer) { $0.options[option.id] = value } })
+        Binding(
+            get: { self.tuning(for: visualizer).value(for: option) },
+            set: { value in self.update(visualizer) { $0.options[option.id] = value } })
     }
 
     func reset(_ descriptor: VisualizerDescriptor) {
@@ -275,12 +281,14 @@ final class VisualizerSettings {
 /// in the framebuffer instead of replacing it — overlapping translucent
 /// things accumulate brightness the way overlapping lights do. That's the
 /// standard look for glowing particles.
-func makeRenderPipeline(device: MTLDevice,
-                        library: MTLLibrary,
-                        vertex: String,
-                        fragment: String,
-                        pixelFormat: MTLPixelFormat,
-                        additiveBlending: Bool = false) throws -> MTLRenderPipelineState {
+func makeRenderPipeline(
+    device: MTLDevice,
+    library: MTLLibrary,
+    vertex: String,
+    fragment: String,
+    pixelFormat: MTLPixelFormat,
+    additiveBlending: Bool = false
+) throws -> MTLRenderPipelineState {
     let descriptor = MTLRenderPipelineDescriptor()
     descriptor.vertexFunction = library.makeFunction(name: vertex)
     descriptor.fragmentFunction = library.makeFunction(name: fragment)

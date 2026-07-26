@@ -1,5 +1,5 @@
-import SwiftUI
 import AppKit
+import SwiftUI
 
 /// App entry point: one window containing `ContentView`, plus the menu-bar
 /// commands. The shared `AppState` is injected through the SwiftUI
@@ -106,7 +106,8 @@ struct SynesthiaApp: App {
                 Divider()
 
                 // Palette belongs to the selected visualizer, not the app.
-                Picker("Palette", selection: appState.settings.binding(appState.visualizerID, \.paletteIndex)) {
+                Picker("Palette", selection: appState.settings.binding(appState.visualizerID, \.paletteIndex))
+                {
                     ForEach(Array(Palettes.names.enumerated()), id: \.offset) { index, name in
                         Text(name).tag(index)
                     }

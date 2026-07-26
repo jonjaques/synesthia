@@ -1,5 +1,5 @@
-import SwiftUI
 import AppKit
+import SwiftUI
 
 /// Strips the host window down to a pane of glass: the visuals run edge to edge
 /// with no title bar strip at all, leaving only the traffic lights floating on

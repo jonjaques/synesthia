@@ -30,8 +30,14 @@ BUILT_PRODUCTS_DIR = $(shell xcodebuild -project $(PROJECT) -scheme $(SCHEME) \
 	-configuration $(CONFIGURATION) -showBuildSettings 2>/dev/null \
 	| awk -F' = ' '/ BUILT_PRODUCTS_DIR = /{print $$2; exit}')
 
+# swift-format ships inside the Xcode toolchain (`swift format`, no install
+# step), configured by .swift-format at the repo root. Everything Swift we own
+# — the app, the tests, and the standalone screenshot helper.
+SWIFT_FORMAT  := swift format
+SWIFT_SOURCES := Synesthia SynesthiaTests scripts/shotkit.swift
+
 .PHONY: help build build-direct run test clean app-path \
-        install lint format \
+        install lint format lint-swift format-swift lint-web format-web \
         demo-track screenshots check-metadata \
         appstore appstore-upload direct direct-fast bump \
         sparkle-keys appcast publish-release publish-dry-run \
@@ -74,12 +80,24 @@ install: ## Install npm dependencies: root formatting tools + the website
 	npm ci
 	cd web && npm ci
 
-lint: ## Check everything non-Swift: formatting, Astro/TS types, Functions types
+lint: lint-swift lint-web ## Check everything: Swift style, Prettier, Astro/TS types
+
+format: format-swift format-web ## Reformat everything in place (Swift + Prettier)
+
+lint-swift: ## Diagnose Swift style without writing (any diagnostic fails the build)
+	$(SWIFT_FORMAT) lint --configuration .swift-format \
+		--recursive --parallel --strict $(SWIFT_SOURCES)
+
+format-swift: ## Reformat Swift in place with swift-format (.swift-format)
+	$(SWIFT_FORMAT) --configuration .swift-format \
+		--recursive --parallel --in-place $(SWIFT_SOURCES)
+
+lint-web: ## Check the non-Swift tree: formatting, Astro/TS types, Functions types
 	npm run format:check
 	cd web && npm run astro check
 	cd web && npm run typecheck
 
-format: ## Reformat with Prettier in place (Markdown, TS, Astro, JSON, CSS)
+format-web: ## Reformat with Prettier in place (Markdown, TS, Astro, JSON, CSS)
 	npm run format
 
 # ==== Assets

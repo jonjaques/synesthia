@@ -103,10 +103,16 @@ make lint                 # run this before committing
 make format               # fix what lint complains about
 ```
 
-`make lint` covers everything that isn't Swift: Prettier across the whole
-repo, `astro check` over the site, and a TypeScript pass over the Cloudflare
-Functions against the Workers runtime. Swift has no linter here — the build
-itself is the gate, and all configurations are expected to compile with **zero
+`make lint` covers the whole repo: `swift format lint --strict` over every
+Swift file, Prettier over everything else, `astro check` over the site, and a
+TypeScript pass over the Cloudflare Functions against the Workers runtime.
+`make format` fixes the first two in place. Split targets exist when you only
+want one half — `lint-swift`/`format-swift` and `lint-web`/`format-web`.
+
+swift-format ships inside the Xcode toolchain, so there is nothing to install,
+and Xcode's own **Editor ▸ Structure ▸ Format File with swift-format** reads
+the same `.swift-format` at the repo root. On top of formatting, the build is
+still a gate: every configuration is expected to compile with **zero
 warnings**.
 
 ### Every target
@@ -123,7 +129,9 @@ script in `scripts/`, and every script stays runnable directly with `--help`.
 | `clean`                               | `xcodebuild clean` plus `rm -rf build/`                                      |
 | `app-path`                            | Print where the built `.app` actually landed for this `CONFIGURATION`        |
 | `install`                             | `npm ci` at the root and in `web/`                                           |
-| `lint` · `format`                     | Check / fix formatting and non-Swift types                                   |
+| `lint` · `format`                     | Check / fix formatting everywhere, plus the non-Swift type checks            |
+| `lint-swift` · `format-swift`         | Just swift-format, over the app, the tests and `scripts/shotkit.swift`       |
+| `lint-web` · `format-web`             | Just Prettier, `astro check` and the Functions `tsc` pass                    |
 | `demo-track`                          | Regenerate the bundled 32 s demo loop, deterministically                     |
 | `screenshots`                         | Drive the real UI and capture every visualizer (see below)                   |
 | `check-metadata`                      | Check the App Store listing drafts against Apple's field limits              |

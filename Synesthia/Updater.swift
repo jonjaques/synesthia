@@ -29,9 +29,10 @@ final class UpdaterController {
     private(set) var canCheckForUpdates = false
 
     private init() {
-        controller = SPUStandardUpdaterController(startingUpdater: true,
-                                                  updaterDelegate: nil,
-                                                  userDriverDelegate: nil)
+        controller = SPUStandardUpdaterController(
+            startingUpdater: true,
+            updaterDelegate: nil,
+            userDriverDelegate: nil)
         withObservationTracking {
             _ = controller.updater.canCheckForUpdates
         } onChange: { [weak self] in

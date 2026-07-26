@@ -67,8 +67,12 @@ make clean            # xcodebuild clean + rm -rf build/
 make app-path         # print the built .app path for CONFIGURATION
 
 make install          # npm ci at the root (Prettier) and in web/
-make lint             # prettier --check + astro check + Functions tsc — everything non-Swift
-make format           # prettier --write across the repo
+make lint             # swift-format lint + prettier --check + astro check + Functions tsc
+make format           # swift-format --in-place + prettier --write across the repo
+make lint-swift       # …just `swift format lint --strict` (config: .swift-format)
+make format-swift     # …just `swift format --in-place`
+make lint-web         # …just the non-Swift half
+make format-web       # …just prettier --write
 
 make demo-track       # python3 scripts/make_demo_loop.py
 make screenshots      # scripts/take-screenshots.sh → web/src/assets/screenshots
@@ -89,6 +93,18 @@ make web-typecheck web-cf-types                             # the Pages Function
 `ARGS=` forwards flags to the wrapped script (`make screenshots ARGS="--only nebula --1x"`). `BUILT_PRODUCTS_DIR` is resolved from `xcodebuild -showBuildSettings`, not globbed out of DerivedData, so `run`/`app-path` are correct for any configuration.
 
 `SynesthiaTests` is a **Swift Testing** bundle (`import Testing`, `@Test`, `#expect`), hosted by the app target, covering `AudioAnalyzer`.
+
+### Formatting
+
+Swift is formatted by **swift-format**, which ships inside the Xcode toolchain (`swift format`) — nothing to install, no SPM dependency, no `Package.swift`. `make format-swift` rewrites `Synesthia/`, `SynesthiaTests/` and `scripts/shotkit.swift` in place; `make lint-swift` is the read-only gate and passes `--strict`, so **any** diagnostic (including plain indentation) is an error. Both are folded into `make format` / `make lint` alongside Prettier, mirroring how the web side works.
+
+`.swift-format` at the repo root is the config, and Xcode's own _Editor ▸ Structure ▸ Format File with swift-format_ picks up the same file. Where it deviates from swift-format's defaults, it does so to match the code that was already here:
+
+- **4-space indentation** (the default is 2) and a **110-column line length** (default 100).
+- **`DoNotUseSemicolons` and `OneVariableDeclarationPerLine` are off.** Both are on by default and both would explode the tabular literal blocks — `a = […]; b = […]; c = […]` in `Palette.color`, `let a: SIMD3<Float>, b: …` — into one statement per line, which is strictly worse to read for a lookup table. Turn them back on only if you also want that rewrite.
+- **`UseSynthesizedInitializer` is off** (memberwise initializers here are written out deliberately) and `reflowMultilineStringLiterals` stays at `never`, so the embedded AppleScript in `MusicController.swift` is never rewrapped. swift-format does still re-indent multiline string _literals_ and hoist them onto their own argument line; that is expected and harmless.
+
+`Shaders.metal` is not Swift and no formatter touches it — keep it tidy by hand.
 
 ### Screenshots
 

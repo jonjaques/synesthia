@@ -28,12 +28,15 @@ final class TunnelVisualizer: Visualizer {
             pixelFormat: pixelFormat)
     }
 
-    func draw(in view: MTKView,
-              commandBuffer: MTLCommandBuffer,
-              uniforms: VizUniforms,
-              snapshot: AudioSnapshot) {
+    func draw(
+        in view: MTKView,
+        commandBuffer: MTLCommandBuffer,
+        uniforms: VizUniforms,
+        snapshot: AudioSnapshot
+    ) {
         guard let pass = view.currentRenderPassDescriptor,
-              let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass) else { return }
+            let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass)
+        else { return }
         var u = uniforms
         encoder.setRenderPipelineState(pipeline)
         encoder.setFragmentBytes(&u, length: MemoryLayout<VizUniforms>.stride, index: 0)
