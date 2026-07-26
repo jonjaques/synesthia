@@ -61,11 +61,11 @@ func draw(in view: MTKView, commandBuffer: MTLCommandBuffer,
 
 encode whatever GPU work you like into `commandBuffer`. The host has already
 assembled `uniforms` (audio features + clock + user tuning + your option
-values in `p0…p3`) and hands you the full `snapshot` for bulk data (64-band
+values in `p0…p7`) and hands you the full `snapshot` for bulk data (64-band
 spectrum, 256-point waveform).
 
 **Everything else is automatic.** Declare options in the descriptor and they
-appear in the Options popover, arrive in `p0…p3` in declaration order, and
+appear in the Options popover, arrive in `p0…p7` in declaration order, and
 persist per-visualizer (`VisualizerSettings` keys tunings by descriptor id —
 switching visualizers restores each one's own look, including its palette).
 
@@ -188,7 +188,7 @@ from the descriptor.
 
 ### Ground rules
 
-- **≤ 4 options** — only `p0…p3` reach the shader.
+- **≤ 8 options** — only `p0…p7` reach the shader.
 - **Scale motion by `uniforms.speed`, response by `uniforms.sensitivity`,
   and color through `cosPalette(t, u.palette)`** so the shared controls
   behave consistently across visualizers.

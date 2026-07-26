@@ -11,7 +11,9 @@ import simd
 /// differential rotation (inner particles orbit faster, shearing the disc
 /// into spiral streaks), and the treble is a spherical halo that throws
 /// comets on hi-hat/snare transients. Every kick launches a shockwave that
-/// sweeps outward through all three.
+/// sweeps outward through all three. The bodies themselves drift: the heavy
+/// core lurches on kicks while the disc and halo counter-orbit around it
+/// (see `orbCenter`), and the background paints a colored halo behind each.
 ///
 /// Unlike the other two (pure fragment-shader) visualizers, this one runs a
 /// small CPU simulation: every frame `update` advances all particles and
@@ -21,11 +23,15 @@ final class NebulaVisualizer: Visualizer {
     static let descriptor = VisualizerDescriptor(
         id: "nebula",
         name: "Nebula",
-        tagline: "Orbiting particles that flare with each frequency band",
+        tagline: "A bass core, galaxy disc, and comet halo orbiting to the music",
         options: [
             VisualizerOption(id: "density", name: "Density", range: 0.15...1.0, defaultValue: 0.7),
             VisualizerOption(id: "glow", name: "Glow", range: 0.4...2.5, defaultValue: 1.0),
             VisualizerOption(id: "swirl", name: "Swirl", range: 0.0...2.5, defaultValue: 1.0),
+            VisualizerOption(id: "orbits", name: "Orbit speed", range: 0.0...2.5, defaultValue: 1.0),
+            VisualizerOption(id: "spread", name: "Spread", range: 0.0...2.0, defaultValue: 1.0),
+            VisualizerOption(id: "halos", name: "Halos", range: 0.0...2.0, defaultValue: 1.0),
+            VisualizerOption(id: "impact", name: "Impact", range: 0.0...2.0, defaultValue: 1.0),
         ],
         make: { try NebulaVisualizer(device: $0, library: $1, pixelFormat: $2) })
 
@@ -132,6 +138,8 @@ final class NebulaVisualizer: Visualizer {
         uniforms: VizUniforms,
         snapshot: AudioSnapshot
     ) {
+        // p3 (orbit speed) and p4 (spread) are consumed inside `orbCenter`,
+        // p5 (halos) by the background shader, p6 (impact) in `update`.
         let density = uniforms.p0
         let glow = uniforms.p1
         let swirl = uniforms.p2
@@ -186,6 +194,9 @@ final class NebulaVisualizer: Visualizer {
         let palette = Int(uniforms.palette)
         let sensitivity = uniforms.sensitivity
         let time = uniforms.time
+        /// The Impact slider: scales the transient theatrics (comet flings
+        /// and the shockwave) without touching the steady-state motion.
+        let impact = uniforms.p6
 
         // Fill this frame's per-band color table once, up front. The spectral
         // centroid steers the hue, so brighter music literally shifts color.
@@ -209,6 +220,12 @@ final class NebulaVisualizer: Visualizer {
         let precession = time * 0.02
         let galacticAxis = simd_normalize(
             SIMD3<Float>(0.30 * cos(precession), 1, 0.30 * sin(precession)))
+
+        // Where the three bodies sit this frame; each particle orbits its own
+        // body's center rather than the world origin.
+        let bassCenter = Self.orbCenter(0, uniforms: uniforms)
+        let midCenter = Self.orbCenter(1, uniforms: uniforms)
+        let trebleCenter = Self.orbCenter(2, uniforms: uniforms)
 
         for i in 0..<activeCount {
             var p = cpuParticles[i]
@@ -247,13 +264,16 @@ final class NebulaVisualizer: Visualizer {
             // radius eases toward it exponentially (frame-rate-independent
             // spring-like motion), so hits fling particles out and silence
             // lets them drift back in.
+            // (Radii are a bit smaller than when everything shared one
+            // center, so the drifting bodies stay distinct instead of
+            // permanently enveloping each other.)
             var target: Float
             if isBass {
-                target = 0.45 + 1.1 * energy + 0.75 * snapshot.beat
+                target = 0.40 + 0.9 * energy + 0.6 * snapshot.beat
             } else if isTreble {
-                target = 1.00 + 1.6 * energy + 0.55 * snapshot.trebleBeat
+                target = 0.80 + 1.3 * energy + 0.5 * snapshot.trebleBeat
             } else {
-                target = 0.75 + 1.5 * energy + 0.45 * snapshot.beat
+                target = 0.60 + 1.2 * energy + 0.35 * snapshot.beat
             }
             p.radius += (target - p.radius) * min(1, dt * (isBass ? 7 : 5))
 
@@ -261,25 +281,26 @@ final class NebulaVisualizer: Visualizer {
             // the halo outward; the impulse decays in about a third of a
             // second and the spring above reels the particle back in.
             if isTreble, trebleHit, p.phase.truncatingRemainder(dividingBy: 1) < 0.3 {
-                p.kick = 1.8 + 2.2 * energy
+                p.kick = (1.8 + 2.2 * energy) * impact
             }
             // The shockwave front flares and pushes particles as it passes.
             var shockBoost: Float = 0
             if shockRadius < 4 {
                 let d = p.radius - shockRadius
-                shockBoost = exp(-d * d * 9) * snapshot.beat
+                shockBoost = exp(-d * d * 9) * snapshot.beat * impact
                 p.kick = max(p.kick, shockBoost * 0.9)
             }
             p.radius = min(p.radius + p.kick * dt, 5)
             p.kick *= exp(-dt * 2.8)
             cpuParticles[i] = p
 
-            var position = p.direction * p.radius
+            var offset = p.direction * p.radius
             if isMid {
                 // Flatten the mid shell into the disc by squashing the
                 // component along the galactic axis.
-                position -= galacticAxis * simd_dot(position, galacticAxis) * 0.55
+                offset -= galacticAxis * simd_dot(offset, galacticAxis) * 0.55
             }
+            let position = (isBass ? bassCenter : isTreble ? trebleCenter : midCenter) + offset
             var size: Float
             var alpha: Float
             if isBass {
@@ -313,6 +334,34 @@ final class NebulaVisualizer: Visualizer {
             out[i] = GPUParticle(
                 posSize: SIMD4(position.x, position.y, position.z, size),
                 color: SIMD4(color.x, color.y, color.z, alpha))
+        }
+    }
+
+    /// Where each of the three bodies (0 = bass core, 1 = mid disc,
+    /// 2 = treble halo) sits at this frame's time: the core wanders near the
+    /// middle and lurches on kicks; the disc and halo counter-orbit around
+    /// it, swinging wider as their register gets louder. The Orbit speed
+    /// slider (p3) scales how fast they travel, Spread (p4) how far they
+    /// roam — 0 collapses them back into one centered cloud. CPU mirror of
+    /// `nebulaOrbCenter` in Shaders.metal — keep the two in sync, the
+    /// background shader draws each body's halo at the same spot.
+    private static func orbCenter(_ body: Int, uniforms u: VizUniforms) -> SIMD3<Float> {
+        let t = u.time * u.speed * u.p3
+        let spread = u.p4
+        switch body {
+        case 0:
+            let c = SIMD3<Float>(
+                0.20 * sin(t * 0.42), 0.10 * sin(t * 0.31 + 1.7), 0.16 * cos(t * 0.36))
+            let lurch = SIMD3<Float>(sin(t * 0.5), 0.3 * cos(t * 0.37), cos(t * 0.5))
+            return (c + simd_normalize(lurch) * (0.10 * u.beat)) * spread
+        case 1:
+            let a = t * 0.23
+            let radius = (0.45 + 0.30 * u.mid) * spread
+            return SIMD3<Float>(cos(a), 0.22 * sin(a * 1.3), sin(a)) * radius
+        default:
+            let a = -t * 0.35 + 2.1
+            let radius = (0.70 + 0.45 * u.treble) * spread
+            return SIMD3<Float>(radius * cos(a), 0.30 * sin(t * 0.55) * spread, radius * sin(a))
         }
     }
 

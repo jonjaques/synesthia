@@ -288,7 +288,7 @@ Visualizers are plugins (`Synesthia/Visualizers/VisualizerCore.swift`):
    would use).
 
 Declared options automatically appear in the Options popover and arrive in the
-shader as `VizUniforms.p0…p3`. Audio data arrives as a 64-float band array, a
+shader as `VizUniforms.p0…p7`. Audio data arrives as a 64-float band array, a
 256-float waveform, plus derived scalars — see `AudioAnalyzer.swift`.
 
 ## Roadmap / ideas

@@ -94,14 +94,14 @@ flowchart LR
     SNAP[("AudioSnapshot")] --> U
     CLOCK["time, dt, resolution"] --> U
     TUNE["VisualizerSettings<br>sensitivity, speed, palette"] --> U
-    OPTS["descriptor options → p0…p3"] --> U
-    U["VizUniforms<br>24 floats / 96 bytes"] -- "raw byte copy<br>(setFragmentBytes)" --> MSL["struct VizUniforms<br>in Shaders.metal"]
+    OPTS["descriptor options → p0…p7"] --> U
+    U["VizUniforms<br>28 floats / 112 bytes"] -- "raw byte copy<br>(setFragmentBytes)" --> MSL["struct VizUniforms<br>in Shaders.metal"]
 ```
 
 The struct exists **twice**: once in Swift (`VisualizerCore.swift`) and once
 in MSL (`Shaders.metal`). The GPU receives the Swift struct's raw bytes
 and reinterprets them as the MSL struct, so _the two layouts must stay
-byte-identical_ — same fields, same order, currently 24 floats / 96 bytes.
+byte-identical_ — same fields, same order, currently 28 floats / 112 bytes.
 Adding a field means updating both and keeping the sizes in sync; a mismatch
 doesn't crash, it silently shifts every subsequent field into the wrong
 shader variable.

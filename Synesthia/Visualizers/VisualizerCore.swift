@@ -7,7 +7,7 @@ import simd
 
 // MARK: - Shared uniforms
 // Layout must match `VizUniforms` in Shaders.metal exactly
-// (currently 24 floats / 96 bytes).
+// (currently 28 floats / 112 bytes).
 
 /// The per-frame constants handed to every shader ("uniforms" in graphics
 /// jargon: values that are the same for every pixel/vertex of a draw call).
@@ -40,6 +40,10 @@ struct VizUniforms {
     var p1: Float = 0
     var p2: Float = 0
     var p3: Float = 0
+    var p4: Float = 0
+    var p5: Float = 0
+    var p6: Float = 0
+    var p7: Float = 0
     // Finer-grained audio features (named sub-bands and transients).
     var subBass: Float = 0
     var lowMid: Float = 0
@@ -55,7 +59,11 @@ struct VizUniforms {
         case 0: p0 = value
         case 1: p1 = value
         case 2: p2 = value
-        default: p3 = value
+        case 3: p3 = value
+        case 4: p4 = value
+        case 5: p5 = value
+        case 6: p6 = value
+        default: p7 = value
         }
     }
 }
@@ -69,10 +77,10 @@ struct VizUniforms {
 //   3. Append the descriptor to `VisualizerRegistry.builtIn`, or call
 //      `VisualizerRegistry.register(_:)` at startup (e.g. from a loaded bundle).
 // Options declared in the descriptor automatically appear in the Options UI
-// and arrive in `VizUniforms.p0...p3` in declaration order.
+// and arrive in `VizUniforms.p0...p7` in declaration order.
 
 /// One user-tunable slider: `range` bounds it, `defaultValue` is where reset
-/// puts it. A visualizer may declare at most four (they map onto p0...p3).
+/// puts it. A visualizer may declare at most eight (they map onto p0...p7).
 struct VisualizerOption: Identifiable {
     let id: String
     let name: String

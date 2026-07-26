@@ -55,9 +55,9 @@ web/functions/                    Pages Functions: /appcast.xml, /download, /dow
 
 Data flow: audio threads → `AudioAnalyzer.appendMono` (NSLock) → render loop pulls `analyzer.latest()` each frame. Audio never publishes into SwiftUI; only `MusicController`/`AppState` are observable.
 
-**Plugin contract**: a visualizer = class conforming to `Visualizer` + static `VisualizerDescriptor` (≤4 options, surfaced automatically in the UI and delivered as `VizUniforms.p0…p3`) + shader functions in `Shaders.metal`. Register in `VisualizerRegistry`.
+**Plugin contract**: a visualizer = class conforming to `Visualizer` + static `VisualizerDescriptor` (≤8 options, surfaced automatically in the UI and delivered as `VizUniforms.p0…p7`) + shader functions in `Shaders.metal`. Register in `VisualizerRegistry`.
 
-`VizUniforms` in VisualizerCore.swift and the struct in Shaders.metal must stay byte-identical (currently 24 floats / 96 bytes).
+`VizUniforms` in VisualizerCore.swift and the struct in Shaders.metal must stay byte-identical (currently 28 floats / 112 bytes).
 
 ## Commands
 

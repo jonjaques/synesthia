@@ -184,7 +184,7 @@ struct MetalVisualizerView: NSViewRepresentable {
             uniforms.sensitivity = Float(tuning.sensitivity)
             uniforms.speed = Float(tuning.speed)
             uniforms.palette = Float(tuning.paletteIndex)
-            for (index, option) in descriptor.options.prefix(4).enumerated() {
+            for (index, option) in descriptor.options.prefix(8).enumerated() {
                 uniforms.setParameter(index, to: Float(tuning.value(for: option)))
             }
             applyReduceMotionIfNeeded(to: &uniforms, dt: dt)
