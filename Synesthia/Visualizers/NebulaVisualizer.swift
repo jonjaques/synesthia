@@ -74,11 +74,14 @@ final class NebulaVisualizer: Visualizer {
 
         var buffers = [MTLBuffer]()
         for _ in 0..<Self.inFlightFrames {
-            guard let buffer = device.makeBuffer(
-                length: Self.maxParticles * MemoryLayout<GPUParticle>.stride,
-                options: .storageModeShared) else {
-                throw NSError(domain: "Synesthia", code: 1,
-                              userInfo: [NSLocalizedDescriptionKey: "Could not allocate particle buffer"])
+            guard
+                let buffer = device.makeBuffer(
+                    length: Self.maxParticles * MemoryLayout<GPUParticle>.stride,
+                    options: .storageModeShared)
+            else {
+                throw NSError(
+                    domain: "Synesthia", code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "Could not allocate particle buffer"])
             }
             buffers.append(buffer)
         }
@@ -103,17 +106,20 @@ final class NebulaVisualizer: Visualizer {
         }
     }
 
-    func draw(in view: MTKView,
-              commandBuffer: MTLCommandBuffer,
-              uniforms: VizUniforms,
-              snapshot: AudioSnapshot) {
+    func draw(
+        in view: MTKView,
+        commandBuffer: MTLCommandBuffer,
+        uniforms: VizUniforms,
+        snapshot: AudioSnapshot
+    ) {
         let density = uniforms.p0
         let glow = uniforms.p1
         let swirl = uniforms.p2
         let activeCount = max(64, Int(Float(Self.maxParticles) * density))
 
         guard let pass = view.currentRenderPassDescriptor,
-              let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass) else { return }
+            let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass)
+        else { return }
 
         // Claim the next buffer in the ring; the GPU hands it back (via the
         // semaphore) when this frame's command buffer finishes executing.
@@ -125,12 +131,14 @@ final class NebulaVisualizer: Visualizer {
 
         // The simulation writes straight into the GPU-visible buffer
         // (.storageModeShared) — no intermediate array, no copy.
-        update(into: particleBuffer.contents().bindMemory(to: GPUParticle.self,
-                                                          capacity: Self.maxParticles),
-               dt: min(uniforms.dt, 1 / 20),
-               swirl: swirl, glow: glow,
-               activeCount: activeCount,
-               uniforms: uniforms, snapshot: snapshot)
+        update(
+            into: particleBuffer.contents().bindMemory(
+                to: GPUParticle.self,
+                capacity: Self.maxParticles),
+            dt: min(uniforms.dt, 1 / 20),
+            swirl: swirl, glow: glow,
+            activeCount: activeCount,
+            uniforms: uniforms, snapshot: snapshot)
 
         var u = uniforms
         encoder.setRenderPipelineState(backgroundPipeline)
@@ -147,9 +155,11 @@ final class NebulaVisualizer: Visualizer {
         encoder.endEncoding()
     }
 
-    private func update(into out: UnsafeMutablePointer<GPUParticle>,
-                        dt: Float, swirl: Float, glow: Float, activeCount: Int,
-                        uniforms: VizUniforms, snapshot: AudioSnapshot) {
+    private func update(
+        into out: UnsafeMutablePointer<GPUParticle>,
+        dt: Float, swirl: Float, glow: Float, activeCount: Int,
+        uniforms: VizUniforms, snapshot: AudioSnapshot
+    ) {
         let palette = Int(uniforms.palette)
         let sensitivity = uniforms.sensitivity
         let time = uniforms.time
@@ -157,8 +167,9 @@ final class NebulaVisualizer: Visualizer {
         // Fill this frame's per-band color table once, up front.
         let hueShift = time * 0.01 + snapshot.centroid * 0.15
         for b in 0..<AudioSnapshot.bandCount {
-            bandColors[b] = Palettes.color(Float(b) / Float(AudioSnapshot.bandCount) + hueShift,
-                                           palette: palette)
+            bandColors[b] = Palettes.color(
+                Float(b) / Float(AudioSnapshot.bandCount) + hueShift,
+                palette: palette)
         }
 
         for i in 0..<activeCount {
@@ -225,9 +236,10 @@ final class NebulaVisualizer: Visualizer {
     /// would cluster directions toward the corners.)
     private static func randomUnitVector(_ rng: inout SystemRandomNumberGenerator) -> SIMD3<Float> {
         while true {
-            let v = SIMD3<Float>(Float.random(in: -1...1, using: &rng),
-                                 Float.random(in: -1...1, using: &rng),
-                                 Float.random(in: -1...1, using: &rng))
+            let v = SIMD3<Float>(
+                Float.random(in: -1...1, using: &rng),
+                Float.random(in: -1...1, using: &rng),
+                Float.random(in: -1...1, using: &rng))
             let len = simd_length(v)
             if len > 0.05, len <= 1 { return v / len }
         }

@@ -68,19 +68,20 @@ final class MusicController {
     /// Play/pause toggle. If Music is stopped or freshly launched, kicks off a
     /// random track from the library so "play" always produces sound.
     func togglePlayPause() {
-        run("""
-        tell application "Music"
-            if player state is stopped then
-                try
-                    play (some track of playlist 1)
-                on error
-                    play
-                end try
-            else
-                playpause
-            end if
-        end tell
-        """)
+        run(
+            """
+            tell application "Music"
+                if player state is stopped then
+                    try
+                        play (some track of playlist 1)
+                    on error
+                        play
+                    end try
+                else
+                    playpause
+                end if
+            end tell
+            """)
         poll()
     }
 
@@ -111,23 +112,24 @@ final class MusicController {
         isRunning = true
         // Note: AppleScript cannot coerce the `player state` constant to text
         // ("playing as text" throws), so map it with comparisons instead.
-        let result = run("""
-        tell application "Music"
-            set stateText to "stopped"
-            if player state is playing then
-                set stateText to "playing"
-            else if player state is paused then
-                set stateText to "paused"
-            end if
-            if stateText is not "stopped" then
-                try
-                    set t to current track
-                    return stateText & linefeed & (name of t) & linefeed & (artist of t) & linefeed & (album of t) & linefeed & ((database ID of t) as text)
-                end try
-            end if
-            return stateText
-        end tell
-        """)
+        let result = run(
+            """
+            tell application "Music"
+                set stateText to "stopped"
+                if player state is playing then
+                    set stateText to "playing"
+                else if player state is paused then
+                    set stateText to "paused"
+                end if
+                if stateText is not "stopped" then
+                    try
+                        set t to current track
+                        return stateText & linefeed & (name of t) & linefeed & (artist of t) & linefeed & (album of t) & linefeed & ((database ID of t) as text)
+                    end try
+                end if
+                return stateText
+            end tell
+            """)
         guard let text = result?.stringValue else { return }
         let parts = text.components(separatedBy: "\n")
         isPlaying = parts.first == "playing"
@@ -154,19 +156,20 @@ final class MusicController {
     /// JPEG/PNG and is preferred; `data` (a PICT-flavored fallback) still
     /// decodes via NSImage when `raw data` is missing.
     private func fetchArtwork() {
-        let result = run("""
-        tell application "Music"
-            try
-                return raw data of artwork 1 of current track
-            on error
+        let result = run(
+            """
+            tell application "Music"
                 try
-                    return data of artwork 1 of current track
+                    return raw data of artwork 1 of current track
                 on error
-                    return ""
+                    try
+                        return data of artwork 1 of current track
+                    on error
+                        return ""
+                    end try
                 end try
-            end try
-        end tell
-        """)
+            end tell
+            """)
         if let data = result?.data, !data.isEmpty, let image = NSImage(data: data) {
             artwork = image
         }

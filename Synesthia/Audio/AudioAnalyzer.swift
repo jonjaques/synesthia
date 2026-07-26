@@ -1,6 +1,6 @@
-import Foundation
-import Accelerate
 import AVFoundation
+import Accelerate
+import Foundation
 
 /// One frame of analyzed audio, safe to hand to the render thread.
 ///
@@ -297,8 +297,9 @@ nonisolated final class AudioAnalyzer: @unchecked Sendable {
             imag.withUnsafeMutableBufferPointer { ip in
                 var split = DSPSplitComplex(realp: rp.baseAddress!, imagp: ip.baseAddress!)
                 windowed.withUnsafeBytes { raw in
-                    vDSP_ctoz(raw.bindMemory(to: DSPComplex.self).baseAddress!, 2,
-                              &split, 1, vDSP_Length(fftSize / 2))
+                    vDSP_ctoz(
+                        raw.bindMemory(to: DSPComplex.self).baseAddress!, 2,
+                        &split, 1, vDSP_Length(fftSize / 2))
                 }
                 vDSP_fft_zrip(fftSetup, &split, 1, log2n, FFTDirection(FFT_FORWARD))
                 vDSP_zvmags(&split, 1, &magnitudes, 1, vDSP_Length(fftSize / 2))
@@ -324,8 +325,10 @@ nonisolated final class AudioAnalyzer: @unchecked Sendable {
         //    punchy; slow release stops the visuals flickering.
         for b in 0..<AudioSnapshot.bandCount {
             let v = raw[b]
-            smoothed[b] = v > smoothed[b] ? smoothed[b] * 0.35 + v * 0.65
-                                          : smoothed[b] * 0.88 + v * 0.12
+            smoothed[b] =
+                v > smoothed[b]
+                ? smoothed[b] * 0.35 + v * 0.65
+                : smoothed[b] * 0.88 + v * 0.12
         }
 
         func average(_ range: Range<Int>) -> Float {

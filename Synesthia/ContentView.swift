@@ -1,6 +1,6 @@
-import SwiftUI
 import AppKit
 import CoreAudio
+import SwiftUI
 
 /// How long the cursor may sit still before the foreground UI fades away.
 private let chromeIdleDelay: Duration = .seconds(3)
@@ -103,7 +103,11 @@ struct ContentView: View {
         .background(Color.black)
         .background(ChromelessWindow())
         .frame(minWidth: minimumContentSize.width, minHeight: minimumContentSize.height)
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { viewportWidth = $0 }
+        .onGeometryChange(for: CGFloat.self) {
+            $0.size.width
+        } action: {
+            viewportWidth = $0
+        }
         .navigationTitle(appState.windowTitle)
         .preferredColorScheme(.dark)
         .onContinuousHover { phase in
@@ -508,23 +512,26 @@ struct OptionsPanel: View {
                     }
 
                     OptionSection("Audio Response") {
-                        LabeledSlider(name: "Sensitivity",
-                                      value: settings.binding(descriptor.id, \.sensitivity),
-                                      range: 0.2...3.0,
-                                      defaultValue: 1.0)
-                        LabeledSlider(name: "Speed",
-                                      value: settings.binding(descriptor.id, \.speed),
-                                      range: 0.2...3.0,
-                                      defaultValue: 1.0)
+                        LabeledSlider(
+                            name: "Sensitivity",
+                            value: settings.binding(descriptor.id, \.sensitivity),
+                            range: 0.2...3.0,
+                            defaultValue: 1.0)
+                        LabeledSlider(
+                            name: "Speed",
+                            value: settings.binding(descriptor.id, \.speed),
+                            range: 0.2...3.0,
+                            defaultValue: 1.0)
                     }
 
                     if !descriptor.options.isEmpty {
                         OptionSection("\(descriptor.name) Options") {
                             ForEach(descriptor.options) { option in
-                                LabeledSlider(name: option.name,
-                                              value: settings.binding(descriptor.id, option: option),
-                                              range: option.range,
-                                              defaultValue: option.defaultValue)
+                                LabeledSlider(
+                                    name: option.name,
+                                    value: settings.binding(descriptor.id, option: option),
+                                    range: option.range,
+                                    defaultValue: option.defaultValue)
                             }
                         }
                     }
@@ -605,8 +612,9 @@ struct PalettePicker: View {
                             .frame(height: 26)
                             .overlay {
                                 RoundedRectangle(cornerRadius: 6)
-                                    .strokeBorder(isSelected ? Color.white : .white.opacity(0.15),
-                                                  lineWidth: isSelected ? 2 : 1)
+                                    .strokeBorder(
+                                        isSelected ? Color.white : .white.opacity(0.15),
+                                        lineWidth: isSelected ? 2 : 1)
                             }
                         Text(name)
                             .font(.system(size: 9))
@@ -627,9 +635,10 @@ struct PalettePicker: View {
     private func gradient(for palette: Int) -> LinearGradient {
         let stops = (0..<6).map { i -> Color in
             let c = Palettes.color(Float(i) / 5.0, palette: palette)
-            return Color(red: Double(max(0, min(1, c.x))),
-                         green: Double(max(0, min(1, c.y))),
-                         blue: Double(max(0, min(1, c.z))))
+            return Color(
+                red: Double(max(0, min(1, c.x))),
+                green: Double(max(0, min(1, c.y))),
+                blue: Double(max(0, min(1, c.z))))
         }
         return LinearGradient(colors: stops, startPoint: .leading, endPoint: .trailing)
     }

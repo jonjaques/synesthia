@@ -3,22 +3,22 @@
 Synesthia ships two different binaries, from **two targets over three build
 configurations**. Understanding that split is the key to everything else here.
 
-| | App Store | Direct download | Debug |
-|---|---|---|---|
-| Target | `Synesthia` | `Synesthia Direct` | either |
-| Scheme | `Synesthia` | `Synesthia Direct` | both |
-| Configuration | `Release` | `Direct` | `Debug` |
-| Goes to | Mac App Store | synesthia.app | your Mac |
-| `MUSIC_APP_SOURCE` | **off** | on | on |
-| Music.app source in the UI | absent | present | present |
-| Apple Events code compiled in | **none** | yes | yes |
-| Sparkle linked | **never** | yes | Direct target only |
-| Entitlements file | `Synesthia.entitlements` | `Synesthia-Direct.entitlements` | `Synesthia-Direct.entitlements` |
-| `automation.apple-events` | **no** | yes | yes |
-| `temporary-exception.apple-events` | **no** | yes | yes |
-| `network.client` | **no** | yes (Sparkle) | yes |
-| `Info.plist` file | none (generated) | `Synesthia-Direct-Info.plist` + generated | same |
-| Build script | `scripts/build-appstore.sh` | `scripts/build-direct.sh` | Xcode |
+|                                    | App Store                   | Direct download                           | Debug                           |
+| ---------------------------------- | --------------------------- | ----------------------------------------- | ------------------------------- |
+| Target                             | `Synesthia`                 | `Synesthia Direct`                        | either                          |
+| Scheme                             | `Synesthia`                 | `Synesthia Direct`                        | both                            |
+| Configuration                      | `Release`                   | `Direct`                                  | `Debug`                         |
+| Goes to                            | Mac App Store               | synesthia.app                             | your Mac                        |
+| `MUSIC_APP_SOURCE`                 | **off**                     | on                                        | on                              |
+| Music.app source in the UI         | absent                      | present                                   | present                         |
+| Apple Events code compiled in      | **none**                    | yes                                       | yes                             |
+| Sparkle linked                     | **never**                   | yes                                       | Direct target only              |
+| Entitlements file                  | `Synesthia.entitlements`    | `Synesthia-Direct.entitlements`           | `Synesthia-Direct.entitlements` |
+| `automation.apple-events`          | **no**                      | yes                                       | yes                             |
+| `temporary-exception.apple-events` | **no**                      | yes                                       | yes                             |
+| `network.client`                   | **no**                      | yes (Sparkle)                             | yes                             |
+| `Info.plist` file                  | none (generated)            | `Synesthia-Direct-Info.plist` + generated | same                            |
+| Build script                       | `scripts/build-appstore.sh` | `scripts/build-direct.sh`                 | Xcode                           |
 
 Two separate reasons drive the split, and they cut the same way.
 
@@ -39,7 +39,7 @@ Users of the App Store build lose the now-playing badge, the transport buttons,
 and self-updating — not the ability to visualize Apple Music. "System audio"
 captures Music.app perfectly well.
 
-Both build scripts assert all of this against the *built archive* and refuse to
+Both build scripts assert all of this against the _built archive_ and refuse to
 continue if any of it leaks in either direction.
 
 ---
@@ -52,7 +52,7 @@ linking Sparkle would link it into `Release` too. Duplicating the target is the
 supported way out, and it is what the project does.
 
 The cost is one wart worth knowing about: **both targets produce
-`Synesthia.app`**, so building both in the *same* configuration means the second
+`Synesthia.app`**, so building both in the _same_ configuration means the second
 overwrites the first in `Build/Products/<config>/`. In practice they don't
 collide, because each scheme builds one target and they archive from different
 configurations (`Release` vs `Direct`). If you build `make build` and `make
@@ -61,7 +61,7 @@ whichever ran last. `make app-path` has the same ambiguity.
 
 Anything added to one target's build settings must be added to the other's.
 `Synesthia/` is a `PBXFileSystemSynchronizedRootGroup` referenced by both
-targets, so *source files* need no such care — a new `.swift` file anywhere
+targets, so _source files_ need no such care — a new `.swift` file anywhere
 under `Synesthia/` compiles into both automatically.
 
 ---
@@ -121,7 +121,7 @@ substitute for signing it.** A stapled but unsigned DMG fails
 `source=no usable signature` — Gatekeeper's primary-signature path looks for a
 signature and there isn't one. Signing it changes the reason to
 `Unnotarized Developer ID` and then, once notarized, to `Notarized Developer ID`.
-Sign *before* notarizing: signing rewrites the file, which would invalidate a
+Sign _before_ notarizing: signing rewrites the file, which would invalidate a
 ticket already stapled to it.
 
 **The app has to be notarized and stapled before the DMG is built**, because the
@@ -155,11 +155,11 @@ This is the certificate that signs software distributed outside the store, and
 it is the only one you cannot create as a team member: **you must be the Account
 Holder.** Two ways:
 
-- **Xcode** (easier): Xcode → Settings → Accounts → select the team → *Manage
-  Certificates…* → **+** → **Developer ID Application**.
+- **Xcode** (easier): Xcode → Settings → Accounts → select the team → _Manage
+  Certificates…_ → **+** → **Developer ID Application**.
 - **Portal**: Certificates → **+** → Developer ID Application, upload a CSR from
-  Keychain Access → Certificate Assistant → *Request a Certificate From a
-  Certificate Authority* (choose "Saved to disk").
+  Keychain Access → Certificate Assistant → _Request a Certificate From a
+  Certificate Authority_ (choose "Saved to disk").
 
 Two things to know before you click:
 
@@ -206,7 +206,7 @@ xcrun notarytool history --keychain-profile SYNESTHIA_NOTARY
 - **Apple Distribution** certificate and a **Mac App Store** provisioning
   profile for `com.jonjaques.Synesthia`.
 - **Mac Installer Distribution** certificate (signs the `.pkg`). Note this is
-  *not* the "3rd Party Mac Developer Application" certificate already present —
+  _not_ the "3rd Party Mac Developer Application" certificate already present —
   that one signs the app inside the package; the installer one signs the package
   itself, and `exportArchive` needs both.
 - An App Store Connect app record.
@@ -260,11 +260,11 @@ there; everything else is still a build setting.
 A sandboxed app cannot install its own update, so Sparkle ships XPC services
 that do it from outside the sandbox. Three things have to agree:
 
-| | Where |
-|---|---|
-| `SUEnableInstallerLauncherService` = true | `Synesthia-Direct-Info.plist` |
-| `$(PRODUCT_BUNDLE_IDENTIFIER)-spks` / `-spki` mach-lookup exceptions | `Synesthia-Direct.entitlements` |
-| `Installer.xpc` embedded and hardened | inside `Sparkle.framework`, automatic |
+|                                                                      | Where                                 |
+| -------------------------------------------------------------------- | ------------------------------------- |
+| `SUEnableInstallerLauncherService` = true                            | `Synesthia-Direct-Info.plist`         |
+| `$(PRODUCT_BUNDLE_IDENTIFIER)-spks` / `-spki` mach-lookup exceptions | `Synesthia-Direct.entitlements`       |
+| `Installer.xpc` embedded and hardened                                | inside `Sparkle.framework`, automatic |
 
 The app also holds `com.apple.security.network.client`, so Sparkle's optional
 `Downloader.xpc` is **not** enabled — that service exists for apps that lack the
@@ -281,18 +281,18 @@ The DMGs and the appcast are **not in git** and the website is **not rebuilt to
 publish a release**. They live in an R2 bucket, and three Pages Functions in
 `web/functions/` serve them:
 
-| Route | Serves | Cache |
-|---|---|---|
-| `/appcast.xml` | `appcast.xml` | 5 minutes |
-| `/download` | 302 → the current DMG, from `latest.json` | 5 minutes |
-| `/downloads/Synesthia-<v>.dmg` | `downloads/<name>` | immutable, 1 year |
+| Route                          | Serves                                    | Cache             |
+| ------------------------------ | ----------------------------------------- | ----------------- |
+| `/appcast.xml`                 | `appcast.xml`                             | 5 minutes         |
+| `/download`                    | 302 → the current DMG, from `latest.json` | 5 minutes         |
+| `/downloads/Synesthia-<v>.dmg` | `downloads/<name>`                        | immutable, 1 year |
 
 `/download?json` returns the version, build, filename and size as JSON.
 
 This shape is deliberate:
 
 - **The appcast has to be publishable without a deploy.** A DMG must be
-  notarized *before* the feed can mention it, and notarization is an
+  notarized _before_ the feed can mention it, and notarization is an
   unpredictable wait. Coupling that to a site build means either a stale feed or
   a rebuild at an awkward moment.
 - **`/download` is a redirect, not a proxy**, so the bytes are served by the
@@ -327,7 +327,7 @@ Error: Failed to publish your Function. Got error: R2 bucket
 'synesthia-releases' not found.
 ```
 
-The binding was already being applied *from the config file*; the bucket just
+The binding was already being applied _from the config file_; the bucket just
 didn't exist yet. A dashboard binding would not have helped, and adding one now
 would be ignored.
 
@@ -351,10 +351,10 @@ not a credential it presents.
 Two independent switches in `web/src/consts.ts`, because the two channels go
 live at different times and either can be the only one available:
 
-| | Current | Turn on when |
-|---|---|---|
-| `DIRECT_DOWNLOAD_AVAILABLE` | **`true`** | — |
-| `APP_STORE_AVAILABLE` | **`false`** | the app passes review and `APP_STORE_URL` is a real product page |
+|                             | Current     | Turn on when                                                     |
+| --------------------------- | ----------- | ---------------------------------------------------------------- |
+| `DIRECT_DOWNLOAD_AVAILABLE` | **`true`**  | —                                                                |
+| `APP_STORE_AVAILABLE`       | **`false`** | the app passes review and `APP_STORE_URL` is a real product page |
 
 `DownloadOptions.astro` reads both and renders whichever are on — the header
 takes the primary one, the hero and the closing call to action take all of them.
@@ -374,35 +374,77 @@ first release lands — that is the point of serving the artifacts from R2.
 ### Local testing
 
 ```bash
-make web-build
-cd web && npx wrangler pages dev ./dist
+cd web && npm run build
+npx wrangler pages dev ./dist
 # seed the local (simulated) bucket:
 npx wrangler r2 object put synesthia-releases/appcast.xml --file … --local
 ```
 
-`make web-typecheck` checks the Functions against the Workers runtime.
+`npm run typecheck` (in `web/`) checks the Functions against the Workers runtime.
 `web/tsconfig.functions.json` exists because the DOM lib and the Workers globals
 disagree — with DOM loaded, `caches.default` doesn't type-check.
 
 ---
 
+## Versioning
+
+Two settings, duplicated across every target × configuration — **nine copies of
+each** — in `Synesthia.xcodeproj/project.pbxproj`:
+
+| Build setting             | Info.plist key               | What it does                                                                 |
+| ------------------------- | ---------------------------- | ---------------------------------------------------------------------------- |
+| `CURRENT_PROJECT_VERSION` | `CFBundleVersion`            | the build number; what Sparkle (`sparkle:version`) and the App Store compare |
+| `MARKETING_VERSION`       | `CFBundleShortVersionString` | the display version; also **names the DMG**                                  |
+
+There is no `Info.plist` to edit, and `agvtool` cannot help — it needs
+`VERSIONING_SYSTEM = apple-generic`, which this project does not set. Editing by
+hand in Xcode only touches the selected target, which is how `Synesthia Direct`
+(the one that actually ships) ends up on a stale number.
+
+```bash
+make bump                 # patch: 1.0 -> 1.0.1
+make bump BUMP=minor      #        1.0.1 -> 1.1
+make bump BUMP=major      #        1.1 -> 2.0
+make bump BUMP=2.5        # explicit
+make bump ARGS=--dry-run  # preview
+```
+
+The build number is always incremented by one, whatever the level. A trailing
+`.0` is dropped, so a minor bump renders `1.1`, not `1.1.0`. The script refuses
+to run if the nine copies have drifted apart, and updates `RELEASE.version` in
+`web/src/consts.ts` too. `RELEASE.size` is _not_ updated — the DMG's size is
+only known after `make direct`.
+
+### Always bump the marketing version, not just the build
+
+`build-direct.sh` names the DMG `Synesthia-<MARKETING_VERSION>.dmg`, so two
+releases sharing a marketing version collide on one filename in R2. Left
+unchecked that is silent corruption: `make appcast` would sign the _new_ bytes
+while the bucket kept serving the _old_ ones, and every client would fail EdDSA
+verification and simply never update.
+
+`publish-release.sh` compares SHA-256 against the published object and **hard
+fails** rather than skipping when they differ. Skipping on filename alone is
+what would have hidden it.
+
 ## Shipping a release, end to end
 
 ```bash
+make bump                         # or BUMP=minor / BUMP=major
 make direct                       # archive, sign, notarize, staple, DMG
 make appcast                      # fetch live feed, add the new version, sign
 make publish-dry-run              # see exactly what would be uploaded
 make publish-release              # DMGs first, then latest.json, then appcast
 ```
 
-Order matters and the script enforces it. The appcast is the *announcement*: the
+Order matters and the script enforces it. The appcast is the _announcement_: the
 moment it lists a version, installed copies start fetching that URL, so the DMG
 has to be in the bucket first.
 
 `make appcast` pulls the published `appcast.xml` down before regenerating.
-`generate_appcast` only ever *adds* to a feed it finds in the archives
+`generate_appcast` only ever _adds_ to a feed it finds in the archives
 directory — regenerating from a directory holding only the newest DMG would
-silently produce a one-item feed and drop the entries users are updating *from*.
+silently produce a one-item feed and drop the entries users are updating _from_.
 If that fetch fails, the script says so loudly rather than quietly truncating.
 
 Sparkle prunes older versions out of the feed and moves their files to

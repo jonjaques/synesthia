@@ -5,7 +5,7 @@
 Audio arrives from one of four sources on background audio threads and is
 funneled into a single analyzer, which continuously distills it into a small
 value-type summary (`AudioSnapshot`). Sixty times a second, the render loop
-*pulls* the latest snapshot and hands it to the currently selected
+_pulls_ the latest snapshot and hands it to the currently selected
 visualizer, which draws a frame on the GPU. A thin SwiftUI layer floats on
 top for controls, coordinated by one observable `AppState` object. The two
 halves — audio→graphics and UI — touch only at well-defined points.
@@ -56,13 +56,13 @@ the audio threads cheap and the UI free of 90-times-a-second updates.
 
 ## The main data types
 
-| Type | Role | Mutability model |
-|---|---|---|
-| `AudioSnapshot` | One frame of analyzed audio (spectrum bands, waveform, loudness, beat…) | Immutable value copy per frame |
-| `VizUniforms` | The per-frame constants sent to the GPU (audio features + clock + user tuning) | Built fresh each frame |
-| `AppState` | Which source/visualizer is active; transport state; error banners | `@Observable`, main actor |
-| `VisualizerDescriptor` | Static identity + options + factory for one visualizer | Immutable |
-| `VisualizerTuning` / `VisualizerSettings` | Per-visualizer user settings, persisted to `UserDefaults` | `@Observable` store of value types |
+| Type                                      | Role                                                                           | Mutability model                   |
+| ----------------------------------------- | ------------------------------------------------------------------------------ | ---------------------------------- |
+| `AudioSnapshot`                           | One frame of analyzed audio (spectrum bands, waveform, loudness, beat…)        | Immutable value copy per frame     |
+| `VizUniforms`                             | The per-frame constants sent to the GPU (audio features + clock + user tuning) | Built fresh each frame             |
+| `AppState`                                | Which source/visualizer is active; transport state; error banners              | `@Observable`, main actor          |
+| `VisualizerDescriptor`                    | Static identity + options + factory for one visualizer                         | Immutable                          |
+| `VisualizerTuning` / `VisualizerSettings` | Per-visualizer user settings, persisted to `UserDefaults`                      | `@Observable` store of value types |
 
 ## Threading model
 
@@ -102,7 +102,7 @@ flowchart TD
 
 A naïve design would make the analyzer `@Observable` and let SwiftUI react
 to audio changes. That would invalidate SwiftUI views ~47 times per second
-(every FFT hop) for data the *GPU*, not the view hierarchy, consumes. By
+(every FFT hop) for data the _GPU_, not the view hierarchy, consumes. By
 keeping audio data out of the observation system entirely:
 
 - SwiftUI only re-renders for actual UI state changes (a track title, a
@@ -113,7 +113,7 @@ keeping audio data out of the observation system entirely:
 - The audio thread never blocks on anything slower than a short lock.
 
 Only `AppState`, `MusicController`, and `VisualizerSettings` are
-`@Observable`, and they hold *control* state, which changes at human speed.
+`@Observable`, and they hold _control_ state, which changes at human speed.
 
 ## Startup sequence
 

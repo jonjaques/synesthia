@@ -1,8 +1,8 @@
-import SwiftUI
 import AppKit
-import Observation
-import UniformTypeIdentifiers
 import CoreAudio
+import Observation
+import SwiftUI
+import UniformTypeIdentifiers
 
 /// Track metadata for the on-screen badge.
 struct NowPlayingInfo {
@@ -165,13 +165,15 @@ final class AppState {
     var nowPlaying: NowPlayingInfo? {
         #if MUSIC_APP_SOURCE
         if sourceKind == .musicApp, let track = music.track {
-            return NowPlayingInfo(title: track.title, artist: track.artist,
-                                  album: track.album, artwork: music.artwork)
+            return NowPlayingInfo(
+                title: track.title, artist: track.artist,
+                album: track.album, artwork: music.artwork)
         }
         #endif
         if sourceKind == .demo {
-            return NowPlayingInfo(title: DemoTrack.title, artist: DemoTrack.subtitle,
-                                  album: "", artwork: nil)
+            return NowPlayingInfo(
+                title: DemoTrack.title, artist: DemoTrack.subtitle,
+                album: "", artwork: nil)
         }
         return nil
     }
@@ -196,7 +198,9 @@ final class AppState {
             }
             music.togglePlayPause()
             if music.automationDenied {
-                setStatus("Synesthia isn't allowed to control Music. Enable it in System Settings › Privacy & Security › Automation.")
+                setStatus(
+                    "Synesthia isn't allowed to control Music. Enable it in System Settings › Privacy & Security › Automation."
+                )
             }
             return
         }
@@ -361,9 +365,10 @@ final class AppState {
         releaseScopedFile()
         fileURL = url
         do {
-            let data = try url.bookmarkData(options: .withSecurityScope,
-                                            includingResourceValuesForKeys: nil,
-                                            relativeTo: nil)
+            let data = try url.bookmarkData(
+                options: .withSecurityScope,
+                includingResourceValuesForKeys: nil,
+                relativeTo: nil)
             UserDefaults.standard.set(data, forKey: Self.bookmarkKey)
         } catch {
             // Not fatal: the file still plays this session, it just won't come
@@ -377,19 +382,25 @@ final class AppState {
     private func resolveBookmarkedFile() -> URL? {
         guard let data = UserDefaults.standard.data(forKey: Self.bookmarkKey) else { return nil }
         var isStale = false
-        guard let url = try? URL(resolvingBookmarkData: data,
-                                 options: .withSecurityScope,
-                                 relativeTo: nil,
-                                 bookmarkDataIsStale: &isStale),
-              url.startAccessingSecurityScopedResource() else {
+        guard
+            let url = try? URL(
+                resolvingBookmarkData: data,
+                options: .withSecurityScope,
+                relativeTo: nil,
+                bookmarkDataIsStale: &isStale),
+            url.startAccessingSecurityScopedResource()
+        else {
             UserDefaults.standard.removeObject(forKey: Self.bookmarkKey)
             return nil
         }
         scopedFileURL = url
         // A stale bookmark still resolves; refresh it so it keeps working.
-        if isStale, let fresh = try? url.bookmarkData(options: .withSecurityScope,
-                                                     includingResourceValuesForKeys: nil,
-                                                     relativeTo: nil) {
+        if isStale,
+            let fresh = try? url.bookmarkData(
+                options: .withSecurityScope,
+                includingResourceValuesForKeys: nil,
+                relativeTo: nil)
+        {
             UserDefaults.standard.set(fresh, forKey: Self.bookmarkKey)
         }
         return url
@@ -477,7 +488,9 @@ final class AppState {
             isCapturing = true
             statusMessage = nil
         } catch {
-            setStatus("System audio capture unavailable — allow it in System Settings › Privacy & Security › Screen & System Audio Recording, then try again.")
+            setStatus(
+                "System audio capture unavailable — allow it in System Settings › Privacy & Security › Screen & System Audio Recording, then try again."
+            )
         }
     }
 

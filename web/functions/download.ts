@@ -1,4 +1,9 @@
-import { LATEST_KEY, DOWNLOAD_PREFIX, isSafeDmgName, type Latest } from '../lib/releases';
+import {
+  LATEST_KEY,
+  DOWNLOAD_PREFIX,
+  isSafeDmgName,
+  type Latest,
+} from "../lib/releases";
 
 /**
  * `GET /download` — the stable, linkable URL for "the current version".
@@ -12,60 +17,60 @@ import { LATEST_KEY, DOWNLOAD_PREFIX, isSafeDmgName, type Latest } from '../lib/
  * the real version and size without hardcoding them in consts.ts.
  */
 export const onRequest: PagesFunction<Env> = async (ctx) => {
-	const { request, env } = ctx;
+  const { request, env } = ctx;
 
-	if (request.method !== 'GET' && request.method !== 'HEAD') {
-		return new Response('Method not allowed', {
-			status: 405,
-			headers: { allow: 'GET, HEAD' },
-		});
-	}
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    return new Response("Method not allowed", {
+      status: 405,
+      headers: { allow: "GET, HEAD" },
+    });
+  }
 
-	const object = await env.RELEASES.get(LATEST_KEY);
-	if (!object) {
-		return new Response(
-			'No release has been published yet. The Mac App Store build is at https://synesthia.app',
-			{ status: 503, headers: { 'content-type': 'text/plain; charset=utf-8' } },
-		);
-	}
+  const object = await env.RELEASES.get(LATEST_KEY);
+  if (!object) {
+    return new Response(
+      "No release has been published yet. The Mac App Store build is at https://synesthia.app",
+      { status: 503, headers: { "content-type": "text/plain; charset=utf-8" } },
+    );
+  }
 
-	let latest: Latest;
-	try {
-		latest = await object.json<Latest>();
-	} catch {
-		return new Response('The release manifest is corrupt.', {
-			status: 500,
-			headers: { 'content-type': 'text/plain; charset=utf-8' },
-		});
-	}
+  let latest: Latest;
+  try {
+    latest = await object.json<Latest>();
+  } catch {
+    return new Response("The release manifest is corrupt.", {
+      status: 500,
+      headers: { "content-type": "text/plain; charset=utf-8" },
+    });
+  }
 
-	// latest.json is written by our own publish script, but it is still the one
-	// piece of bucket content that steers a redirect — so it gets the same
-	// filename check as a user-supplied path.
-	if (!latest.file || !isSafeDmgName(latest.file)) {
-		return new Response('The release manifest names an unusable file.', {
-			status: 500,
-			headers: { 'content-type': 'text/plain; charset=utf-8' },
-		});
-	}
+  // latest.json is written by our own publish script, but it is still the one
+  // piece of bucket content that steers a redirect — so it gets the same
+  // filename check as a user-supplied path.
+  if (!latest.file || !isSafeDmgName(latest.file)) {
+    return new Response("The release manifest names an unusable file.", {
+      status: 500,
+      headers: { "content-type": "text/plain; charset=utf-8" },
+    });
+  }
 
-	const target = new URL(`/${DOWNLOAD_PREFIX}${latest.file}`, request.url);
+  const target = new URL(`/${DOWNLOAD_PREFIX}${latest.file}`, request.url);
 
-	if (new URL(request.url).searchParams.has('json')) {
-		return Response.json(latest, {
-			headers: {
-				// Short, not immutable: this is the answer that changes on release day.
-				'cache-control': 'public, max-age=300',
-				'access-control-allow-origin': '*',
-			},
-		});
-	}
+  if (new URL(request.url).searchParams.has("json")) {
+    return Response.json(latest, {
+      headers: {
+        // Short, not immutable: this is the answer that changes on release day.
+        "cache-control": "public, max-age=300",
+        "access-control-allow-origin": "*",
+      },
+    });
+  }
 
-	return new Response(null, {
-		status: 302,
-		headers: {
-			location: target.toString(),
-			'cache-control': 'public, max-age=300',
-		},
-	});
+  return new Response(null, {
+    status: 302,
+    headers: {
+      location: target.toString(),
+      "cache-control": "public, max-age=300",
+    },
+  });
 };

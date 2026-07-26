@@ -134,14 +134,49 @@ fi
 
 step "Uploading DMGs"
 # Uploaded first, and skipped when already present: a DMG for a given version is
-# immutable, so re-uploading it on every release would waste minutes and briefly
-# serve a half-written object.
+# immutable, so re-uploading it on every release would waste minutes.
+#
+# "Already present" is decided by CONTENT, not by name. Skipping on the name
+# alone is a silent-corruption trap: build-direct.sh names the DMG from
+# MARKETING_VERSION only, so shipping a new build number without bumping the
+# marketing version reuses `Synesthia-<same>.dmg`. The appcast would then carry
+# the *new* build's signature while R2 kept serving the *old* bytes, and every
+# client would fail EdDSA verification and silently never update. Compare
+# hashes and refuse rather than skip.
 while IFS= read -r name; do
 	[[ -n "$name" ]] || continue
-	if wrangler_r2 r2 object get "$R2_BUCKET/downloads/$name" --file /dev/null >/dev/null 2>&1; then
-		echo "  $name: already published, skipping"
-		continue
+
+	PUBLISHED=$(mktemp -t synesthia-published)
+	if wrangler_r2 r2 object get "$R2_BUCKET/downloads/$name" --file "$PUBLISHED" \
+		>/dev/null 2>&1 && [[ -s "$PUBLISHED" ]]; then
+
+		LOCAL_SHA=$(shasum -a 256 "$RELEASES_DIR/$name" | cut -d' ' -f1)
+		REMOTE_SHA=$(shasum -a 256 "$PUBLISHED" | cut -d' ' -f1)
+		rm -f "$PUBLISHED"
+
+		if [[ "$LOCAL_SHA" == "$REMOTE_SHA" ]]; then
+			echo "  $name: already published, identical — skipping"
+			continue
+		fi
+
+		fail "$name is already published with DIFFERENT contents.
+
+        published sha256 : $REMOTE_SHA
+        local     sha256 : $LOCAL_SHA
+
+        Two different builds are competing for one filename. The DMG is named
+        from MARKETING_VERSION, so this almost always means the build number was
+        incremented without bumping the marketing version.
+
+        Bump it and rebuild:
+            ./scripts/bump-version.sh patch
+            make direct && make appcast
+
+        Overwriting instead would publish an appcast whose signature does not
+        match the bytes users download, and every update would fail silently."
 	fi
+	rm -f "$PUBLISHED"
+
 	echo "  $name: uploading…"
 	wrangler_r2 r2 object put "$R2_BUCKET/downloads/$name" \
 		--file "$RELEASES_DIR/$name" \

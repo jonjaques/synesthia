@@ -33,7 +33,8 @@ func axValue<T>(_ type: AXValueType, _ value: T) -> AXValue {
 func axAttribute(_ element: AXUIElement, _ name: String, typeID: CFTypeID) -> CFTypeRef? {
     var value: CFTypeRef?
     guard AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success,
-          let value, CFGetTypeID(value) == typeID else { return nil }
+        let value, CFGetTypeID(value) == typeID
+    else { return nil }
     return value
 }
 
@@ -75,10 +76,11 @@ func cgWindow(_ pid: pid_t) -> (id: CGWindowID, rect: CGRect)? {
     var best: (id: CGWindowID, rect: CGRect, onscreen: Bool)?
     for info in infos {
         guard info[kCGWindowOwnerPID as String] as? pid_t == pid,
-              info[kCGWindowLayer as String] as? Int == 0,
-              let number = info[kCGWindowNumber as String] as? CGWindowID,
-              let bounds = info[kCGWindowBounds as String] as? NSDictionary,
-              let rect = CGRect(dictionaryRepresentation: bounds as CFDictionary) else { continue }
+            info[kCGWindowLayer as String] as? Int == 0,
+            let number = info[kCGWindowNumber as String] as? CGWindowID,
+            let bounds = info[kCGWindowBounds as String] as? NSDictionary,
+            let rect = CGRect(dictionaryRepresentation: bounds as CFDictionary)
+        else { continue }
         let onscreen = info[kCGWindowIsOnscreen as String] as? Bool ?? false
         let candidate = (number, rect, onscreen)
         guard let current = best else { best = candidate; continue }
@@ -92,10 +94,11 @@ func cgWindow(_ pid: pid_t) -> (id: CGWindowID, rect: CGRect)? {
 }
 
 func moveMouse(to point: CGPoint) {
-    CGEvent(mouseEventSource: nil,
-            mouseType: .mouseMoved,
-            mouseCursorPosition: point,
-            mouseButton: .left)?
+    CGEvent(
+        mouseEventSource: nil,
+        mouseType: .mouseMoved,
+        mouseCursorPosition: point,
+        mouseButton: .left)?
         .post(tap: .cghidEventTap)
 }
 
@@ -108,7 +111,9 @@ func fmt(_ value: CGFloat) -> String {
 
 let args = Array(CommandLine.arguments.dropFirst())
 guard let command = args.first else {
-    die("usage: shotkit <ax-trusted|display|window|activate|resize|fullscreen|is-fullscreen|mouse-get|jiggle> …")
+    die(
+        "usage: shotkit <ax-trusted|display|window|activate|resize|fullscreen|is-fullscreen|mouse-get|jiggle> …"
+    )
 }
 
 func pidArgument(_ index: Int) -> pid_t {
@@ -135,7 +140,9 @@ case "display":
 case "window":
     // "<window-id> <x> <y> <width> <height>", or exit 1 when there is no window.
     guard let window = cgWindow(pidArgument(1)) else { exit(1) }
-    print("\(window.id) \(fmt(window.rect.origin.x)) \(fmt(window.rect.origin.y)) \(fmt(window.rect.width)) \(fmt(window.rect.height))")
+    print(
+        "\(window.id) \(fmt(window.rect.origin.x)) \(fmt(window.rect.origin.y)) \(fmt(window.rect.width)) \(fmt(window.rect.height))"
+    )
 
 case "activate":
     guard let app = NSRunningApplication(processIdentifier: pidArgument(1)) else {
@@ -149,13 +156,16 @@ case "resize":
     let window = requireAXWindow(pidArgument(1))
     let size = CGSize(width: numberArgument(2), height: numberArgument(3))
     let display = CGDisplayBounds(CGMainDisplayID())
-    let origin = CGPoint(x: display.origin.x + ((display.width - size.width) / 2).rounded(),
-                         y: max(display.origin.y + 38, display.origin.y + ((display.height - size.height) / 2).rounded()))
+    let origin = CGPoint(
+        x: display.origin.x + ((display.width - size.width) / 2).rounded(),
+        y: max(display.origin.y + 38, display.origin.y + ((display.height - size.height) / 2).rounded()))
     // Size first: a window that is currently larger than the target would
     // otherwise be shoved back on screen and land at the wrong origin.
-    for (attribute, value) in [(kAXSizeAttribute, axValue(.cgSize, size)),
-                               (kAXPositionAttribute, axValue(.cgPoint, origin)),
-                               (kAXSizeAttribute, axValue(.cgSize, size))] {
+    for (attribute, value) in [
+        (kAXSizeAttribute, axValue(.cgSize, size)),
+        (kAXPositionAttribute, axValue(.cgPoint, origin)),
+        (kAXSizeAttribute, axValue(.cgSize, size)),
+    ] {
         let error = AXUIElementSetAttributeValue(window, attribute as CFString, value)
         if error != .success { die("could not set \(attribute) (AXError \(error.rawValue))") }
     }
@@ -164,8 +174,9 @@ case "fullscreen":
     // fullscreen <pid> <0|1>
     let window = requireAXWindow(pidArgument(1))
     let wanted = args.count > 2 && (args[2] == "1" || args[2] == "true")
-    let error = AXUIElementSetAttributeValue(window, "AXFullScreen" as CFString,
-                                            NSNumber(value: wanted) as CFTypeRef)
+    let error = AXUIElementSetAttributeValue(
+        window, "AXFullScreen" as CFString,
+        NSNumber(value: wanted) as CFTypeRef)
     if error != .success { die("could not set AXFullScreen (AXError \(error.rawValue))") }
 
 case "is-fullscreen":

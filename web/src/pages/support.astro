@@ -5,7 +5,7 @@
  * that it resolves and is relevant, so it must stay a real support page.
  */
 import Legal from '../layouts/Legal.astro';
-import { CONTACT, RELEASE, SITE } from '../consts';
+import { CONTACT, GITHUB_ISSUES_URL, GITHUB_URL, RELEASE, SITE } from '../consts';
 
 const faqs = [
 	{
@@ -57,6 +57,13 @@ const faqs = [
 	<p>
 		Email <a href={`mailto:${CONTACT.support}`}>{CONTACT.support}</a>. It reaches a real person and
 		I answer.
+	</p>
+	<p>
+		Synesthia is open source under the MIT license. If you would rather file a bug in public — or
+		read the code that is doing the thing you are asking about — the repository is at <a
+			href={GITHUB_URL}
+			rel="noopener">github.com/jonjaques/synesthia</a
+		>, and issues go <a href={GITHUB_ISSUES_URL} rel="noopener">here</a>.
 	</p>
 	<p>When something is broken, these details make it far quicker to fix:</p>
 	<ul>

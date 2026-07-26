@@ -1,5 +1,5 @@
-import SwiftUI
 import AppKit
+import SwiftUI
 
 /// App entry point: one window containing `ContentView`, plus the menu-bar
 /// commands. The shared `AppState` is injected through the SwiftUI
@@ -56,11 +56,26 @@ struct SynesthiaApp: App {
 
                 Divider()
 
+                Button("Synesthia Website") {
+                    Self.open("https://synesthia.app")
+                }
                 Button("Synesthia Support") {
                     Self.open("https://synesthia.app/support")
                 }
                 Button("Privacy Policy") {
                     Self.open("https://synesthia.app/privacy")
+                }
+
+                Divider()
+
+                // Synesthia is open source (MIT). Both the store and direct
+                // builds link out to the repository — the source is the same
+                // for either, only the build configuration differs.
+                Button("Source Code on GitHub") {
+                    Self.open("https://github.com/jonjaques/synesthia")
+                }
+                Button("Report an Issue") {
+                    Self.open("https://github.com/jonjaques/synesthia/issues/new")
                 }
             }
 
@@ -106,7 +121,8 @@ struct SynesthiaApp: App {
                 Divider()
 
                 // Palette belongs to the selected visualizer, not the app.
-                Picker("Palette", selection: appState.settings.binding(appState.visualizerID, \.paletteIndex)) {
+                Picker("Palette", selection: appState.settings.binding(appState.visualizerID, \.paletteIndex))
+                {
                     ForEach(Array(Palettes.names.enumerated()), id: \.offset) { index, name in
                         Text(name).tag(index)
                     }

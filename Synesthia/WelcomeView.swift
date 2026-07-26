@@ -26,24 +26,29 @@ struct WelcomeView: View {
                 permission: nil)
         ]
         #if MUSIC_APP_SOURCE
-        items.append(SourceOption(
-            kind: .musicApp,
-            blurb: "Visualize the Music app and control playback, with the track name and artwork on screen.",
-            permission: .screenAndSystemAudio,
-            extraPermission: .automation))
+        items.append(
+            SourceOption(
+                kind: .musicApp,
+                blurb:
+                    "Visualize the Music app and control playback, with the track name and artwork on screen.",
+                permission: .screenAndSystemAudio,
+                extraPermission: .automation))
         #endif
-        items.append(SourceOption(
-            kind: .systemAudio,
-            blurb: "Visualize anything your Mac is playing — a browser tab, a streaming app, a game.",
-            permission: .screenAndSystemAudio))
-        items.append(SourceOption(
-            kind: .inputDevice,
-            blurb: "Visualize a microphone, line-in, or an instrument interface.",
-            permission: .microphone))
-        items.append(SourceOption(
-            kind: .audioFile,
-            blurb: "Open any audio file from your Mac. No permission needed — you pick the file.",
-            permission: nil))
+        items.append(
+            SourceOption(
+                kind: .systemAudio,
+                blurb: "Visualize anything your Mac is playing — a browser tab, a streaming app, a game.",
+                permission: .screenAndSystemAudio))
+        items.append(
+            SourceOption(
+                kind: .inputDevice,
+                blurb: "Visualize a microphone, line-in, or an instrument interface.",
+                permission: .microphone))
+        items.append(
+            SourceOption(
+                kind: .audioFile,
+                blurb: "Open any audio file from your Mac. No permission needed — you pick the file.",
+                permission: nil))
         return items
     }
 
@@ -70,10 +75,12 @@ struct WelcomeView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Welcome to Synesthia")
                 .font(.title2.weight(.semibold))
-            Text("The demo track is already playing — the visuals you can see behind this window need no permissions at all. When you're ready to visualize your own audio, here's what each source needs.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            Text(
+                "The demo track is already playing — the visuals you can see behind this window need no permissions at all. When you're ready to visualize your own audio, here's what each source needs."
+            )
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)

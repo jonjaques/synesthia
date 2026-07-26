@@ -1,6 +1,6 @@
-import SwiftUI
 import MetalKit
 import QuartzCore
+import SwiftUI
 
 /// The process-wide Metal objects every visualizer needs.
 ///
@@ -18,8 +18,9 @@ struct MetalRenderContext {
 
     static let shared: MetalRenderContext? = {
         guard let device = MTLCreateSystemDefaultDevice(),
-              let queue = device.makeCommandQueue(),
-              let library = device.makeDefaultLibrary() else { return nil }
+            let queue = device.makeCommandQueue(),
+            let library = device.makeDefaultLibrary()
+        else { return nil }
         return MetalRenderContext(device: device, queue: queue, library: library)
     }()
 }
@@ -93,13 +94,16 @@ struct MetalVisualizerView: NSViewRepresentable {
         func attach(to view: MTKView) {
             self.view = view
             let center = NotificationCenter.default
-            for name in [NSWindow.didChangeOcclusionStateNotification,
-                         NSWindow.didMiniaturizeNotification,
-                         NSWindow.didDeminiaturizeNotification,
-                         NSApplication.didHideNotification,
-                         NSApplication.didUnhideNotification] {
-                center.addObserver(self, selector: #selector(pacingChanged),
-                                   name: name, object: nil)
+            for name in [
+                NSWindow.didChangeOcclusionStateNotification,
+                NSWindow.didMiniaturizeNotification,
+                NSWindow.didDeminiaturizeNotification,
+                NSApplication.didHideNotification,
+                NSApplication.didUnhideNotification,
+            ] {
+                center.addObserver(
+                    self, selector: #selector(pacingChanged),
+                    name: name, object: nil)
             }
             NSWorkspace.shared.notificationCenter.addObserver(
                 self, selector: #selector(accessibilityChanged),
@@ -146,7 +150,8 @@ struct MetalVisualizerView: NSViewRepresentable {
                 visualizerID = wantedID
             }
             guard let visualizer,
-                  let descriptor = VisualizerRegistry.descriptor(id: wantedID) else { return }
+                let descriptor = VisualizerRegistry.descriptor(id: wantedID)
+            else { return }
 
             // Frame delta, clamped so a hiccup (debugger pause, window drag)
             // doesn't produce one giant simulation step.
@@ -158,8 +163,9 @@ struct MetalVisualizerView: NSViewRepresentable {
             let tuning = appState.settings.tuning(for: wantedID)
 
             var uniforms = VizUniforms()
-            uniforms.resolution = SIMD2(Float(view.drawableSize.width),
-                                        Float(view.drawableSize.height))
+            uniforms.resolution = SIMD2(
+                Float(view.drawableSize.width),
+                Float(view.drawableSize.height))
             uniforms.time = Float(now - startTime)
             uniforms.dt = dt
             uniforms.bass = snapshot.bass
@@ -188,8 +194,9 @@ struct MetalVisualizerView: NSViewRepresentable {
             // and commit. `commit` is asynchronous — the CPU moves on while
             // the GPU renders.
             guard let commandBuffer = context.queue.makeCommandBuffer() else { return }
-            visualizer.draw(in: view, commandBuffer: commandBuffer,
-                            uniforms: uniforms, snapshot: snapshot)
+            visualizer.draw(
+                in: view, commandBuffer: commandBuffer,
+                uniforms: uniforms, snapshot: snapshot)
             if let drawable = view.currentDrawable {
                 commandBuffer.present(drawable)
             }
@@ -256,11 +263,13 @@ struct MetalUnavailableView: View {
                 .foregroundStyle(.secondary)
             Text("Metal is unavailable on this Mac")
                 .font(.title3.weight(.semibold))
-            Text("Synesthia renders its visualizers on the GPU and needs Metal, which this system doesn’t provide. This usually means the app is running in a virtual machine without graphics acceleration.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 420)
+            Text(
+                "Synesthia renders its visualizers on the GPU and needs Metal, which this system doesn’t provide. This usually means the app is running in a virtual machine without graphics acceleration."
+            )
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: 420)
         }
         .padding(40)
         .frame(maxWidth: .infinity, maxHeight: .infinity)

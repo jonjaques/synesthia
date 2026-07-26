@@ -9,7 +9,7 @@ Synesthia is a macOS-only SwiftUI + Metal music visualizer (`SDKROOT = macosx`, 
 Built with Xcode 26.6 / Swift 6.3 toolchain. Deployment target is macOS 26.0, so
 macOS 26 APIs (including `glassEffect`) are available without availability
 guards. Going below 26.0 requires guarding the five `glassEffect` call sites in
-`ContentView.swift` — that is the *only* thing pinning the floor at 26.
+`ContentView.swift` — that is the _only_ thing pinning the floor at 26.
 
 ## Architecture
 
@@ -66,6 +66,11 @@ make test             # xcodebuild test -destination 'platform=macOS'
 make clean            # xcodebuild clean + rm -rf build/
 make app-path         # print the built .app path for CONFIGURATION
 
+make install          # npm install at the root (Prettier only; web/ installs itself)
+make healthcheck      # the PR gate: lint + test + build-direct, in that order
+make lint             # prettier --check, then `swift format lint --strict`
+make format           # prettier --write, then `swift format --in-place`
+
 make demo-track       # python3 scripts/make_demo_loop.py
 make screenshots      # scripts/take-screenshots.sh → web/src/assets/screenshots
 make check-metadata   # scripts/check-metadata.py
@@ -78,13 +83,34 @@ make sparkle-keys     # one-time: create the EdDSA signing key (back it up!)
 make appcast          # regenerate the signed Sparkle appcast into build/releases
 make publish-release  # upload DMGs + appcast + latest.json to R2 (publish-dry-run first)
 
-make web-install web-dev web-build web-preview web-assets   # the Astro site in web/
-make web-typecheck web-cf-types                             # the Pages Functions in web/functions/
 ```
+
+**`web/` is not driven from the Makefile.** It is a self-contained project with its own `package.json`, lockfile and Prettier config (the root `.prettierignore` ignores it), so run its scripts from inside it: `cd web && npm ci`, then `npm run dev|build|check|typecheck|assets|cf-types`. See `web/AGENTS.md`.
 
 `ARGS=` forwards flags to the wrapped script (`make screenshots ARGS="--only nebula --1x"`). `BUILT_PRODUCTS_DIR` is resolved from `xcodebuild -showBuildSettings`, not globbed out of DerivedData, so `run`/`app-path` are correct for any configuration.
 
 `SynesthiaTests` is a **Swift Testing** bundle (`import Testing`, `@Test`, `#expect`), hosted by the app target, covering `AudioAnalyzer`.
+
+### Formatting
+
+Swift is formatted by **swift-format**, which ships inside the Xcode toolchain (`swift format`) — nothing to install, no SPM dependency, no `Package.swift`. `make format` runs Prettier and then rewrites `Synesthia/`, `SynesthiaTests/` and `scripts/shotkit.swift` in place; `make lint` is the read-only half and passes `--strict`, so **any** diagnostic (including plain indentation) is an error.
+
+`.swift-format` at the repo root is the config, and Xcode's own _Editor ▸ Structure ▸ Format File with swift-format_ picks up the same file. Where it deviates from swift-format's defaults, it does so to match the code that was already here:
+
+- **4-space indentation** (the default is 2) and a **110-column line length** (default 100).
+- **`DoNotUseSemicolons` and `OneVariableDeclarationPerLine` are off.** Both are on by default and both would explode the tabular literal blocks — `a = […]; b = […]; c = […]` in `Palette.color`, `let a: SIMD3<Float>, b: …` — into one statement per line, which is strictly worse to read for a lookup table. Turn them back on only if you also want that rewrite.
+- **`UseSynthesizedInitializer` is off** (memberwise initializers here are written out deliberately) and `reflowMultilineStringLiterals` stays at `never`, so the embedded AppleScript in `MusicController.swift` is never rewrapped. swift-format does still re-indent multiline string _literals_ and hoist them onto their own argument line; that is expected and harmless.
+
+`Shaders.metal` is not Swift and no formatter touches it — keep it tidy by hand.
+
+### CI
+
+`.github/workflows/healthcheck.yml` is the only workflow and runs on every pull request push, as two jobs mirroring the two projects in the repo: **`web`** on `ubuntu-latest` runs `npm ci && npm run check && npm run typecheck && npm run build` from inside `web/`, and **`apple`** on `macos-26` runs `make install && make healthcheck`. Keep `make healthcheck` as the single macOS entry point — new checks belong inside it, not as extra workflow steps, so that what CI runs is what a developer can run locally.
+
+Two things the runner needs that a developer's machine already has:
+
+- **No signing identity.** `CODE_SIGN_STYLE=Automatic` + `DEVELOPMENT_TEAM` fails on a runner with no certificate or profile, so the Makefile appends `$(SIGNING)` — ad-hoc signing (`CODE_SIGN_IDENTITY=-`) — to `build`, `build-direct` and `test` whenever `CI` is set, which Actions does. Ad-hoc is enough for the sandbox to launch the test host; it disables the hardened runtime, which is why the real releases still go through `scripts/build-direct.sh` on a machine with the certificates.
+- **The Metal toolchain**, since `Shaders.metal` compiles at build time. The workflow runs `xcodebuild -downloadComponent MetalToolchain` before building; drop that step if the runner images start shipping it.
 
 ### Screenshots
 
@@ -92,12 +118,12 @@ make web-typecheck web-cf-types                             # the Pages Function
 
 - **Every run writes under a unique prefix** (`<UTC stamp to the second>-<id>-<windowed|fullscreen>.png`), so nothing is overwritten and two takes can be compared side by side. `--prefix` overrides it; `--prefix ''` gives bare `<id>-<mode>.png` names. Note the generator can't use `tr -dc … </dev/urandom | head -c 4`: `head` closing the pipe kills `tr`, and `set -o pipefail` turns that into a failed run.
 - **Visualizers are discovered from source**, not hardcoded: the registry order is parsed out of `VisualizerCore.swift` and each id out of its own `*Visualizer.swift`. A new visualizer is picked up for free.
-- **State is injected through the argument domain**, not `defaults write`: `open -a … --args -visualizerID nebula -sourceKind musicApp -hasSeenWelcome YES`. `NSUserDefaults` reads `-key value` pairs out of `argv` at highest priority, which works for a *sandboxed* app (whose prefs live in its container, so `defaults write com.jonjaques.Synesthia` would go to the wrong plist) and leaves nothing behind in the user's real preferences.
-- **The bottom chrome auto-hides after 3 s of pointer stillness**, so every capture is preceded by a synthetic two-step pointer move inside the window plus 0.6 s for the 0.35 s fade-in. One warp is not enough — `onContinuousHover` only reacts to a *change* in position.
+- **State is injected through the argument domain**, not `defaults write`: `open -a … --args -visualizerID nebula -sourceKind musicApp -hasSeenWelcome YES`. `NSUserDefaults` reads `-key value` pairs out of `argv` at highest priority, which works for a _sandboxed_ app (whose prefs live in its container, so `defaults write com.jonjaques.Synesthia` would go to the wrong plist) and leaves nothing behind in the user's real preferences.
+- **The bottom chrome auto-hides after 3 s of pointer stillness**, so every capture is preceded by a synthetic two-step pointer move inside the window plus 0.6 s for the 0.35 s fade-in. One warp is not enough — `onContinuousHover` only reacts to a _change_ in position.
 - **It needs Accessibility and Screen & System Audio Recording on the invoking terminal**, and preflights both. Nothing in the app was changed to support it; it drives the shipping UI.
 - Window capture (`screencapture -o -l <id>`) keeps the rounded corners on transparency; `--mode region` is the fallback if a Metal window ever composites black.
-- **`CFTypeRef as? [AXUIElement]` silently yields an *empty* array**, so reading `kAXWindows` that way reports "no windows" on a perfectly healthy app — with no error to go on. `shotkit.swift` asks for `kAXMainWindow`/`kAXFocusedWindow` (single elements) and type-checks with `CFGetTypeID` + `unsafeBitCast` instead. Same trap for `CFBoolean` → `Bool`.
-- **`CGWindowListCopyWindowInfo` marks every window off-screen while the display is asleep**, so `.optionOnScreenOnly` makes the whole thing look windowless when run headless. `cgWindow` uses `.optionAll` and merely *prefers* on-screen matches.
+- **`CFTypeRef as? [AXUIElement]` silently yields an _empty_ array**, so reading `kAXWindows` that way reports "no windows" on a perfectly healthy app — with no error to go on. `shotkit.swift` asks for `kAXMainWindow`/`kAXFocusedWindow` (single elements) and type-checks with `CFGetTypeID` + `unsafeBitCast` instead. Same trap for `CFBoolean` → `Bool`.
+- **`CGWindowListCopyWindowInfo` marks every window off-screen while the display is asleep**, so `.optionOnScreenOnly` makes the whole thing look windowless when run headless. `cgWindow` uses `.optionAll` and merely _prefers_ on-screen matches.
 
 ## Hard-won gotchas (violating these caused real bugs)
 
@@ -105,12 +131,12 @@ make web-typecheck web-cf-types                             # the Pages Function
 
 **ScreenCaptureKit audio extraction.** Use `sampleBuffer.withAudioBufferList` + `AVAudioPCMBuffer(pcmFormat:bufferListNoCopy:)` (the current code). Do NOT use `CMSampleBufferCopyPCMDataIntoAudioBufferList` into a fresh `AVAudioPCMBuffer` — its buffer list advertises `frameLength` (0) bytes, every copy fails with `err=-12731`, and the analyzer silently receives nothing. Also: even when only capturing audio, register a `.screen` stream output too, or SCK logs "stream output NOT found. Dropping frame" continuously.
 
-**AVFAudio callbacks must be built in a `nonisolated` context, or they trap.** `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` means a closure written inline inside a main-actor method is *itself* inferred main-actor. AVAudioEngine calls tap blocks and `scheduleFile` completion handlers on a realtime audio thread, so Swift 6's isolation check fires and the app dies with `EXC_BREAKPOINT` in `swift_task_checkIsolatedSwift` — on the very first buffer, with a stack that blames AVFAudio rather than the closure. Build these blocks from a `nonisolated` factory (`makeAnalyzerTap`, `FilePlayer.loopCompletion()`), never inline. Wrapping the body in `Task { @MainActor in … }` does **not** help: the trap happens on entry, before the `Task` is ever reached. Spell the return type `@Sendable () -> Void`; the `AVAudioNodeCompletionHandler` typealias isn't marked `@Sendable` and the call site warns.
+**AVFAudio callbacks must be built in a `nonisolated` context, or they trap.** `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` means a closure written inline inside a main-actor method is _itself_ inferred main-actor. AVAudioEngine calls tap blocks and `scheduleFile` completion handlers on a realtime audio thread, so Swift 6's isolation check fires and the app dies with `EXC_BREAKPOINT` in `swift_task_checkIsolatedSwift` — on the very first buffer, with a stack that blames AVFAudio rather than the closure. Build these blocks from a `nonisolated` factory (`makeAnalyzerTap`, `FilePlayer.loopCompletion()`), never inline. Wrapping the body in `Task { @MainActor in … }` does **not** help: the trap happens on entry, before the `Task` is ever reached. Spell the return type `@Sendable () -> Void`; the `AVAudioNodeCompletionHandler` typealias isn't marked `@Sendable` and the call site warns.
 
-**Never pipe into `grep -q` in a `set -o pipefail` script.** `grep -q` exits the instant it matches, which closes the pipe, kills the producer with SIGPIPE (exit 141), and — because every release script sets `pipefail` — turns a *successful* match into a failed pipeline. This has bitten twice, and the second time was worse than the first:
+**Never pipe into `grep -q` in a `set -o pipefail` script.** `grep -q` exits the instant it matches, which closes the pipe, kills the producer with SIGPIPE (exit 141), and — because every release script sets `pipefail` — turns a _successful_ match into a failed pipeline. This has bitten twice, and the second time was worse than the first:
 
 - `codesign -d --verbose=2 "$APP" 2>&1 | grep -q "flags=.*runtime"` reported "hardened runtime is not enabled" on an app that had it. (Note `codesign -d` writes everything to **stderr**, hence the `2>&1`.)
-- The `if producer | grep -q LEAK; then fail; fi` form fails **open**: the leak makes grep match, SIGPIPE makes the pipeline non-zero, `if` reads that as "clean", and the guard silently doesn't fire. `strings $BINARY | grep -q 'tell application "Music"'` — the most important App Store assertion in the project — was silently passing on a binary that *did* contain the string. Whether it bites depends on whether the producer's output exceeds the 64 KB pipe buffer, so small-output checks race benignly and look fine.
+- The `if producer | grep -q LEAK; then fail; fi` form fails **open**: the leak makes grep match, SIGPIPE makes the pipeline non-zero, `if` reads that as "clean", and the guard silently doesn't fire. `strings $BINARY | grep -q 'tell application "Music"'` — the most important App Store assertion in the project — was silently passing on a binary that _did_ contain the string. Whether it bites depends on whether the producer's output exceeds the 64 KB pipe buffer, so small-output checks race benignly and look fine.
 
 Capture first, match against the variable: `OUT=$(producer 2>&1 || true)` then `grep -q PATTERN <<<"$OUT"`. A herestring is not a pipe, so there is nothing to SIGPIPE. Same root cause as the `tr … | head -c 4` note in the screenshots section.
 
@@ -124,28 +150,28 @@ Capture first, match against the variable: `OUT=$(producer 2>&1 || true)` then `
 
 Three configurations, two app targets. **`Synesthia`/`Release` is the Mac App Store build and `Synesthia Direct`/`Direct` is the notarized direct download** — they differ in whether the Music.app integration and the updater exist at all.
 
-| | `Release` (App Store) | `Direct` | `Debug` |
-|---|---|---|---|
-| Target | `Synesthia` | `Synesthia Direct` | either |
-| `MUSIC_APP_SOURCE` | off | on | on |
-| Sparkle | never | linked | Direct target only |
-| Entitlements | `Synesthia.entitlements` | `Synesthia-Direct.entitlements` | `Synesthia-Direct.entitlements` |
-| Apple Events entitlements | none | automation + Music exception | same |
-| `network.client` | no | yes (Sparkle) | yes |
+|                           | `Release` (App Store)    | `Direct`                        | `Debug`                         |
+| ------------------------- | ------------------------ | ------------------------------- | ------------------------------- |
+| Target                    | `Synesthia`              | `Synesthia Direct`              | either                          |
+| `MUSIC_APP_SOURCE`        | off                      | on                              | on                              |
+| Sparkle                   | never                    | linked                          | Direct target only              |
+| Entitlements              | `Synesthia.entitlements` | `Synesthia-Direct.entitlements` | `Synesthia-Direct.entitlements` |
+| Apple Events entitlements | none                     | automation + Music exception    | same                            |
+| `network.client`          | no                       | yes (Sparkle)                   | yes                             |
 
 `#if MUSIC_APP_SOURCE` removes the `.musicApp` source case, the whole of `MusicController.swift`, and every Apple Event with it, so the App Store build needs neither `automation.apple-events` nor the `temporary-exception.apple-events` for `com.apple.Music` — the single largest review risk this project had. Likewise `#if canImport(Sparkle)` empties `Updater.swift` in the target that doesn't link it, so `SynesthiaApp.swift` needs no conditional at the call site. `scripts/build-appstore.sh` asserts against the built archive that neither leaked (no Apple Events entitlement, no `tell application "Music"` string, no Sparkle framework/link/`SUFeedURL`). Full rationale in `docs/distribution.md`.
 
-Adding a *new* configuration means cloning the `XCBuildConfiguration` objects at both project and target level and registering both in their `XCConfigurationList`s.
+Adding a _new_ configuration means cloning the `XCBuildConfiguration` objects at both project and target level and registering both in their `XCConfigurationList`s.
 
 **Two app targets.** `Synesthia` is the App Store build; **`Synesthia Direct`** is the direct download and is the only target that links Sparkle — SPM attaches a package to a target, not a configuration, so keeping Sparkle out of `Release` requires a second target. Both reference the same `PBXFileSystemSynchronizedRootGroup`, so a new `.swift` file under `Synesthia/` compiles into both for free; **build settings are not shared** and must be changed in both places (including `MARKETING_VERSION`/`CURRENT_PROJECT_VERSION` on every release). Both produce `Synesthia.app`, so building both in the same configuration means the last one wins in `Build/Products/<config>/` — schemes and archive configurations keep them apart in practice. Full rationale in `docs/distribution.md`.
 
 ## Project configuration constraints
 
-**Adding files: do not edit `project.pbxproj`.** The project uses `objectVersion = 77` with a `PBXFileSystemSynchronizedRootGroup` for `Synesthia/`. Any `.swift` file created anywhere under `Synesthia/` is compiled automatically. Hand-adding file references will corrupt the sync group. (Editing *build settings* in project.pbxproj is fine and is how the `INFOPLIST_KEY_*` and `CODE_SIGN_ENTITLEMENTS` values were added.)
+**Adding files: do not edit `project.pbxproj`.** The project uses `objectVersion = 77` with a `PBXFileSystemSynchronizedRootGroup` for `Synesthia/`. Any `.swift` file created anywhere under `Synesthia/` is compiled automatically. Hand-adding file references will corrupt the sync group. (Editing _build settings_ in project.pbxproj is fine and is how the `INFOPLIST_KEY_*` and `CODE_SIGN_ENTITLEMENTS` values were added.)
 
-**`@MainActor` is the default.** `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` and `SWIFT_APPROACHABLE_CONCURRENCY = YES` are set project-wide: every unannotated type, function, and closure is main-actor isolated. Background work must be opted out explicitly — see `nonisolated final class AudioAnalyzer`, `nonisolated struct AudioSnapshot`, and the `nonisolated` SCStreamOutput callbacks. Don't add `@MainActor` annotations; they're redundant. `SWIFT_VERSION = 6.0`, so isolation violations are **errors**, not warnings: anything reachable from the audio thread or the Metal draw callback must be explicitly `nonisolated`. Marking the *type* `nonisolated` (rather than each member) is the cheap fix — that is why `AudioSnapshot` carries the annotation even though its members look inert.
+**`@MainActor` is the default.** `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` and `SWIFT_APPROACHABLE_CONCURRENCY = YES` are set project-wide: every unannotated type, function, and closure is main-actor isolated. Background work must be opted out explicitly — see `nonisolated final class AudioAnalyzer`, `nonisolated struct AudioSnapshot`, and the `nonisolated` SCStreamOutput callbacks. Don't add `@MainActor` annotations; they're redundant. `SWIFT_VERSION = 6.0`, so isolation violations are **errors**, not warnings: anything reachable from the audio thread or the Metal draw callback must be explicitly `nonisolated`. Marking the _type_ `nonisolated` (rather than each member) is the cheap fix — that is why `AudioSnapshot` carries the annotation even though its members look inert.
 
-**`INFOPLIST_KEY_*` only accepts Apple's known keys — arbitrary suffixes are silently dropped.** `GENERATE_INFOPLIST_FILE = YES` and most plist keys go in as `INFOPLIST_KEY_*` build settings: `NSAppleEventsUsageDescription`, `NSMicrophoneUsageDescription`, `NSHumanReadableCopyright`, `LSApplicationCategoryType`, `ITSAppUsesNonExemptEncryption = NO` (that last one pre-answers App Store Connect's export-compliance prompt on every upload). But a *third-party* key like `SUFeedURL` never reaches the built Info.plist — no warning, no build failure, and `INFOPLIST_KEY_SUFeedURL` sat in this project doing nothing until it was caught by inspecting a built bundle. For those, set **both** `INFOPLIST_FILE` and `GENERATE_INFOPLIST_FILE = YES`: the file is the base and the generated keys merge on top. That is what `Synesthia-Direct-Info.plist` is (Sparkle's three keys only); the App Store target still has no Info.plist file at all.
+**`INFOPLIST_KEY_*` only accepts Apple's known keys — arbitrary suffixes are silently dropped.** `GENERATE_INFOPLIST_FILE = YES` and most plist keys go in as `INFOPLIST_KEY_*` build settings: `NSAppleEventsUsageDescription`, `NSMicrophoneUsageDescription`, `NSHumanReadableCopyright`, `LSApplicationCategoryType`, `ITSAppUsesNonExemptEncryption = NO` (that last one pre-answers App Store Connect's export-compliance prompt on every upload). But a _third-party_ key like `SUFeedURL` never reaches the built Info.plist — no warning, no build failure, and `INFOPLIST_KEY_SUFeedURL` sat in this project doing nothing until it was caught by inspecting a built bundle. For those, set **both** `INFOPLIST_FILE` and `GENERATE_INFOPLIST_FILE = YES`: the file is the base and the generated keys merge on top. That is what `Synesthia-Direct-Info.plist` is (Sparkle's three keys only); the App Store target still has no Info.plist file at all.
 
 **Privacy manifest**: `Synesthia/PrivacyInfo.xcprivacy` declares no tracking, no collected data, and one `UserDefaults` access reason. It is picked up automatically by the synchronized group. Its contents must stay in sync with the App Store Connect privacy answers.
 

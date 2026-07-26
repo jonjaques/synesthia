@@ -2,6 +2,7 @@
 import { Picture } from 'astro:assets';
 import Base from '../layouts/Base.astro';
 import Mark from '../components/Mark.astro';
+import GitHubLink from '../components/GitHubLink.astro';
 import ShotCarousel from '../components/ShotCarousel.astro';
 import DownloadOptions from '../components/DownloadOptions.astro';
 import { APP_STORE_AVAILABLE, DIRECT_DOWNLOAD_AVAILABLE, RELEASE, SITE } from '../consts';
@@ -358,6 +359,7 @@ const navLinks = [
 			<nav class="flex items-center gap-6">
 				<a href="/support" class="transition-colors hover:text-paper">Support</a>
 				<a href="/privacy" class="transition-colors hover:text-paper">Privacy</a>
+				<GitHubLink />
 			</nav>
 			<p>© 2026 {SITE.author}</p>
 		</div>

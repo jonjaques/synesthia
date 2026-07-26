@@ -1,228 +1,262 @@
-# Shipping Synesthia: production & Mac App Store plan
+# Shipping Synesthia — launch plan
 
-Status of this document: written 2026-07-25 against commit `b83330a`, executed
-the same day in `377f02b`. It is a working plan, not a record — check items
-off, and delete sections as they stop being true. See
-[prerelease-report.md](prerelease-report.md) for what that execution covered
-and what it left open.
+Working plan, not a record. Check items off; delete sections as they stop being
+true. Last reconciled against the repo and against Apple/Cloudflare on
+**2026-07-25**, after the direct download went live.
 
-Scope: the macOS app and its App Store submission. The marketing site in `web/`
-is tracked separately, except for the two pages the App Store *requires* (now
-built — see [App Store Connect checklist](#4-app-store-connect-checklist)).
+This absorbed the former `docs/prerelease-report.md` — its decisions, findings
+and verification evidence are §2, §6 and §8 below, brought up to date. That file
+is gone; `git log -- docs/prerelease-report.md` still has it if the dated
+snapshot is ever wanted. See `docs/distribution.md` for how the release pipeline
+works and `docs/app-store-metadata.md` for every listing field.
 
-**Everything that can be done without an Apple Developer portal login is
-done.** What remains is in [§2](#2-hard-blockers) and
-[§6](#6-what-needs-a-human), and almost all of it needs either an Apple account
-or a pair of eyes on the running app.
+---
+
+## Where things stand
+
+**The direct download has shipped.** `synesthia.app/download` serves a
+notarized, stapled, Gatekeeper-accepted 1.0, and Sparkle is wired end to end.
+The Mac App Store submission has not been made.
+
+|                        | Direct download                       | Mac App Store                             |
+| ---------------------- | ------------------------------------- | ----------------------------------------- |
+| Target / configuration | `Synesthia Direct` / `Direct`         | `Synesthia` / `Release`                   |
+| Signing                | ✅ Developer ID Application           | ⚠️ missing **Mac Installer Distribution** |
+| Notarization           | ✅ 3 accepted submissions             | n/a                                       |
+| Self-update            | ✅ Sparkle 2.9.4, signed appcast      | n/a (the store updates it)                |
+| Hosting                | ✅ R2 + Pages Functions               | App Store Connect                         |
+| Advertised on the site | ✅ `DIRECT_DOWNLOAD_AVAILABLE = true` | ❌ `APP_STORE_AVAILABLE = false`          |
+| **Status**             | **live**                              | blocked on §3 B2                          |
+
+Strategically this is where we wanted to be: real users and real crash data can
+arrive before the review queue is ever joined, and the
+`temporary-exception.apple-events` question is now purely an App Store concern
+by construction — the store build does not contain the feature at all.
 
 ---
 
 ## 1. Done
 
-Each change below was verified by a clean build of all three configurations,
-an `xcodebuild archive` with automated assertions against the built bundle, and
-a launch smoke test.
+### Direct download — shipped
 
-### Earlier pass
+- [x] **Developer ID Application certificate** created and in use
+- [x] **Notary credentials** stored (`SYNESTHIA_NOTARY`); 3 accepted submissions
+- [x] **Sparkle linked** — 2.9.4, via a second app target so it cannot reach `Release`
+- [x] **EdDSA signing key** generated; public half in `Synesthia-Direct-Info.plist`
+- [x] Sandboxed-Sparkle wiring: `Installer.xpc`, `-spks`/`-spki` mach-lookup exceptions, `network.client`
+- [x] **App and DMG both notarized and stapled**; the app _inside_ the DMG carries its own ticket
+- [x] DMG signed with Developer ID (not just notarized — see §6)
+- [x] **R2 bucket + Pages Functions**: `/appcast.xml`, `/download`, `/downloads/*`
+- [x] `make bump` — semver + build number across all 9 pbxproj copies
+- [x] Publish guard: refuses to overwrite a published DMG whose contents differ
+- [x] **1.0 published and verified live**
 
-| Change | Rationale |
-|---|---|
-| `MACOSX_DEPLOYMENT_TARGET` 26.5 → **26.0** | `glassEffect` is a 26.0 API; 26.5 excluded nearly every macOS 26 user for no reason. |
-| `SWIFT_VERSION` 5.0 → **6.0** | Isolation violations reachable from the audio thread are now errors. |
-| `nonisolated struct AudioSnapshot` | Removed 48 of 50 build warnings; latent data-race diagnostics. |
-| `ITSAppUsesNonExemptEncryption = NO` | Pre-answers export compliance on every upload. |
-| `NSHumanReadableCopyright` filled in | Surfaces in About and Get Info. |
-| Added `Synesthia/PrivacyInfo.xcprivacy` | No tracking, no collected data, one `UserDefaults` reason. |
-| Added a shared scheme | `xcodebuild -list` returned nothing on a clean checkout. |
+### Blockers closed earlier
 
-### This pass
+| Blocker                   | Resolution                                                                                                                                 |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| **B1** bundle ID          | `jonjaques.Synesthia` → `com.jonjaques.Synesthia`, every configuration                                                                     |
+| **B3** Metal `fatalError` | Optional `MetalRenderContext.shared` + `MetalUnavailableView`; no launch path can crash without a GPU                                      |
+| **B4** dead on arrival    | `.demo` source, default on first launch, 32 s bundled loop, zero permissions; plus first-run `WelcomeView` with System Settings deep links |
+| **B5** Apple Events       | Feature-flagged behind `MUSIC_APP_SOURCE`; the store build contains no `MusicController`, no AppleScript, neither entitlement              |
+| **B6** unused entitlement | `com.apple.security.assets.music.read-only` removed                                                                                        |
 
-| Blocker | What was done |
-|---|---|
-| **B1** bundle ID | `jonjaques.Synesthia` → **`com.jonjaques.Synesthia`** in every configuration. |
-| **B3** Metal `fatalError` | Replaced with `MetalRenderContext.shared` (optional) and a `MetalUnavailableView`. No launch path can crash on a missing GPU. |
-| **B4** dead on arrival | New **`.demo` source**, default on first launch, playing a 32 s loop bundled with the app. Zero permissions. Plus a first-run `WelcomeView` naming every permission with deep links into the right System Settings pane. |
-| **B5** Apple Events | **Feature-flagged.** `MUSIC_APP_SOURCE` is off in `Release`, so the App Store build contains no `MusicController`, no AppleScript, and neither Apple Events entitlement. `Direct` keeps the feature. |
-| **B6** unused entitlement | `com.apple.security.assets.music.read-only` removed. |
-| Quality: power | MTKView pauses on occlusion/miniaturize; drops to 30 fps when inactive or idle; runs at the display's full rate (incl. 120 Hz ProMotion) only while audio flows. |
-| Quality: sleep | `beginActivity(.idleDisplaySleepDisabled)` held **only** while audio is flowing, released the moment it stops. |
-| Quality: photosensitivity | Reduce Motion honored — clock slowed, transients damped to 25%, level features smoothed with a 0.4 s time constant. Done CPU-side to preserve the 96-byte `VizUniforms` contract. |
-| Quality: VoiceOver | `accessibilityLabel` on all 14 icon-only buttons; chrome no longer auto-hides while VoiceOver is running. |
-| Quality: Help menu | Replaces the dead default; opens the explainer, the Support URL, and the Privacy URL. |
-| Quality: file persistence | Security-scoped bookmark, refreshed when stale. |
-| Quality: build warning | `ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME` cleared. **All three configurations now build with zero warnings.** |
-| Test target | **`SynesthiaTests`** (Swift Testing), 19 tests over `AudioAnalyzer`, all passing. |
-| Distribution | `build-appstore.sh`, `build-direct.sh`, `make-appcast.sh`, both export plists, and `docs/distribution.md`. |
-| Metadata | `docs/app-store-metadata.md` — every listing field plus review notes, length-checked by `scripts/check-metadata.py`. |
-| Web | `/privacy` and `/support` built and linked from the footer. |
+### App hardening and quality
 
-### Two real bugs found while testing
+- [x] `MACOSX_DEPLOYMENT_TARGET` 26.5 → **26.0** (`glassEffect` is a 26.0 API)
+- [x] `SWIFT_VERSION` 5.0 → **6.0**; `nonisolated struct AudioSnapshot`
+- [x] **Power** — MTKView pauses on occlusion/miniaturize; 30 fps when inactive or idle; full display rate (incl. 120 Hz ProMotion) only while audio flows
+- [x] **Sleep** — `beginActivity(.idleDisplaySleepDisabled)` held only while audio flows
+- [x] **Photosensitivity** — Reduce Motion honored; done CPU-side to preserve the 96-byte `VizUniforms` contract
+- [x] **VoiceOver** — labels on all 14 icon-only buttons; chrome stops auto-hiding while VoiceOver runs
+- [x] Help menu, security-scoped file bookmarks, `PrivacyInfo.xcprivacy`, `ITSAppUsesNonExemptEncryption`, `NSHumanReadableCopyright`, shared schemes
+- [x] **Zero build warnings** in every configuration
 
-- **Every `FilePlayer` launch crashed.** AVAudioEngine tap blocks were being
-  created inside main-actor methods (`SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`
-  infers that), and AVFAudio calls them on a realtime thread — Swift 6's
-  isolation check trapped on the first buffer. Latent until the demo source
-  started a `FilePlayer` at launch. Fixed with `nonisolated` block factories.
-- **The same bug in `scheduleFile`'s completion handler**, which would have
-  killed the app 32 s in, at the first loop point. The existing
-  `Task { @MainActor … }` hop did not help — the trap precedes it.
+### Tests
 
-Both are now covered by a note in `CLAUDE.md`, and the app has been verified
-running past three consecutive loop points with no crash reports.
+- [x] `SynesthiaTests` — Swift Testing, **19 tests over `AudioAnalyzer`, all passing**
+
+Coverage: band mapping against an independently derived formula, sample-rate
+dependence, bass/mid/treble separation, level normalization, spectral centroid,
+beat and treble-transient detection, flux decay, `reset()`, and buffer sizes from
+1 to 4096 samples. Three tests failed on first run and were corrected rather than
+the code: they assumed ideal geometric band spacing, but `rebuildBandEdges`
+forces each band to own a distinct FFT bin, which makes the bottom third
+effectively linear at 23.4 Hz bins — a physical limit of a 2048-point FFT, not a
+defect. A fourth was rewritten to drive the treble detector with broadband noise
+rather than a sine, because a sine is not a cymbal. One test was found vacuous
+(it compared a helper formula against itself) and replaced.
+
+### Website
+
+- [x] `/privacy` and `/support` — the two pages the App Store requires
+- [x] Landing page rebuilt around real screenshots
+- [x] Download channels independently switchable (`DIRECT_DOWNLOAD_AVAILABLE`, `APP_STORE_AVAILABLE`)
+- [x] Deployed on Cloudflare Pages with git integration
 
 ### Verified as already correct
 
-- Release **archives** build a universal binary (`x86_64 arm64`) — asserted by
-  `build-appstore.sh`. (A plain `xcodebuild build` produces arm64 only; that is
-  the build action, not a misconfiguration.)
-- Hardened runtime on, App Sandbox on.
-- `com.apple.security.get-task-allow` is stripped from the archive — asserted.
-- The asset catalog contains a genuine 1024×1024 icon rendition.
+- Release archives are universal (`x86_64 arm64`) — asserted by the build script
+- Hardened runtime on, App Sandbox on, `get-task-allow` stripped
+- Genuine 1024×1024 icon rendition in the asset catalog
 
 ---
 
-## 2. Hard blockers
+## 2. Decisions taken
 
-### B2 — Distribution signing does not exist yet
+| Question          | Decision                         | Consequence                                                                                                                   |
+| ----------------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| B5 — Apple Events | **Feature-flag it**              | `Direct` configuration; store build has no Music.app integration at all                                                       |
+| B4 — demo audio   | **Synthesize and bundle a clip** | `scripts/make_demo_loop.py`; no licensing question                                                                            |
+| Distribution      | **Both channels, direct first**  | Full notarization pipeline; direct shipped first                                                                              |
+| Sparkle isolation | **Duplicate the app target**     | SPM attaches packages per-target, not per-configuration; one extra target to keep in sync                                     |
+| Release hosting   | **R2 + Pages Functions**         | Publishing is an upload, not a site rebuild — which matters because notarization must finish before the feed can name the DMG |
 
-**The only remaining hard blocker, and it needs an Apple Developer login.**
-The only certificate on this machine is *Apple Development*. Both release
-scripts archive successfully and stop at export:
+**MusicKit cannot replace Apple Events on macOS.** `SystemMusicPlayer` is
+unavailable on the platform and `ApplicationMusicPlayer` reports only what your
+own app plays. B5 was a straight choice between shipping the entitlement and
+cutting the feature.
+
+---
+
+## 3. Remaining blockers
+
+### B2 — App Store distribution signing (**mostly closed**)
+
+Direct-download signing is fully working. What is left is App Store only:
+
+- [x] Register the App ID `com.jonjaques.Synesthia`
+- [x] App distribution certificate (_3rd Party Mac Developer Application_)
+- [x] Mac App Store provisioning profile (present, expires 2027-07-25)
+- [x] Developer ID Application certificate
+- [x] `xcrun notarytool store-credentials SYNESTHIA_NOTARY`
+- [ ] **Mac Installer Distribution certificate** — signs the `.pkg`; the one thing still failing the export
+- [ ] Create the App Store Connect record
+- [ ] **Throwaway upload immediately** — flush out validation errors early
+
+`make appstore` archives cleanly and passes all eight preflight assertions, then
+stops at:
 
 ```
 error: exportArchive No signing certificate "Mac Installer Distribution" found
 error: exportArchive No profiles for 'com.jonjaques.Synesthia' were found
-error: exportArchive No signing certificate "Developer ID Application" found
 ```
 
-- [ ] Register the App ID `com.jonjaques.Synesthia`
-- [ ] Apple Distribution certificate + Mac App Store provisioning profile
-- [ ] Mac Installer Distribution certificate (App Store `.pkg`)
-- [ ] Developer ID Application certificate (direct download)
-- [ ] `xcrun notarytool store-credentials SYNESTHIA_NOTARY …`
-- [ ] Create the App Store Connect record
-- [ ] **Throwaway upload immediately** — flush out validation errors early
-
-### B7 — Trademark
-
-"Synesthia" is one letter from **Synesthesia**, an established music-software
-product in the same category.
-
-A USPTO search turns up no registered mark for "Synesthesia" in the software
-class, but that is not clearance: the product demonstrably exists and sells, so
-common-law rights are likely, and confusing similarity is judged on the overall
-impression rather than the letter count. This is a legal call, not a technical
-one.
-
-- [ ] Clear this before the name goes on a listing and a domain
-
-Nothing else in the repo is name-dependent except listing copy and the domain,
-so a rename stays cheap right up until submission.
-
----
-
-## 3. Quality gaps
-
-Everything actionable here is done (see §1). Deliberately deferred:
-
-- [ ] **English only.** Fine for v1; the string-catalog migration is tracked in
-      `CLAUDE.md`.
-- [ ] **Visualizer test coverage.** The new test target covers `AudioAnalyzer`;
-      the Metal visualizers have no coverage and are much harder to assert on.
+Note the second line may well clear itself once the certificate exists — a
+profile for that App ID _is_ on this machine. Don't chase it until the installer
+certificate is in place.
 
 ---
 
 ## 4. App Store Connect checklist
 
-### External dependencies — **done**
+### External dependencies — done
 
-- [x] Privacy Policy — `web/src/pages/privacy.astro` → `/privacy`
-- [x] Support page — `web/src/pages/support.astro` → `/support`
+- [x] Privacy Policy → `/privacy`; claims match `PrivacyInfo.xcprivacy`, and it discloses the website's Google Analytics separately from the app (which collects nothing)
+- [x] Support page → `/support`
 
-Both build, are in the sitemap, and are linked from the landing-page footer.
-The privacy page's claims match `PrivacyInfo.xcprivacy`, and it discloses the
-website's Google Analytics separately from the app (which collects nothing).
+### Assets
 
-### Assets — **needs a human**
+- [x] Icon — correct in the binary
+- [x] Screenshot tooling — `make screenshots`, driving the real shipping UI
+- [x] Screenshots captured for the website (3 visualizers × windowed/fullscreen)
+- [ ] **Screenshots at an App Store size.** The captures on disk are 3420×2146 and 2048×1536; Apple accepts only 1280×800, 1440×900, 2560×1600 or 2880×1800. Recapture or resize.
+- [ ] **App preview video — the high-leverage asset.** A static frame of a visualizer sells nothing. Up to 3, 15–30 s, 16:9 at 1080p or 4K.
 
-- [ ] Screenshots: 1–10, at 1280×800, 1440×900, 2560×1600, or 2880×1800
-- [ ] **App preview video — the high-leverage asset.** A static screenshot of a
-      visualizer sells nothing. Up to 3, 15–30 s, 16:9 at 1080p or 4K.
-- [x] Icon: already correct in the binary
-
-### Metadata — **drafted**
+### Metadata — drafted, length-checked
 
 - [x] Subtitle, promotional text, description, keywords — all within limits
-- [x] Category: Music
-- [x] Copyright, age rating answers, App Privacy answers
-- [ ] Price: undecided. The site's structured data currently advertises free;
-      if it ships paid, update `web/src/layouts/Base.astro`.
+- [x] Category: Music; copyright, age rating, App Privacy answers
+- [x] Review notes — lead with the zero-permission repro path, then explain why a music visualizer needs screen recording and that the video leg is 2×2 px and discarded
+- [ ] **Price: undecided.** The site's structured data advertises free; if it ships paid, update `web/src/layouts/Base.astro`
 
-All in `docs/app-store-metadata.md`. Re-check limits with
-`python3 scripts/check-metadata.py`.
-
-### Review notes — **drafted**
-
-- [x] Written, in `docs/app-store-metadata.md`. Leads with the
-      zero-permission repro path, then explains why a music visualizer needs
-      the screen-recording permission and that the video leg is 2×2 px and
-      discarded.
+All in `docs/app-store-metadata.md`; re-check with `make check-metadata`.
 
 ---
 
-## 5. Contact addresses are placeholders
-
-`web/src/consts.ts` publishes `support@synesthia.app` and
-`privacy@synesthia.app`. **Neither has mail routing yet.** Apple checks that
-the support URL resolves, and a dead support address is a genuine review risk
-as well as a bad look.
-
-- [ ] Set up mail routing for both, or change them to a real address
-
----
-
-## 6. What needs a human
+## 5. What needs a human
 
 Ordered by what blocks the most.
 
-1. **B2 — Apple Developer portal.** Certificates, App ID, profiles, ASC
-   record, notary credentials. Then a throwaway upload.
-2. **B7 — trademark clearance.** Blocks the name; cheapest to resolve now.
-3. **Mail routing** for the two published addresses (§5).
-4. **Screenshots and the preview video.** Requires driving the app by hand and
-   recording it; I have no screen-recording permission in this environment, so
-   I could not capture, or even visually check, a single frame of the UI I
-   changed.
-5. **Look at the app.** Everything below was verified only structurally —
-   builds, assertions against the built bundle, power assertions, crash
-   reports, and unit tests:
+1. **Mac Installer Distribution certificate** (§3 B2), then the ASC record and a
+   throwaway upload. The only thing between here and a submission.
+2. **App Store screenshots at a supported size, and the preview video** (§4).
+3. **Look at and listen to the app.** Verified structurally, never by eye or ear:
    - the first-run welcome sheet's layout and wording
-   - the demo track's *sound* (verified only as levels and per-band energy)
-   - Reduce Motion actually looking calmer
-   - VoiceOver actually reading the new labels
-6. **Sparkle's final step.** The code is written and guarded on
-   `canImport(Sparkle)`; linking the package needs a decision about keeping it
-   out of the App Store build. See `docs/distribution.md`.
-7. **Regression-test the Music path by hand** (B6's follow-up) with Music.app
-   running, in the `Direct` configuration.
+   - whether the demo track _sounds_ good, as opposed to measuring well
+   - whether Reduce Motion actually looks calmer
+   - whether VoiceOver actually reads the new labels
+4. **Regression-test the Music path by hand** — Music.app running, `Direct`
+   configuration. B6's outstanding follow-up.
+5. **Install the shipped DMG on a second Mac** and take one update end to end,
+   to watch Sparkle do it for real rather than by assertion.
+6. **Flip `APP_STORE_AVAILABLE` to `true`** once, and only once, review passes.
 
 ---
 
-## 7. Strategic note: ship direct first
+## 6. Notable findings
 
-Still worth doing, and now cheaper than when this plan was written.
+Kept because each cost real time and each is the kind of thing that recurs. The
+durable rules live in `CLAUDE.md`; this is the index.
 
-A **notarized direct download** from `synesthia.app` avoids the review queue
-entirely, and `scripts/build-direct.sh` already implements the whole pipeline —
-archive, Developer ID export, signature and hardened-runtime verification, DMG,
-notarize, staple, Gatekeeper check. It needs only the Developer ID certificate
-from B2.
+- **Every `FilePlayer` launch crashed.** `SWIFT_DEFAULT_ACTOR_ISOLATION =
+MainActor` makes an inline closure main-actor isolated; AVAudioEngine calls tap
+  blocks on a realtime thread, so Swift 6's check trapped on the first buffer.
+  The same defect sat in `scheduleFile`'s completion handler and would have
+  killed the app at the first loop point. `Task { @MainActor … }` does not help —
+  the trap precedes it. Fixed with `nonisolated` block factories.
+- **`INFOPLIST_KEY_*` only accepts Apple's known keys.** `INFOPLIST_KEY_SUFeedURL`
+  sat in the project doing nothing, silently. Third-party keys need a real
+  `INFOPLIST_FILE` merged with the generated one.
+- **Never pipe into `grep -q` under `set -o pipefail`.** `grep -q` exits on match,
+  SIGPIPEs the producer, and the pipeline "fails". The `if producer | grep -q
+LEAK` form fails _open_ — the `MUSIC_APP_SOURCE` leak assertion was silently
+  passing on a binary that contained the string.
+- **A notarized DMG is not a signed DMG.** `hdiutil` output is unsigned;
+  Gatekeeper's primary-signature check reports `no usable signature` regardless of
+  the stapled ticket. Sign before notarizing.
+- **Staple the app before building the DMG.** Stapling it afterwards leaves the
+  copy inside the image without a ticket — which is the copy users run, and the
+  one Sparkle installs.
+- **Two factual errors were caught before they reached the listing**: the site
+  claimed macOS 26.5 (target is 26.0) and Apple silicon only (archives are
+  universal; Tahoe is the last Intel release).
 
-The `temporary-exception.apple-events` problem is now purely an App Store
-concern by construction: the `Direct` configuration ships the Music.app feature
-and the App Store one does not contain it at all. That means real users and
-real crash data can arrive before the store submission — from a hardened
-position rather than a speculative one.
+---
 
-Remaining incremental cost: the Developer ID certificate, notary credentials,
-and the Sparkle linking decision.
+## 7. Deliberately deferred
+
+- [ ] **English only.** Fine for v1; the string-catalog migration is noted in `CLAUDE.md`
+- [ ] **Visualizer test coverage.** `AudioAnalyzer` is covered; the Metal visualizers are much harder to assert on
+- [ ] **`RELEASE.size` is hand-maintained.** Only known after `make direct` prints it; `/download?json` reports it live if the site ever wants to read it
+
+---
+
+## 8. Verification evidence
+
+Everything below was re-checked on 2026-07-25 against the shipped 1.0.
+
+| Check                                             | Result                                                                                           |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `Release` / `Direct` / `Debug` builds             | succeed, zero warnings                                                                           |
+| `make test`                                       | 19/19 pass                                                                                       |
+| Archive is universal                              | `x86_64 arm64`                                                                                   |
+| `get-task-allow` in archive                       | absent                                                                                           |
+| Apple Events entitlements in `Release`            | absent                                                                                           |
+| AppleScript string in `Release` binary            | absent                                                                                           |
+| **Sparkle in `Release`**                          | absent — framework, link and Info.plist keys                                                     |
+| **Sparkle in `Direct`**                           | framework, `Installer.xpc`, EdDSA key, HTTPS feed, entitlements                                  |
+| Nested Sparkle executables hardened               | `Installer.xpc`, `Downloader.xpc`, `Updater.app`, `Autoupdate`                                   |
+| Notarization                                      | 3 submissions, all `Accepted`                                                                    |
+| Gatekeeper — DMG                                  | `accepted, source=Notarized Developer ID`                                                        |
+| Gatekeeper — app, and app inside the DMG          | `accepted, source=Notarized Developer ID`                                                        |
+| Published DMG vs. notarized DMG                   | byte-identical (SHA-256)                                                                         |
+| Appcast signature vs. published DMG               | verifies; a 1-byte change is rejected                                                            |
+| App's `SUFeedURL` vs. live feed                   | match                                                                                            |
+| Pages Functions                                   | `/appcast.xml`, `/download` (302 + `?json`), `/downloads/*` incl. 206/416/304, traversal blocked |
+| `PrivacyInfo.xcprivacy`, `DemoLoop.m4a` in bundle | present                                                                                          |
+| Metadata field lengths                            | all within limits                                                                                |
+
+**Still not verified: anything visual or audible.** No pixel of the UI and no
+second of the demo track has been assessed by a human in this workstream — see
+§5.3.

@@ -1,0 +1,90 @@
+name: Healthcheck
+
+# The PR quality gate. Two independent jobs, because the repo is two projects:
+# `web/` is a self-contained Astro site with its own package.json and lockfile,
+# and everything else is the macOS app, gated by `make healthcheck`.
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A new push to the same PR supersedes the run in flight.
+concurrency:
+  group: healthcheck-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    name: Web
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Treat web/ as its own project: every step runs from there.
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Check formatting and Astro types
+        run: npm run check
+
+      - name: Type-check the Pages Functions
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+  apple:
+    name: Apple
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      # The project needs Xcode 26.6+ (macOS 26 deployment target, Swift 6.3,
+      # swift-format from the toolchain) and the macos-26 image still defaults
+      # /Applications/Xcode.app to 26.5 — so pick the newest Xcode 26 it ships,
+      # and fall back to whatever is selected if the layout ever changes.
+      - name: Select Xcode
+        run: |
+          set -euo pipefail
+          app=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1 || true)
+          if [[ -n "$app" ]]; then sudo xcode-select -s "$app"; fi
+          xcodebuild -version
+          swift --version
+
+      # Shaders.metal compiles at build time, which needs the Metal Toolchain
+      # component. It is a no-op when the image already has it; drop this step
+      # if the runner images start shipping it unconditionally.
+      - name: Install the Metal toolchain
+        run: xcodebuild -downloadComponent MetalToolchain -quiet || true
+
+      # Sparkle is the only SPM dependency, and only the Direct target links it.
+      - name: Cache SwiftPM
+        uses: actions/cache@v6
+        with:
+          path: ~/Library/Caches/org.swift.swiftpm
+          key: swiftpm-${{ runner.os }}-${{ hashFiles('Synesthia.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          restore-keys: swiftpm-${{ runner.os }}-
+
+      # CI=true is set by Actions, which makes the Makefile ad-hoc sign instead
+      # of reaching for a Developer ID that does not exist on the runner.
+      - name: Healthcheck
+        run: make install && make healthcheck

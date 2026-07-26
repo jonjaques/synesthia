@@ -14,13 +14,13 @@ npm run preview
 
 Everything pending lives in `src/consts.ts` and `astro.config.mjs`:
 
-| What | Where | Current value |
-|---|---|---|
-| Mac App Store listing | `APP_STORE_URL` in `src/consts.ts` | `https://apps.apple.com/app/id0000000000` |
-| Google Analytics 4 ID | `PUBLIC_GA_ID` env var, or `GA_MEASUREMENT_ID` in `src/consts.ts` | `G-XXXXXXXXXX` |
-| Production domain | `site` in `astro.config.mjs`, and the `Sitemap:` line in `public/robots.txt` | `https://synesthia.app` |
-| Twitter/X handle | `SITE.social` in `src/consts.ts` | `@synesthia_app` |
-| Version, size, requirements | `RELEASE` in `src/consts.ts` | 1.0 / 4.2 MB / macOS 26 |
+| What                        | Where                                                                        | Current value                             |
+| --------------------------- | ---------------------------------------------------------------------------- | ----------------------------------------- |
+| Mac App Store listing       | `APP_STORE_URL` in `src/consts.ts`                                           | `https://apps.apple.com/app/id0000000000` |
+| Google Analytics 4 ID       | `PUBLIC_GA_ID` env var, or `GA_MEASUREMENT_ID` in `src/consts.ts`            | `G-XXXXXXXXXX`                            |
+| Production domain           | `site` in `astro.config.mjs`, and the `Sitemap:` line in `public/robots.txt` | `https://synesthia.app`                   |
+| Twitter/X handle            | `SITE.social` in `src/consts.ts`                                             | `@synesthia_app`                          |
+| Version, size, requirements | `RELEASE` in `src/consts.ts`                                                 | 1.0 / 4.2 MB / macOS 26                   |
 
 The analytics snippet is only emitted once the measurement ID differs from the
 placeholder, so dev and preview builds write no cookie and load no script. Set

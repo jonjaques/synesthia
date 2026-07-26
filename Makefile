@@ -8,6 +8,7 @@
 #   CONFIGURATION   Debug (default) | Direct | Release — see docs/distribution.md
 #   DESTINATION     xcodebuild -destination for `make test`
 #   ARGS            Extra flags forwarded to the script a target wraps
+#   BUMP            patch (default) | minor | major | an explicit version, for `make bump`
 
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
@@ -21,6 +22,7 @@ DIRECT_SCHEME := Synesthia Direct
 CONFIGURATION ?= Debug
 DESTINATION   ?= platform=macOS
 ARGS          ?=
+BUMP          ?= patch
 
 # Where xcodebuild actually put Synesthia.app for $(CONFIGURATION). Resolved
 # lazily (`=`, not `:=`) so targets that never need it don't pay the ~2 s.
@@ -28,12 +30,25 @@ BUILT_PRODUCTS_DIR = $(shell xcodebuild -project $(PROJECT) -scheme $(SCHEME) \
 	-configuration $(CONFIGURATION) -showBuildSettings 2>/dev/null \
 	| awk -F' = ' '/ BUILT_PRODUCTS_DIR = /{print $$2; exit}')
 
-.PHONY: help build build-direct run test clean app-path \
+# swift-format ships inside the Xcode toolchain (`swift format`, no install
+# step), configured by .swift-format at the repo root. Everything Swift we own
+# — the app, the tests, and the standalone screenshot helper.
+SWIFT_FORMAT  := swift format
+SWIFT_SOURCES := Synesthia SynesthiaTests scripts/shotkit.swift
+
+# CI runners have no signing identity and no provisioning profile, so automatic
+# signing fails before a single file compiles. Ad-hoc signing (`-`) still
+# satisfies the sandbox, which is all `make test` needs. GitHub Actions (and
+# most other CI) exports CI=true; locally this is empty and nothing changes.
+ifdef CI
+SIGNING := CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM= PROVISIONING_PROFILE_SPECIFIER=
+endif
+
+.PHONY: help build bump build-direct run test clean app-path \
+        install healthcheck lint format \
         demo-track screenshots check-metadata \
-        appstore appstore-upload direct direct-fast \
-        sparkle-keys appcast publish-release publish-dry-run \
-        web-install web-dev web-build web-preview web-assets \
-        web-typecheck web-cf-types
+        appstore appstore-upload direct direct-fast bump \
+        sparkle-keys appcast publish-release publish-dry-run
 
 help: ## List the available targets
 	@printf '\033[1mSynesthia\033[0m — make targets\n\n'
@@ -47,16 +62,16 @@ help: ## List the available targets
 # ==== App
 
 build: ## Build the App Store app (CONFIGURATION=Debug by default)
-	xcodebuild -project $(PROJECT) -scheme $(SCHEME) -configuration $(CONFIGURATION) build
+	xcodebuild -project $(PROJECT) -scheme $(SCHEME) -configuration $(CONFIGURATION) $(SIGNING) build
 
 build-direct: ## Build the Sparkle-enabled direct app (same product name — see docs)
-	xcodebuild -project $(PROJECT) -scheme "$(DIRECT_SCHEME)" -configuration $(CONFIGURATION) build
+	xcodebuild -project $(PROJECT) -scheme "$(DIRECT_SCHEME)" -configuration $(CONFIGURATION) $(SIGNING) build
 
 run: build ## Build and launch the app
 	open "$(BUILT_PRODUCTS_DIR)/Synesthia.app"
 
 test: ## Run the SynesthiaTests suite
-	xcodebuild test -project $(PROJECT) -scheme $(SCHEME) -destination '$(DESTINATION)'
+	xcodebuild test -project $(PROJECT) -scheme $(SCHEME) -destination '$(DESTINATION)' $(SIGNING)
 
 clean: ## Clean the Xcode build and the release output in build/
 	xcodebuild -project $(PROJECT) -scheme $(SCHEME) clean
@@ -64,6 +79,24 @@ clean: ## Clean the Xcode build and the release output in build/
 
 app-path: ## Print the built app's path for the current CONFIGURATION
 	@echo "$(BUILT_PRODUCTS_DIR)/Synesthia.app"
+
+# ==== Checks
+
+install: ## Install npm dependencies: root formatting tools
+	npm install
+
+# The PR quality gate: what .github/workflows/healthcheck.yml runs on the
+# macOS side, as `make install && make healthcheck`. Order matters — the cheap
+# check fails first. `web/` is its own project and is gated separately.
+healthcheck: lint test build-direct ## Everything a PR has to pass: lint, tests, both builds
+
+lint: ## Check formatting without writing: Prettier, then swift-format --strict
+	npm run format:check && $(SWIFT_FORMAT) lint --configuration .swift-format \
+		--recursive --parallel --strict $(SWIFT_SOURCES)
+
+format: ## Reformat in place: Prettier, then swift-format (.swift-format)
+	npm run format && $(SWIFT_FORMAT) --configuration .swift-format \
+		--recursive --parallel --in-place $(SWIFT_SOURCES)
 
 # ==== Assets
 
@@ -87,6 +120,9 @@ direct: ## Archive, sign, notarize, staple and package the direct build (Direct 
 direct-fast: ## Same, but skip notarization (local smoke test)
 	./scripts/build-direct.sh --skip-notarize
 
+bump: ## Bump the version everywhere: BUMP=patch|minor|major|<version> (default patch)
+	./scripts/bump-version.sh $(BUMP) $(ARGS)
+
 sparkle-keys: ## One-time: create the Sparkle EdDSA signing key and print the public half
 	./scripts/sparkle-keys.sh $(ARGS)
 
@@ -101,26 +137,3 @@ publish-dry-run: ## …show what publish-release would upload, without uploading
 
 check-metadata: ## Check docs/app-store-metadata.md against App Store field limits
 	python3 scripts/check-metadata.py
-
-# ==== Website  (web/)
-
-web-install: ## Install the website's npm dependencies
-	cd web && npm ci
-
-web-dev: ## Run the Astro dev server
-	cd web && npm run dev
-
-web-build: ## Build the static site into web/dist
-	cd web && npm run build
-
-web-preview: ## Serve the built site locally
-	cd web && npm run preview
-
-web-assets: ## Regenerate icons/OG images in web/public from assets/
-	cd web && npm run assets
-
-web-typecheck: ## Type-check the Pages Functions against the Workers runtime
-	cd web && npm run typecheck
-
-web-cf-types: ## Regenerate web/worker-configuration.d.ts after editing wrangler.jsonc
-	cd web && npm run cf-types
