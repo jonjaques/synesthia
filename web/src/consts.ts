@@ -5,16 +5,16 @@
  */
 
 export const SITE = {
-	name: 'Synesthia',
-	/** Used in <title> and the Open Graph title. */
-	title: 'Synesthia — Music you can see',
-	tagline: 'Music visualizer for macOS',
-	description:
-		'Synesthia turns whatever your Mac is playing into light. A 64-band FFT drives three Metal visualizers in real time, from Apple Music, any app’s audio, a mic, or a file.',
-	author: 'Jon Jaques',
-	locale: 'en_US',
-	/** Twitter/X handle for the summary card. PLACEHOLDER. */
-	social: '@synesthia_app',
+  name: "Synesthia",
+  /** Used in <title> and the Open Graph title. */
+  title: "Synesthia — Music you can see",
+  tagline: "Music visualizer for macOS",
+  description:
+    "Synesthia turns whatever your Mac is playing into light. A 64-band FFT drives three Metal visualizers in real time, from Apple Music, any app’s audio, a mic, or a file.",
+  author: "Jon Jaques",
+  locale: "en_US",
+  /** Twitter/X handle for the summary card. PLACEHOLDER. */
+  social: "@synesthia_app",
 } as const;
 
 /**
@@ -22,7 +22,7 @@ export const SITE = {
  * real product URL (https://apps.apple.com/app/id0000000000) and every download
  * button on the page follows.
  */
-export const APP_STORE_URL = 'https://apps.apple.com/app/id0000000000';
+export const APP_STORE_URL = "https://apps.apple.com/app/id0000000000";
 
 /**
  * The notarized direct download — the build that keeps the Music.app source,
@@ -32,7 +32,7 @@ export const APP_STORE_URL = 'https://apps.apple.com/app/id0000000000';
  * current DMG in R2 (see web/functions/download.ts), so this link keeps working
  * across releases and the site never has to be rebuilt to publish one.
  */
-export const DIRECT_DOWNLOAD_URL = '/download';
+export const DIRECT_DOWNLOAD_URL = "/download";
 
 /**
  * Whether to advertise the direct download on the site.
@@ -62,17 +62,17 @@ export const APP_STORE_AVAILABLE = false;
 
 /** Shown next to the download button. */
 export const RELEASE = {
-	version: '1.0',
-	// The deployment target is 26.0, not 26.5 — the only API pinning the floor
-	// is `glassEffect`, which is a 26.0 API.
-	requires: 'macOS 26 or later',
-	// Release archives are universal (arm64 + x86_64); macOS 26 Tahoe is the
-	// last release supporting Intel Macs, so they are still in scope.
-	chip: 'Apple silicon or Intel',
-	// The notarized, stapled, signed DMG from `make direct`: 4,351,091 bytes.
-	// Read it from `/download?json`, or `stat -f %z` — NOT from `du -h`, which
-	// reports allocated blocks and answered 5.1M for this very file.
-	size: '4.4 MB',
+  version: "1.0",
+  // The deployment target is 26.0, not 26.5 — the only API pinning the floor
+  // is `glassEffect`, which is a 26.0 API.
+  requires: "macOS 26 or later",
+  // Release archives are universal (arm64 + x86_64); macOS 26 Tahoe is the
+  // last release supporting Intel Macs, so they are still in scope.
+  chip: "Apple silicon or Intel",
+  // The notarized, stapled, signed DMG from `make direct`: 4,351,091 bytes.
+  // Read it from `/download?json`, or `stat -f %z` — NOT from `du -h`, which
+  // reports allocated blocks and answered 5.1M for this very file.
+  size: "4.4 MB",
 } as const;
 
 /**
@@ -81,13 +81,13 @@ export const RELEASE = {
  * PLACEHOLDER — these need real mail routing on the synesthia.app domain.
  */
 export const CONTACT = {
-	support: 'support@synesthia.app',
-	privacy: 'privacy@synesthia.app',
+  support: "support@synesthia.app",
+  privacy: "privacy@synesthia.app",
 } as const;
 
 /** Last substantive revision of the privacy policy, shown on that page. */
 export const LEGAL = {
-	effective: '25 July 2026',
+  effective: "25 July 2026",
 } as const;
 
 /**
@@ -95,9 +95,9 @@ export const LEGAL = {
  * which is the production property. Set PUBLIC_GA_ID to 'G-XXXXXXXXXX' (or any
  * non-`G-` value) to build without emitting the analytics script at all.
  */
-export const GA_MEASUREMENT_ID = import.meta.env.PUBLIC_GA_ID ?? 'G-MEDVX83G9P';
+export const GA_MEASUREMENT_ID = import.meta.env.PUBLIC_GA_ID ?? "G-MEDVX83G9P";
 
 export const GA_ENABLED =
-	typeof GA_MEASUREMENT_ID === 'string' &&
-	GA_MEASUREMENT_ID.startsWith('G-') &&
-	GA_MEASUREMENT_ID !== 'G-XXXXXXXXXX';
+  typeof GA_MEASUREMENT_ID === "string" &&
+  GA_MEASUREMENT_ID.startsWith("G-") &&
+  GA_MEASUREMENT_ID !== "G-XXXXXXXXXX";

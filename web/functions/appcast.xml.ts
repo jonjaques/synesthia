@@ -1,4 +1,4 @@
-import { APPCAST_KEY, APPCAST_CACHE, matchesEtag } from '../lib/releases';
+import { APPCAST_KEY, APPCAST_CACHE, matchesEtag } from "../lib/releases";
 
 /**
  * `GET /appcast.xml` — the Sparkle feed, streamed out of R2.
@@ -16,49 +16,55 @@ import { APPCAST_KEY, APPCAST_CACHE, matchesEtag } from '../lib/releases';
  * to an installed copy.
  */
 export const onRequest: PagesFunction<Env> = async (ctx) => {
-	const { request, env, waitUntil } = ctx;
+  const { request, env, waitUntil } = ctx;
 
-	if (request.method !== 'GET' && request.method !== 'HEAD') {
-		return new Response('Method not allowed', {
-			status: 405,
-			headers: { allow: 'GET, HEAD' },
-		});
-	}
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    return new Response("Method not allowed", {
+      status: 405,
+      headers: { allow: "GET, HEAD" },
+    });
+  }
 
-	const cache = caches.default;
-	const cacheKey = new Request(new URL(request.url).toString(), { method: 'GET' });
+  const cache = caches.default;
+  const cacheKey = new Request(new URL(request.url).toString(), {
+    method: "GET",
+  });
 
-	const hit = await cache.match(cacheKey);
-	if (hit) {
-		if (matchesEtag(request.headers.get('if-none-match'), hit.headers.get('etag'))) {
-			return new Response(null, { status: 304, headers: hit.headers });
-		}
-		return hit;
-	}
+  const hit = await cache.match(cacheKey);
+  if (hit) {
+    if (
+      matchesEtag(request.headers.get("if-none-match"), hit.headers.get("etag"))
+    ) {
+      return new Response(null, { status: 304, headers: hit.headers });
+    }
+    return hit;
+  }
 
-	// `onlyIf` takes the request headers directly, so a client's If-None-Match
-	// round-trips to R2 without being parsed here.
-	const object = await env.RELEASES.get(APPCAST_KEY, { onlyIf: request.headers });
+  // `onlyIf` takes the request headers directly, so a client's If-None-Match
+  // round-trips to R2 without being parsed here.
+  const object = await env.RELEASES.get(APPCAST_KEY, {
+    onlyIf: request.headers,
+  });
 
-	if (!object) {
-		return new Response('No appcast has been published yet.', {
-			status: 404,
-			headers: { 'content-type': 'text/plain; charset=utf-8' },
-		});
-	}
+  if (!object) {
+    return new Response("No appcast has been published yet.", {
+      status: 404,
+      headers: { "content-type": "text/plain; charset=utf-8" },
+    });
+  }
 
-	const headers = new Headers();
-	object.writeHttpMetadata(headers);
-	headers.set('etag', object.httpEtag);
-	headers.set('content-type', 'application/rss+xml; charset=utf-8');
-	headers.set('cache-control', APPCAST_CACHE);
+  const headers = new Headers();
+  object.writeHttpMetadata(headers);
+  headers.set("etag", object.httpEtag);
+  headers.set("content-type", "application/rss+xml; charset=utf-8");
+  headers.set("cache-control", APPCAST_CACHE);
 
-	// A precondition that failed comes back as an object with no body.
-	if (!('body' in object) || !object.body) {
-		return new Response(null, { status: 304, headers });
-	}
+  // A precondition that failed comes back as an object with no body.
+  if (!("body" in object) || !object.body) {
+    return new Response(null, { status: 304, headers });
+  }
 
-	const response = new Response(object.body, { headers });
-	waitUntil(cache.put(cacheKey, response.clone()));
-	return response;
+  const response = new Response(object.body, { headers });
+  waitUntil(cache.put(cacheKey, response.clone()));
+  return response;
 };
