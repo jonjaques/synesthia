@@ -18,6 +18,13 @@ export const SITE = {
 } as const;
 
 /**
+ * The public source repository. Synesthia is MIT licensed, and the site links
+ * to it from the footer — the same two destinations the app's Help menu offers.
+ */
+export const GITHUB_URL = "https://github.com/jonjaques/synesthia";
+export const GITHUB_ISSUES_URL = `${GITHUB_URL}/issues`;
+
+/**
  * PLACEHOLDER — the Mac App Store listing does not exist yet. Swap this for the
  * real product URL (https://apps.apple.com/app/id0000000000) and every download
  * button on the page follows.

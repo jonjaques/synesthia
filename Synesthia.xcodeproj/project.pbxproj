@@ -395,7 +395,7 @@
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.music";
 				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Synesthia controls the Music app to play, pause, and show the current track.";
-				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Jon Jaques. All rights reserved.";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Jon Jaques. MIT licensed.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Synesthia listens to the selected audio input to drive the visualizer.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -432,7 +432,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.music";
-				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Jon Jaques. All rights reserved.";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Jon Jaques. MIT licensed.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Synesthia listens to the selected audio input to drive the visualizer.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -524,7 +524,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.music";
-				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Jon Jaques. All rights reserved.";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Jon Jaques. MIT licensed.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Synesthia listens to the selected audio input to drive the visualizer.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -563,7 +563,7 @@
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.music";
 				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Synesthia controls the Music app to play, pause, and show the current track.";
-				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Jon Jaques. All rights reserved.";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Jon Jaques. MIT licensed.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Synesthia listens to the selected audio input to drive the visualizer.";
 				INFOPLIST_FILE = "Synesthia-Direct-Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -602,7 +602,7 @@
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.music";
 				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Synesthia controls the Music app to play, pause, and show the current track.";
-				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Jon Jaques. All rights reserved.";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Jon Jaques. MIT licensed.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Synesthia listens to the selected audio input to drive the visualizer.";
 				INFOPLIST_FILE = "Synesthia-Direct-Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -641,7 +641,7 @@
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.music";
 				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Synesthia controls the Music app to play, pause, and show the current track.";
-				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Jon Jaques. All rights reserved.";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Jon Jaques. MIT licensed.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Synesthia listens to the selected audio input to drive the visualizer.";
 				INFOPLIST_FILE = "Synesthia-Direct-Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = (

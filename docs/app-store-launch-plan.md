@@ -5,7 +5,7 @@ true. Last reconciled against the repo and against Apple/Cloudflare on
 **2026-07-25**, after the direct download went live.
 
 This absorbed the former `docs/prerelease-report.md` — its decisions, findings
-and verification evidence are §2, §7 and §9 below, brought up to date. That file
+and verification evidence are §2, §6 and §8 below, brought up to date. That file
 is gone; `git log -- docs/prerelease-report.md` still has it if the dated
 snapshot is ever wanted. See `docs/distribution.md` for how the release pipeline
 works and `docs/app-store-metadata.md` for every listing field.
@@ -45,7 +45,7 @@ by construction — the store build does not contain the feature at all.
 - [x] **EdDSA signing key** generated; public half in `Synesthia-Direct-Info.plist`
 - [x] Sandboxed-Sparkle wiring: `Installer.xpc`, `-spks`/`-spki` mach-lookup exceptions, `network.client`
 - [x] **App and DMG both notarized and stapled**; the app _inside_ the DMG carries its own ticket
-- [x] DMG signed with Developer ID (not just notarized — see §7)
+- [x] DMG signed with Developer ID (not just notarized — see §6)
 - [x] **R2 bucket + Pages Functions**: `/appcast.xml`, `/download`, `/downloads/*`
 - [x] `make bump` — semver + build number across all 9 pbxproj copies
 - [x] Publish guard: refuses to overwrite a published DMG whose contents differ
@@ -104,14 +104,13 @@ rather than a sine, because a sine is not a cymbal. One test was found vacuous
 
 ## 2. Decisions taken
 
-| Question          | Decision                           | Consequence                                                                                                                   |
-| ----------------- | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| B5 — Apple Events | **Feature-flag it**                | `Direct` configuration; store build has no Music.app integration at all                                                       |
-| B4 — demo audio   | **Synthesize and bundle a clip**   | `scripts/make_demo_loop.py`; no licensing question                                                                            |
-| B7 — trademark    | **Proceed under the current name** | Still open — §3                                                                                                               |
-| Distribution      | **Both channels, direct first**    | Full notarization pipeline; direct shipped first                                                                              |
-| Sparkle isolation | **Duplicate the app target**       | SPM attaches packages per-target, not per-configuration; one extra target to keep in sync                                     |
-| Release hosting   | **R2 + Pages Functions**           | Publishing is an upload, not a site rebuild — which matters because notarization must finish before the feed can name the DMG |
+| Question          | Decision                         | Consequence                                                                                                                   |
+| ----------------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| B5 — Apple Events | **Feature-flag it**              | `Direct` configuration; store build has no Music.app integration at all                                                       |
+| B4 — demo audio   | **Synthesize and bundle a clip** | `scripts/make_demo_loop.py`; no licensing question                                                                            |
+| Distribution      | **Both channels, direct first**  | Full notarization pipeline; direct shipped first                                                                              |
+| Sparkle isolation | **Duplicate the app target**     | SPM attaches packages per-target, not per-configuration; one extra target to keep in sync                                     |
+| Release hosting   | **R2 + Pages Functions**         | Publishing is an upload, not a site rebuild — which matters because notarization must finish before the feed can name the DMG |
 
 **MusicKit cannot replace Apple Events on macOS.** `SystemMusicPlayer` is
 unavailable on the platform and `ApplicationMusicPlayer` reports only what your
@@ -147,21 +146,6 @@ Note the second line may well clear itself once the certificate exists — a
 profile for that App ID _is_ on this machine. Don't chase it until the installer
 certificate is in place.
 
-### B7 — Trademark
-
-"Synesthia" is one letter from **Synesthesia**, an established music-software
-product in the same category. A USPTO search finds no registered mark for
-"Synesthesia" in the software class, but that is **not clearance**: the product
-demonstrably exists and sells, so common-law rights are likely, and confusing
-similarity is judged on overall impression rather than letter count. A legal
-call, not a technical one.
-
-- [ ] Clear this before the name goes further
-
-Now marginally more expensive than it was: the name is on a live domain, a
-shipped DMG, a bundle identifier and a published Sparkle feed. Still cheap
-relative to an App Store listing.
-
 ---
 
 ## 4. App Store Connect checklist
@@ -190,40 +174,27 @@ All in `docs/app-store-metadata.md`; re-check with `make check-metadata`.
 
 ---
 
-## 5. Contact addresses are still placeholders
-
-`web/src/consts.ts` publishes `support@synesthia.app` and
-`privacy@synesthia.app`. **Neither has mail routing.** Apple checks that the
-support URL resolves, and a dead support address is a review risk as well as a
-bad look — and it is now reachable from a shipping app's Help menu.
-
-- [ ] Set up mail routing for both, or change them to a real address
-
----
-
-## 6. What needs a human
+## 5. What needs a human
 
 Ordered by what blocks the most.
 
 1. **Mac Installer Distribution certificate** (§3 B2), then the ASC record and a
    throwaway upload. The only thing between here and a submission.
-2. **Trademark clearance** (§3 B7).
-3. **Mail routing** for the two published addresses (§5).
-4. **App Store screenshots at a supported size, and the preview video** (§4).
-5. **Look at and listen to the app.** Verified structurally, never by eye or ear:
+2. **App Store screenshots at a supported size, and the preview video** (§4).
+3. **Look at and listen to the app.** Verified structurally, never by eye or ear:
    - the first-run welcome sheet's layout and wording
    - whether the demo track _sounds_ good, as opposed to measuring well
    - whether Reduce Motion actually looks calmer
    - whether VoiceOver actually reads the new labels
-6. **Regression-test the Music path by hand** — Music.app running, `Direct`
+4. **Regression-test the Music path by hand** — Music.app running, `Direct`
    configuration. B6's outstanding follow-up.
-7. **Install the shipped DMG on a second Mac** and take one update end to end,
+5. **Install the shipped DMG on a second Mac** and take one update end to end,
    to watch Sparkle do it for real rather than by assertion.
-8. **Flip `APP_STORE_AVAILABLE` to `true`** once, and only once, review passes.
+6. **Flip `APP_STORE_AVAILABLE` to `true`** once, and only once, review passes.
 
 ---
 
-## 7. Notable findings
+## 6. Notable findings
 
 Kept because each cost real time and each is the kind of thing that recurs. The
 durable rules live in `CLAUDE.md`; this is the index.
@@ -253,7 +224,7 @@ LEAK` form fails _open_ — the `MUSIC_APP_SOURCE` leak assertion was silently
 
 ---
 
-## 8. Deliberately deferred
+## 7. Deliberately deferred
 
 - [ ] **English only.** Fine for v1; the string-catalog migration is noted in `CLAUDE.md`
 - [ ] **Visualizer test coverage.** `AudioAnalyzer` is covered; the Metal visualizers are much harder to assert on
@@ -261,7 +232,7 @@ LEAK` form fails _open_ — the `MUSIC_APP_SOURCE` leak assertion was silently
 
 ---
 
-## 9. Verification evidence
+## 8. Verification evidence
 
 Everything below was re-checked on 2026-07-25 against the shipped 1.0.
 
@@ -288,4 +259,4 @@ Everything below was re-checked on 2026-07-25 against the shipped 1.0.
 
 **Still not verified: anything visual or audible.** No pixel of the UI and no
 second of the demo track has been assessed by a human in this workstream — see
-§6.5.
+§5.3.

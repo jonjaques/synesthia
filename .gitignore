@@ -98,3 +98,15 @@ playground.xcworkspace
 # Swift Package Manager
 # Package.resolved
 node_modules/
+
+### Secrets
+# The EdDSA private half that signs the Sparkle appcast. `sparkle-keys.sh -x`
+# writes it here by default; it must never be committed. The public half lives
+# in Synesthia-Direct-Info.plist and is meant to be public.
+sparkle-private-key.txt
+*.p8
+*.p12
+*.mobileprovision
+.env
+.env.*
+!.env.example

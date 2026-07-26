@@ -4,7 +4,17 @@ A Metal-powered music visualizer for macOS, in the spirit of the classic
 iTunes/Music visualizer — but tone-reactive: a 64-band log-spaced FFT drives
 every visual, so bass, mids, and treble each shape the picture differently.
 
-![status](https://img.shields.io/badge/status-working%20v1-brightgreen)
+**[synesthia.app](https://synesthia.app)** — download, screenshots, and support.
+
+[![status](https://img.shields.io/badge/status-working%20v1-brightgreen)](https://synesthia.app)
+[![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![macOS 26+](https://img.shields.io/badge/macOS-26%2B-lightgrey)](https://synesthia.app)
+
+## Install
+
+The notarized build is at **[synesthia.app/download](https://synesthia.app/download)**
+— universal (Apple silicon and Intel), macOS 26 or later, and it updates itself
+via Sparkle. Or [build it from source](#contributing).
 
 ## Using it
 
@@ -297,3 +307,25 @@ shader as `VizUniforms.p0…p3`. Audio data arrives as a 64-float band array, a
   project has `STRING_CATALOG_GENERATE_SYMBOLS` enabled and should migrate.
 - **Visualizer test coverage** — `SynesthiaTests` covers `AudioAnalyzer`
   thoroughly; the Metal visualizers have none and are much harder to assert on.
+
+## License
+
+[MIT](LICENSE) © 2026 Jon Jaques.
+
+The MIT grant covers the source. Two things in this repository are not code and
+are not licensed with it: the app icon (`Synesthia/Icon.icon`, `assets/Icon
+Exports/`) and the **Synesthia** name and wordmark, which identify the shipped
+app. Fork the code freely — just ship it under your own name and mark so nobody
+mistakes your build for this one.
+
+Sparkle, the only third-party dependency, is separately MIT licensed and linked
+into the direct-download target only.
+
+## Links
+
+- **Website** — [synesthia.app](https://synesthia.app)
+- **Source** — [github.com/jonjaques/synesthia](https://github.com/jonjaques/synesthia)
+- **Bugs and feature requests** — [GitHub Issues](https://github.com/jonjaques/synesthia/issues)
+- **Support** — [synesthia.app/support](https://synesthia.app/support)
+- **Privacy** — [synesthia.app/privacy](https://synesthia.app/privacy). The app
+  collects nothing; see [`PrivacyInfo.xcprivacy`](Synesthia/PrivacyInfo.xcprivacy).

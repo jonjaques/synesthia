@@ -56,11 +56,26 @@ struct SynesthiaApp: App {
 
                 Divider()
 
+                Button("Synesthia Website") {
+                    Self.open("https://synesthia.app")
+                }
                 Button("Synesthia Support") {
                     Self.open("https://synesthia.app/support")
                 }
                 Button("Privacy Policy") {
                     Self.open("https://synesthia.app/privacy")
+                }
+
+                Divider()
+
+                // Synesthia is open source (MIT). Both the store and direct
+                // builds link out to the repository — the source is the same
+                // for either, only the build configuration differs.
+                Button("Source Code on GitHub") {
+                    Self.open("https://github.com/jonjaques/synesthia")
+                }
+                Button("Report an Issue") {
+                    Self.open("https://github.com/jonjaques/synesthia/issues/new")
                 }
             }
 
