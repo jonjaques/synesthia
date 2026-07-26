@@ -321,7 +321,8 @@ fragment float4 auroraFragment(FSQuadOut in [[stage_in]],
 
 fragment float4 nebulaBackgroundFragment(FSQuadOut in [[stage_in]],
                                          constant VizUniforms& u [[buffer(0)]],
-                                         constant float* bands [[buffer(1)]]) {
+                                         constant float* bands [[buffer(1)]],
+                                         constant float* wave [[buffer(2)]]) {
     float2 uv = in.uv * 2.0 - 1.0;
     uv.x *= u.resolution.x / max(u.resolution.y, 1.0);
     float r = length(uv);
@@ -332,12 +333,13 @@ fragment float4 nebulaBackgroundFragment(FSQuadOut in [[stage_in]],
     float stars = starLayer(uv, 40.0, u.time, 2.0) + starLayer(uv + 11.3, 80.0, u.time, 4.0) * 0.5;
     col += stars * (0.20 + 0.80 * clamp(u.air * u.sensitivity, 0.0, 1.0));
 
-    // slow smoky nebula, breathing with the bass (two fbm fields multiplied
-    // and drifting in different directions gives the billowing look)
+    // slow smoky nebula, breathing with the bass and lifting on any onset
+    // (two fbm fields multiplied and drifting in different directions gives
+    // the billowing look)
     float smoke = fbm(uv * 1.6 + float2(u.time * 0.03 * u.speed, -u.time * 0.02 * u.speed));
     smoke *= fbm(uv * 3.1 - float2(0.0, u.time * 0.04 * u.speed));
     col += cosPalette(0.15 + u.centroid * 0.3 + u.time * 0.008, u.palette) * smoke
-         * (0.05 + 0.22 * u.bass * u.sensitivity);
+         * (0.05 + 0.22 * u.bass * u.sensitivity + 0.08 * u.flux);
 
     // counter-drifting wisp layer riding the low-mids
     float wisp = fbm(rot2(uv, 0.7) * 2.2 + float2(-u.time * 0.025 * u.speed, u.time * 0.018 * u.speed));
@@ -348,6 +350,23 @@ fragment float4 nebulaBackgroundFragment(FSQuadOut in [[stage_in]],
     col += cosPalette(0.5, u.palette)
          * (0.05 + 0.30 * u.beat + 0.15 * u.flux + 0.18 * u.bass * u.sensitivity)
          * smoothstep(0.9, 0.0, r) * 0.35;
+
+    // kick shockwave: the beat envelope decays 1 → 0, so (1 - beat) is a
+    // ring radius that expands outward from the core after every kick and
+    // fades as it goes — a stateless shockwave, echoing the one the CPU
+    // simulation drives through the particles.
+    float shockR = (1.0 - u.beat) * 1.5;
+    float shock = exp(-pow((r - shockR) * 8.0, 2.0)) * u.beat * u.beat;
+    col += cosPalette(0.12 + u.centroid * 0.25, u.palette) * shock * 0.45;
+
+    // oscilloscope halo: the live waveform wrapped in a ring around the
+    // cloud, mirrored left/right so the wrap point has no seam; overall
+    // loudness fades it in.
+    float theta = atan2(uv.y, uv.x) / 6.28318 + 0.5;
+    float w = waveAt(wave, 1.0 - fabs(theta * 2.0 - 1.0));
+    float scopeR = 0.85 + 0.30 * w * u.sensitivity;
+    float scope = smoothstep(0.030, 0.0, fabs(r - scopeR));
+    col += cosPalette(0.35 + u.centroid * 0.4, u.palette) * scope * (0.04 + 0.35 * u.level);
 
     col *= smoothstep(2.0, 0.5, r);
     return float4(col, 1.0);
@@ -376,7 +395,10 @@ vertex ParticleOut particleVertex(uint vid [[vertex_id]],
     Particle p = particles[vid];
 
     float yaw = u.time * 0.12 * u.speed;
-    float pitch = 0.30 * sin(u.time * 0.06 * u.speed);
+    // the spectral centroid leans the camera: dark music looks slightly up
+    // at the disc, bright music slightly down (centroid is smoothed, so this
+    // drifts rather than jitters)
+    float pitch = 0.30 * sin(u.time * 0.06 * u.speed) + 0.18 * (u.centroid - 0.5);
     float cy = cos(yaw), sy = sin(yaw);
     float cp = cos(pitch), sp = sin(pitch);
     float3x3 rotY = float3x3(float3(cy, 0.0, -sy), float3(0.0, 1.0, 0.0), float3(sy, 0.0, cy));
@@ -384,11 +406,14 @@ vertex ParticleOut particleVertex(uint vid [[vertex_id]],
 
     float3 pos = rotX * (rotY * p.posSize.xyz);
     // Push the cloud in front of the camera, then perspective-divide:
-    // farther particles land closer to center and draw smaller.
-    pos.z += 3.4;
+    // farther particles land closer to center and draw smaller. The kick
+    // envelope pulls the camera in, punching the whole cloud on the beat.
+    pos.z += 3.4 - 0.35 * u.beat;
 
     float persp = 1.0 / max(pos.z, 0.25);
     float2 clip = pos.xy * persp * 1.6;
+    // slow roll so the cloud never feels locked upright
+    clip = rot2(clip, 0.07 * sin(u.time * 0.05 * u.speed));
     clip.x *= u.resolution.y / max(u.resolution.x, 1.0);
 
     ParticleOut out;

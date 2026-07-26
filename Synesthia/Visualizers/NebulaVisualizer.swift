@@ -6,6 +6,13 @@ import simd
 /// outward as that band gets loud, with a slow orbiting camera and a smoky
 /// audio-reactive background. Closest in spirit to the classic iTunes visualizer.
 ///
+/// Each register gets its own body so the mix is legible at a glance: bass is
+/// a tight pulsing core, the mids form a flattened galaxy disc with
+/// differential rotation (inner particles orbit faster, shearing the disc
+/// into spiral streaks), and the treble is a spherical halo that throws
+/// comets on hi-hat/snare transients. Every kick launches a shockwave that
+/// sweeps outward through all three.
+///
 /// Unlike the other two (pure fragment-shader) visualizers, this one runs a
 /// small CPU simulation: every frame `update` advances all particles and
 /// writes their positions/colors into a shared `MTLBuffer`, which the GPU
@@ -31,8 +38,11 @@ final class NebulaVisualizer: Visualizer {
 
     /// CPU-side simulation state. Each particle lives on a ray from the
     /// origin (`direction`, a unit vector) at distance `radius`, orbits by
-    /// rotating that direction around its own `axis` at `spin` rad/s, and
-    /// listens to one frequency `band`. `phase` desynchronizes the flicker.
+    /// rotating that direction around an axis at `spin` rad/s, and listens to
+    /// one frequency `band`. `phase` desynchronizes the flicker and picks the
+    /// comet subset; `kick` is an outward impulse velocity (comets, the beat
+    /// shockwave) that decays exponentially while the radius spring below
+    /// reels the particle back in.
     private struct CPUParticle {
         var direction: SIMD3<Float>
         var axis: SIMD3<Float>
@@ -40,6 +50,7 @@ final class NebulaVisualizer: Visualizer {
         var band: Int
         var phase: Float
         var spin: Float
+        var kick: Float
     }
 
     private static let maxParticles = 4096
@@ -61,6 +72,14 @@ final class NebulaVisualizer: Visualizer {
     /// math in the update loop — is evaluated once per band (64×) instead of
     /// once per particle (4096×), since hue depends only on the band.
     private var bandColors = [SIMD3<Float>](repeating: .zero, count: AudioSnapshot.bandCount)
+    /// Rising-edge trackers for the transient envelopes: the envelopes decay
+    /// smoothly between hits, so "a new hit" is a frame where the value jumps
+    /// back up rather than any frame where it is merely high.
+    private var previousBeat: Float = 0
+    private var previousTrebleBeat: Float = 0
+    /// Radius of the expanding kick shockwave front, in world units; parked
+    /// beyond the cloud's extent (inactive) until the next kick resets it.
+    private var shockRadius: Float = 10
 
     init(device: MTLDevice, library: MTLLibrary, pixelFormat: MTLPixelFormat) throws {
         backgroundPipeline = try makeRenderPipeline(
@@ -102,7 +121,8 @@ final class NebulaVisualizer: Visualizer {
                 radius: Float.random(in: 0.6...1.4, using: &rng),
                 band: i % AudioSnapshot.bandCount,
                 phase: Float.random(in: 0...6.28318, using: &rng),
-                spin: Float.random(in: 0.15...0.9, using: &rng) * (Bool.random(using: &rng) ? 1 : -1))
+                spin: Float.random(in: 0.15...0.9, using: &rng) * (Bool.random(using: &rng) ? 1 : -1),
+                kick: 0)
         }
     }
 
@@ -146,6 +166,9 @@ final class NebulaVisualizer: Visualizer {
         snapshot.bands.withUnsafeBytes {
             encoder.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1)
         }
+        snapshot.waveform.withUnsafeBytes {
+            encoder.setFragmentBytes($0.baseAddress!, length: $0.count, index: 2)
+        }
         encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
 
         encoder.setRenderPipelineState(particlePipeline)
@@ -164,29 +187,59 @@ final class NebulaVisualizer: Visualizer {
         let sensitivity = uniforms.sensitivity
         let time = uniforms.time
 
-        // Fill this frame's per-band color table once, up front.
-        let hueShift = time * 0.01 + snapshot.centroid * 0.15
+        // Fill this frame's per-band color table once, up front. The spectral
+        // centroid steers the hue, so brighter music literally shifts color.
+        let hueShift = time * 0.012 + snapshot.centroid * 0.35
         for b in 0..<AudioSnapshot.bandCount {
             bandColors[b] = Palettes.color(
                 Float(b) / Float(AudioSnapshot.bandCount) + hueShift,
                 palette: palette)
         }
 
+        // A fresh kick launches a shockwave from the core that sweeps outward
+        // through the cloud, flaring and nudging every particle it passes.
+        if snapshot.beat > previousBeat + 0.25 { shockRadius = 0 }
+        previousBeat = snapshot.beat
+        let trebleHit = snapshot.trebleBeat > previousTrebleBeat + 0.3
+        previousTrebleBeat = snapshot.trebleBeat
+        if shockRadius < 5 { shockRadius += dt * 3.4 * uniforms.speed }
+
+        // The shared axis the mid disc orbits: tilted off vertical and slowly
+        // precessing, so the disc leans and wanders over the course of a song.
+        let precession = time * 0.02
+        let galacticAxis = simd_normalize(
+            SIMD3<Float>(0.30 * cos(precession), 1, 0.30 * sin(precession)))
+
         for i in 0..<activeCount {
             var p = cpuParticles[i]
             let energy = min(snapshot.bands[p.band] * sensitivity, 1.4)
 
-            // Each particle behaves according to the register it listens to:
-            // low bands form a heavy pulsing core, mids orbit, highs sparkle out wide.
+            // Each register gets its own body: bass is a tight pulsing core,
+            // mids form a flattened rotating galaxy disc, treble is a
+            // spherical halo that throws comets on hi-hat/snare transients.
             let isBass = p.band < 12
             let isTreble = p.band >= 47
+            let isMid = !isBass && !isTreble
 
             var swirlRate = 0.25 + energy + 0.4 * snapshot.flux
-            if isBass { swirlRate *= 0.55 }
-            if isTreble { swirlRate *= 1.6 }
-            let angle = p.spin * swirlRate * dt * swirl * uniforms.speed
+            var axis = p.axis
+            var spin = p.spin
+            if isBass {
+                swirlRate *= 0.55
+            } else if isTreble {
+                swirlRate *= 1.6
+            } else {
+                // Mids share one axis (blended with a little per-particle
+                // tilt for disc thickness) and all turn the same way; inner
+                // particles orbit faster than outer ones, shearing the disc
+                // into spiral streaks like a galaxy's differential rotation.
+                axis = simd_normalize(galacticAxis + p.axis * 0.22)
+                spin = abs(p.spin)
+                swirlRate *= 1.5 / (0.45 + p.radius)
+            }
+            let angle = spin * swirlRate * dt * swirl * uniforms.speed
             if angle != 0 {
-                let q = simd_quatf(angle: angle, axis: p.axis)
+                let q = simd_quatf(angle: angle, axis: axis)
                 p.direction = simd_normalize(q.act(p.direction))
             }
 
@@ -196,16 +249,37 @@ final class NebulaVisualizer: Visualizer {
             // lets them drift back in.
             var target: Float
             if isBass {
-                target = 0.50 + 1.1 * energy + 0.75 * snapshot.beat
+                target = 0.45 + 1.1 * energy + 0.75 * snapshot.beat
             } else if isTreble {
                 target = 1.00 + 1.6 * energy + 0.55 * snapshot.trebleBeat
             } else {
                 target = 0.75 + 1.5 * energy + 0.45 * snapshot.beat
             }
             p.radius += (target - p.radius) * min(1, dt * (isBass ? 7 : 5))
+
+            // Comets: a new treble transient flings a pseudo-random ~30% of
+            // the halo outward; the impulse decays in about a third of a
+            // second and the spring above reels the particle back in.
+            if isTreble, trebleHit, p.phase.truncatingRemainder(dividingBy: 1) < 0.3 {
+                p.kick = 1.8 + 2.2 * energy
+            }
+            // The shockwave front flares and pushes particles as it passes.
+            var shockBoost: Float = 0
+            if shockRadius < 4 {
+                let d = p.radius - shockRadius
+                shockBoost = exp(-d * d * 9) * snapshot.beat
+                p.kick = max(p.kick, shockBoost * 0.9)
+            }
+            p.radius = min(p.radius + p.kick * dt, 5)
+            p.kick *= exp(-dt * 2.8)
             cpuParticles[i] = p
 
-            let position = p.direction * p.radius
+            var position = p.direction * p.radius
+            if isMid {
+                // Flatten the mid shell into the disc by squashing the
+                // component along the galactic axis.
+                position -= galacticAxis * simd_dot(position, galacticAxis) * 0.55
+            }
             var size: Float
             var alpha: Float
             if isBass {
@@ -214,16 +288,27 @@ final class NebulaVisualizer: Visualizer {
                 alpha = 0.16 + 0.84 * energy
             } else if isTreble {
                 let flicker = 0.55 + 0.45 * sin(p.phase + time * 30)
-                size = glow * (1.4 + 6 * energy + 5 * snapshot.trebleBeat * flicker)
-                alpha = 0.06 + 0.94 * min(energy + snapshot.trebleBeat * 0.6, 1.2)
+                size = glow * (1.4 + 6 * energy + 5 * snapshot.trebleBeat * flicker + 2.5 * p.kick)
+                alpha = 0.06 + 0.94 * min(energy + snapshot.trebleBeat * 0.6 + p.kick * 0.4, 1.2)
             } else {
                 let flicker = 0.75 + 0.25 * sin(p.phase + time * 18)
                 size = glow * (2.2 + 11 * energy + 4 * snapshot.components[5] * sensitivity * flicker)
-                alpha = 0.10 + 0.90 * energy
+                alpha = 0.10 + 0.90 * min(energy + 0.25 * snapshot.flux, 1.1)
             }
+            size += glow * 7 * shockBoost
+            alpha = min(alpha + 0.6 * shockBoost, 1.5)
 
             var color = bandColors[p.band]
             color = simd_mix(color, SIMD3<Float>(1, 1, 1), SIMD3<Float>(repeating: min(energy * 0.45, 0.6)))
+            if isBass {
+                // Kicks flash the core toward warm white...
+                color = simd_mix(
+                    color, SIMD3<Float>(1.0, 0.90, 0.72), SIMD3<Float>(repeating: 0.45 * snapshot.beat))
+            } else if isTreble {
+                // ...while comets streak cool white.
+                color = simd_mix(
+                    color, SIMD3<Float>(0.85, 0.93, 1.0), SIMD3<Float>(repeating: min(p.kick * 0.4, 0.6)))
+            }
 
             out[i] = GPUParticle(
                 posSize: SIMD4(position.x, position.y, position.z, size),
