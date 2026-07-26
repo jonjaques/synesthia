@@ -74,7 +74,7 @@ struct ContentView: View {
                         .foregroundStyle(.yellow)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 8)
-                        .glassEffect(.regular, in: .capsule)
+                        .chromeGlass(in: .capsule)
                         .padding(.top, 12)
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
@@ -87,7 +87,7 @@ struct ContentView: View {
                         .lineLimit(1)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 8)
-                        .glassEffect(.regular, in: .capsule)
+                        .chromeGlass(in: .capsule)
                         .padding(.top, appState.statusMessage == nil ? 12 : 0)
                         .opacity(chromeVisible ? 1 : 0)
                         .animation(.easeInOut(duration: 0.35), value: chromeVisible)
@@ -234,6 +234,39 @@ extension View {
     }
 }
 
+// MARK: - Chrome material
+
+extension View {
+    /// The background shared by every floating pod. On macOS 26 this is real
+    /// Liquid Glass; on macOS 15 it degrades to a shaped material with a
+    /// hairline edge and a drop shadow, which is the same job the glass does —
+    /// separate the chrome from an arbitrary, moving Metal canvas behind it.
+    ///
+    /// `interactive` maps to `Glass.interactive()`, the highlight-on-press
+    /// variant used by the two pods that contain controls. It has no pre-26
+    /// equivalent and is simply ignored there.
+    func chromeGlass<S: InsettableShape>(in shape: S, interactive: Bool = false) -> some View {
+        modifier(ChromeGlass(shape: shape, interactive: interactive))
+    }
+}
+
+private struct ChromeGlass<S: InsettableShape>: ViewModifier {
+    let shape: S
+    let interactive: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(macOS 26.0, *) {
+            content.glassEffect(interactive ? .regular.interactive() : .regular, in: shape)
+        } else {
+            content
+                .background(.ultraThinMaterial, in: shape)
+                .overlay { shape.strokeBorder(.white.opacity(0.14), lineWidth: 1) }
+                .shadow(color: .black.opacity(0.35), radius: 10, y: 3)
+        }
+    }
+}
+
 // MARK: - Now playing badge
 
 struct NowPlayingBadge: View {
@@ -282,7 +315,7 @@ struct NowPlayingBadge: View {
         }
         .padding(8)
         .fixedSize(horizontal: false, vertical: true)
-        .glassEffect(.regular, in: .rect(cornerRadius: 16))
+        .chromeGlass(in: .rect(cornerRadius: 16))
     }
 }
 
@@ -368,7 +401,7 @@ struct ControlsPod: View {
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 10)
-        .glassEffect(.regular.interactive(), in: .capsule)
+        .chromeGlass(in: .capsule, interactive: true)
         .foregroundStyle(.white)
     }
 }
@@ -478,7 +511,7 @@ struct VisualizerPod: View {
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 10)
-        .glassEffect(.regular.interactive(), in: .capsule)
+        .chromeGlass(in: .capsule, interactive: true)
         .foregroundStyle(.white)
     }
 

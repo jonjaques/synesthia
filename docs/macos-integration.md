@@ -108,7 +108,9 @@ window _title_ is still set (`navigationTitle`) so Mission Control and the
 Window menu name the current track.
 
 The floating controls themselves use the macOS 26 "Liquid Glass" material
-(`.glassEffect`) and auto-hide after 3 s of pointer stillness
+(`.glassEffect`, behind the `chromeGlass` modifier in `ContentView.swift`,
+which falls back to `.ultraThinMaterial` plus a hairline border and a drop
+shadow below macOS 26) and auto-hide after 3 s of pointer stillness
 (`onContinuousHover` only fires on actual movement, so a resting cursor
 lets the timer run out; hovering a pod or having the options popover open
 pins the chrome visible).

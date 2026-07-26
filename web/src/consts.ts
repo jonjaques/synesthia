@@ -69,10 +69,16 @@ export const APP_STORE_AVAILABLE = false;
 
 /** Shown next to the download button. */
 export const RELEASE = {
-  version: "1.0.1",
-  // The deployment target is 26.0, not 26.5 — the only API pinning the floor
-  // is `glassEffect`, which is a 26.0 API.
-  requires: "macOS 26 or later",
+  version: "1.0.2",
+  // The deployment target is 15.0. The only macOS 26 API in the app is
+  // `glassEffect`, and it is behind an `#available` check with a material
+  // fallback, so Sequoia and Tahoe both run the same binary.
+  //
+  // This line must not go live ahead of the build it describes: the site
+  // deploys independently of the app, and 1.0.1 in R2 is still a 26.0 binary
+  // that will not launch on Sequoia. Publish the first 15.0 DMG *before*
+  // deploying the site with this value.
+  requires: "macOS 15 or later",
   // Release archives are universal (arm64 + x86_64); macOS 26 Tahoe is the
   // last release supporting Intel Macs, so they are still in scope.
   chip: "Apple silicon or Intel",

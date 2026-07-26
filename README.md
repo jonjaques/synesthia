@@ -8,12 +8,12 @@ every visual, so bass, mids, and treble each shape the picture differently.
 
 [![status](https://img.shields.io/badge/status-working%20v1-brightgreen)](https://synesthia.app)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
-[![macOS 26+](https://img.shields.io/badge/macOS-26%2B-lightgrey)](https://synesthia.app)
+[![macOS 15+](https://img.shields.io/badge/macOS-15%2B-lightgrey)](https://synesthia.app)
 
 ## Install
 
 The notarized build is at **[synesthia.app/download](https://synesthia.app/download)**
-— universal (Apple silicon and Intel), macOS 26 or later, and it updates itself
+— universal (Apple silicon and Intel), macOS 15 or later, and it updates itself
 via Sparkle. Or [build it from source](#contributing).
 
 ## Using it
@@ -72,14 +72,14 @@ control bar. Settings persist across launches.
 Everything below is either bundled with macOS/Xcode or one command away. There
 is no dependency you have to hunt down.
 
-|                               | Why                                                      | How                                            |
-| ----------------------------- | -------------------------------------------------------- | ---------------------------------------------- |
-| **macOS 26** (Tahoe) or later | the deployment target is 26.0                            | —                                              |
-| **Xcode 26.6+**               | Swift 6.3 toolchain, `SDKROOT = macosx`                  | Mac App Store, or `brew install --cask xcodes` |
-| Command line tools            | `xcodebuild`, `codesign`, `hdiutil`, `sips`, `afconvert` | `xcode-select --install`                       |
-| **Metal Toolchain**           | compiles `Shaders.metal` at build time                   | `xcodebuild -downloadComponent MetalToolchain` |
-| **Node ≥ 22.12**              | the website and the Cloudflare tooling                   | `brew install node`                            |
-| Python 3                      | `make demo-track`, `make check-metadata`                 | ships with macOS; stdlib only, no pip installs |
+|                                 | Why                                                      | How                                            |
+| ------------------------------- | -------------------------------------------------------- | ---------------------------------------------- |
+| **macOS 15** (Sequoia) or later | the deployment target is 15.0                            | —                                              |
+| **Xcode 26.6+**                 | Swift 6.3 toolchain, `SDKROOT = macosx`                  | Mac App Store, or `brew install --cask xcodes` |
+| Command line tools              | `xcodebuild`, `codesign`, `hdiutil`, `sips`, `afconvert` | `xcode-select --install`                       |
+| **Metal Toolchain**             | compiles `Shaders.metal` at build time                   | `xcodebuild -downloadComponent MetalToolchain` |
+| **Node ≥ 22.12**                | the website and the Cloudflare tooling                   | `brew install node`                            |
+| Python 3                        | `make demo-track`, `make check-metadata`                 | ships with macOS; stdlib only, no pip installs |
 
 Sparkle's command line tools (`generate_appcast`, `sign_update`) are **not**
 installed separately — they arrive with the Swift Package Manager artifact the

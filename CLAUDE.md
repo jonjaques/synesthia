@@ -6,10 +6,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Synesthia is a macOS-only SwiftUI + Metal music visualizer (`SDKROOT = macosx`, no iOS/Catalyst target). It captures audio (system audio via ScreenCaptureKit, mic/line-in via AVAudioEngine, or a local file), runs an FFT, and renders pluggable Metal visualizers. See README.md for the user-facing feature description and roadmap, and `docs/` for developer documentation (architecture, audio pipeline, rendering, plugin system, macOS integration).
 
-Built with Xcode 26.6 / Swift 6.3 toolchain. Deployment target is macOS 26.0, so
-macOS 26 APIs (including `glassEffect`) are available without availability
-guards. Going below 26.0 requires guarding the five `glassEffect` call sites in
-`ContentView.swift` — that is the _only_ thing pinning the floor at 26.
+Built with Xcode 26.6 / Swift 6.3 toolchain against the macOS 26 SDK, but the
+**deployment target is macOS 15.0** (Sequoia). One binary serves both: the only
+macOS 26 API in the app is Liquid Glass, and it lives behind a single
+`#available` check in the `chromeGlass` modifier (`ContentView.swift`), which
+degrades to `.ultraThinMaterial` + hairline border + drop shadow on 15. **Never
+call a 26-only API without a guard, and route all new chrome backgrounds through
+`chromeGlass` rather than `glassEffect` directly** — the compiler catches the
+first mistake, nothing catches the second. Raising the floor back to 26 means
+deleting the fallback branch, nothing else.
 
 ## Architecture
 

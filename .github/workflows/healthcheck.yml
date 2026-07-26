@@ -58,7 +58,7 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
 
-      # The project needs Xcode 26.6+ (macOS 26 deployment target, Swift 6.3,
+      # The project needs Xcode 26.6+ (builds against the macOS 26 SDK, Swift 6.3,
       # swift-format from the toolchain) and the macos-26 image still defaults
       # /Applications/Xcode.app to 26.5 — so pick the newest Xcode 26 it ships,
       # and fall back to whatever is selected if the layout ever changes.

@@ -64,6 +64,7 @@ by construction — the store build does not contain the feature at all.
 ### App hardening and quality
 
 - [x] `MACOSX_DEPLOYMENT_TARGET` 26.5 → **26.0** (`glassEffect` is a 26.0 API)
+- [x] …then 26.0 → **15.0**, once `glassEffect` moved behind `chromeGlass`'s `#available` guard. Post-1.0.1: the App Store listing's minimum OS and the site's `RELEASE.requires` both need to follow the binary down to macOS 15
 - [x] `SWIFT_VERSION` 5.0 → **6.0**; `nonisolated struct AudioSnapshot`
 - [x] **Power** — MTKView pauses on occlusion/miniaturize; 30 fps when inactive or idle; full display rate (incl. 120 Hz ProMotion) only while audio flows
 - [x] **Sleep** — `beginActivity(.idleDisplaySleepDisabled)` held only while audio flows
