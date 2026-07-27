@@ -26,7 +26,7 @@ via Sparkle. Or [build it from source](#contributing).
    - **Screen & System Audio Recording** — to hear what's playing (audio only;
      the video leg is never read). If you grant it after the first attempt,
      just click play again; the app re-attaches without pausing Music.
-3. Shortcuts: `Space` play/pause · `⌘1/2/3` switch visualizer · `⌘→/←`
+3. Shortcuts: `Space` play/pause · `⌘1`–`⌘4` switch visualizer · `⌘→/←`
    next/previous track · `⌘O` open an audio file · green button / `⌃⌘F`
    fullscreen.
 
@@ -46,11 +46,12 @@ know what's playing.
 
 ### Visualizers
 
-| Name                | Idea                                                                                                 | Options              |
-| ------------------- | ---------------------------------------------------------------------------------------------------- | -------------------- |
-| **Nebula**          | 3D orbiting particle cloud; each particle is bound to a frequency band and flares when its band hits | Density, Glow, Swirl |
-| **Spectrum Tunnel** | Flight through a tube whose angular slices are the live spectrum                                     | Twist, Glow          |
-| **Aurora**          | Layered ribbons riding the waveform, each glowing with its slice of the spectrum                     | Ribbons, Wave height |
+| Name                | Idea                                                                                                 | Options                 |
+| ------------------- | ---------------------------------------------------------------------------------------------------- | ----------------------- |
+| **Nebula**          | 3D orbiting particle cloud; each particle is bound to a frequency band and flares when its band hits | Density, Glow, Swirl    |
+| **Spectrum Tunnel** | Flight through a tube whose angular slices are the live spectrum                                     | Twist, Glow             |
+| **Aurora**          | Layered ribbons riding the waveform, each glowing with its slice of the spectrum                     | Ribbons, Wave height    |
+| **Bars**            | A studio console: LED spectrum wall with peak holds, analog VU meters, and a desk of moving faders   | Columns, Segments, Desk |
 
 All visualizers share global **Sensitivity**, **Speed**, and five color
 **palettes** (Prism, Ember, Ocean, Violet, Mono) — see the slider icon in the

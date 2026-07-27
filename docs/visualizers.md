@@ -2,7 +2,7 @@
 
 Visualizers are Synesthia's plugin system: self-contained modules that turn
 the shared audio analysis into imagery. This document explains the contract,
-walks through the three built-ins, and shows how to add a new one.
+walks through the four built-ins, and shows how to add a new one.
 Code: `Synesthia/Visualizers/`.
 
 ## The plugin contract
@@ -35,18 +35,19 @@ classDiagram
         +tuning(for id) VisualizerTuning
     }
     VisualizerRegistry o-- VisualizerDescriptor
-    VisualizerDescriptor o-- "0..4" VisualizerOption
+    VisualizerDescriptor o-- "0..8" VisualizerOption
     VisualizerDescriptor ..> Visualizer : make() creates
     Visualizer <|.. NebulaVisualizer
     Visualizer <|.. TunnelVisualizer
     Visualizer <|.. AuroraVisualizer
+    Visualizer <|.. BarsVisualizer
     VisualizerSettings ..> VisualizerDescriptor : persists per id
 ```
 
 Two pieces, deliberately separated:
 
 - **`VisualizerDescriptor`** — a cheap static _value_: identity, UI strings,
-  up to four option sliders, and a factory closure. Descriptors for every
+  up to eight option sliders, and a factory closure. Descriptors for every
   visualizer exist all the time (they populate menus).
 - **The `Visualizer` class** — the expensive _instance_ holding GPU
   pipelines and buffers. Only the selected one exists; it's built by
@@ -71,19 +72,20 @@ switching visualizers restores each one's own look, including its palette).
 
 ## How the audio maps to visuals
 
-All three built-ins follow the same philosophy — _different registers drive
+All four built-ins follow the same philosophy — _different registers drive
 different elements_, so the picture decomposes the music rather than just
 pulsing with loudness:
 
-| Audio feature               | Nebula                       | Spectrum Tunnel                 | Aurora                         |
-| --------------------------- | ---------------------------- | ------------------------------- | ------------------------------ |
-| `bands[64]`                 | one band per particle        | tunnel wall brightness by angle | ribbon glow by height          |
-| `waveform[256]`             | —                            | —                               | ribbon displacement            |
-| `beat` (kick)               | core particles surge         | forward lurch + center flash    | scene brightness lift          |
-| `trebleBeat` (hi-hat)       | outer particles flicker      | glints at tunnel mouth          | sparkle field                  |
-| `flux` (any onset)          | swirl speeds up, core flares | whole scene lifts               | shimmer                        |
-| `centroid` (brightness)     | hue shift                    | hue shift                       | hue shift                      |
-| sub-bands (`subBass`…`air`) | mid-particle flicker         | camera sway, spokes, fine rings | fog, haze, stars, rays, ripple |
+| Audio feature               | Nebula                       | Spectrum Tunnel                 | Aurora                         | Bars                           |
+| --------------------------- | ---------------------------- | ------------------------------- | ------------------------------ | ------------------------------ |
+| `bands[64]`                 | one band per particle        | tunnel wall brightness by angle | ribbon glow by height          | column height + peak-hold caps |
+| `waveform[256]`             | —                            | —                               | ribbon displacement            | the scope's trace              |
+| `level` (RMS)               | —                            | scene exposure                  | —                              | the program VU needle          |
+| `beat` (kick)               | core particles surge         | forward lurch + center flash    | scene brightness lift          | console lamp + VU backlights   |
+| `trebleBeat` (hi-hat)       | outer particles flicker      | glints at tunnel mouth          | sparkle field                  | —                              |
+| `flux` (any onset)          | swirl speeds up, core flares | whole scene lifts               | shimmer                        | console lamp                   |
+| `centroid` (brightness)     | hue shift                    | hue shift                       | hue shift                      | hue shift                      |
+| sub-bands (`subBass`…`air`) | mid-particle flicker         | camera sway, spokes, fine rings | fog, haze, stars, rays, ripple | the bay's eight indicator LEDs |
 
 ### Spectrum Tunnel (`TunnelVisualizer` + `tunnelFragment`)
 
@@ -132,6 +134,54 @@ particles sparkle out wide. The CPU writes position+color into a
 `.storageModeShared` buffer (one memory region visible to both CPU and GPU
 on Apple silicon), and the GPU draws them as additively-blended glowing
 dots.
+
+### Bars (`BarsVisualizer` + `barsFragment`)
+
+A mixing console seen from the producer's chair, drawn as one fullscreen pass
+of signed-distance fields — no particles and no raymarching, so each pixel
+only evaluates the widgets of the zone it lands in.
+
+```mermaid
+flowchart TB
+    subgraph BRIDGE["meter bridge (drawn front-on)"]
+        BAY["VU meters · phosphor scope · 8 indicator LEDs"]
+        WALL["LED spectrum wall: 64 columns, peak caps, over-lamps"]
+        SHELF["gloss shelf — the wall's reflection"]
+    end
+    subgraph DESK["desk surface (floor projection)"]
+        STRIP["one channel strip per spectrum slice:<br>knob + LED collar · channel lamp · moving fader"]
+    end
+    BAY --> WALL --> SHELF --> STRIP
+```
+
+Two things make it different from the other three:
+
+- **The console's physics runs on the CPU.** Everything a meter does with a
+  _time constant_ needs memory between frames, which a fragment shader has
+  none of: attack/release ballistics per column, peak caps that hang and then
+  accelerate downward, motorized-fader lag, multi-second knob drift, and the
+  damped-spring integration that gives the VU needles their overshoot (the
+  left needle is a true ~300 ms VU ballistic, the right a 50 ms peak meter
+  with a slow return). The result is one small float array — see
+  `BarsVisualizer.Slot`, mirrored by the `kBars…` constants in Shaders.metal —
+  bound at `buffer(3)`. **The shader reads no audio at all**; it draws state.
+- **Everything is measured in screen-height units**, so a lens or a knob keeps
+  its shape at any window aspect: `uv` is 0…1 on both axes, so a y distance is
+  already in height units and an x distance becomes one by multiplying by the
+  aspect ratio. One pixel is then a single `aa` value shared by every edge.
+
+The desk is a textbook floor projection: a fixed world width appears `dy`
+wide on screen, where `dy` is the distance below the horizon, so world x is
+`(screen x)/dy` and world depth is `1/dy`. Widgets are laid out in those world
+coordinates and foreshorten for free. Their anti-aliasing width is
+differentiated analytically rather than with `fwidth()`, which would be
+undefined in the pixel quads straddling the horizon.
+
+Bars also finishes differently: vibrance, then `1 - exp(-x)` instead of the
+Reinhard + S-curve chain the others end with. Those visualizers are additive
+glow on black, where the S-curve's midtone crush is what keeps them from
+looking milky; this one is lit hardware, and the same curve would swallow the
+panel, the desk, and every unlit lens.
 
 ## Adding a visualizer, step by step
 

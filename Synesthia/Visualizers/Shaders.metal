@@ -726,3 +726,597 @@ fragment float4 nebulaTonemapFragment(FSQuadOut in [[stage_in]],
     col = col * col * (3.0 - 2.0 * col);
     return float4(col, 1.0);
 }
+
+// ---------------------------------------------------------------- Bars
+//
+// A mixing console seen from the producer's chair, drawn entirely with
+// signed-distance fields in one fullscreen pass. The meter bridge stands
+// vertically at the back (LED spectrum wall, two analog VU meters, a
+// phosphor scope) and the desk surface recedes in perspective in front of
+// it (one channel strip per slice of the spectrum: moving fader, EQ knob
+// with an LED collar, channel lamp).
+//
+// Two conventions make the rest of this section readable:
+//
+//  * **Everything is measured in screen-height units.** `uv` is 0…1 on both
+//    axes, so a y distance is already in height units and an x distance
+//    becomes one by multiplying by the aspect ratio. Sizes written here are
+//    therefore literally "fraction of the window's height", and one pixel is
+//    `aa` — which is all the anti-aliasing any of these edges needs.
+//  * **No audio is read directly.** Every value comes from `st`, the state
+//    buffer that BarsVisualizer's CPU simulation fills each frame (column
+//    ballistics, peak-hold caps, fader positions, needle angles). Meters are
+//    defined by their time constants, and time constants need memory between
+//    frames, which a fragment shader does not have.
+//
+// Layout of `st`, in floats — must match `BarsVisualizer.Slot` exactly.
+constant int kBarsHeights = 0;    // 64 column heights, 0…1
+constant int kBarsPeaks = 64;     // 64 peak-hold caps, 0…1
+constant int kBarsFaders = 128;   // 16 fader positions, 0…1
+constant int kBarsKnobs = 144;    // 16 knob values, 0…1
+constant int kBarsVU = 160;       // 2 needle positions (program, peak)
+constant int kBarsLamp = 162;     // console lamp brightness
+
+// Distance to the edge of a box: negative inside, positive outside.
+static float sdBox(float2 p, float2 b) {
+    float2 d = fabs(p) - b;
+    return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+}
+
+// Same, with rounded corners of radius r (shrink the box, then inflate the
+// field — the standard SDF rounding trick).
+static float sdRoundBox(float2 p, float2 b, float r) {
+    r = min(r, min(b.x, b.y));
+    return sdBox(p, b - r) - r;
+}
+
+// Distance to the line segment ab.
+static float sdSegment(float2 p, float2 a, float2 b) {
+    float2 pa = p - a, ba = b - a;
+    float h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-8), 0.0, 1.0);
+    return length(pa - ba * h);
+}
+
+// Coverage of an SDF shape: 1 inside, 0 outside, `aa` of soft edge. Every
+// edge in this section goes through here, which is why nothing crawls.
+static float aaFill(float d, float aa) {
+    return smoothstep(aa, -aa, d);
+}
+
+// Linearly interpolated waveform sample. `waveAt` snaps to whole samples,
+// which is invisible in a ribbon but turns the scope's thin trace into a
+// staircase of disconnected dots.
+static float waveLerp(constant float* wave, float x) {
+    float f = clamp(x, 0.0, 0.9999) * 255.0;
+    int i = int(f);
+    return mix(wave[i], wave[min(i + 1, 255)], fract(f));
+}
+
+// Brushed-aluminium panel: anisotropic grain (fine across, stretched along),
+// plus a broad specular sweep standing in for a lamp somewhere in the room.
+static float3 barsPanel(float2 uv, float room, constant VizUniforms& u) {
+    float brush = 0.65 * vnoise(float2(uv.x * 6.0, uv.y * 520.0))
+                + 0.35 * vnoise(float2(uv.x * 17.0, uv.y * 1900.0));
+    float3 col = float3(0.052, 0.055, 0.064) * (0.55 + 0.9 * brush);
+    float lx = 0.5 + 0.42 * sin(u.time * 0.05 * u.speed);
+    col += float3(0.030, 0.032, 0.040) * exp(-pow((uv.x - lx) * 1.6, 2.0))
+         * (0.35 + 0.65 * uv.y) * room;
+    return col;
+}
+
+// One panel screw: dark recessed head, top-lit bevel, driver slot, glint.
+static float3 barsScrew(float2 d, float aa, float room) {
+    if (dot(d, d) > 0.00022) { return float3(0.0); }
+    float r = length(d);
+    float head = aaFill(r - 0.0080, aa);
+    float ring = aaFill(r - 0.0098, aa) - head;
+    float3 col = float3(0.030, 0.031, 0.035) * head;
+    col += float3(0.10, 0.105, 0.115) * ring * (0.30 + 1.0 * smoothstep(-0.008, 0.008, d.y));
+    col = mix(col, float3(0.018) * head, aaFill(sdBox(rot2(d, 0.7), float2(0.0062, 0.0010)), aa) * head);
+    col += float3(0.30, 0.31, 0.34) * ring * exp(-pow((d.y - d.x - 0.006) * 260.0, 2.0)) * room;
+    return col;
+}
+
+// One pixel of the LED ladder.
+//   wx, wy  position on the wall: 0…1 across the columns, 0…1 up the ladder
+//           (the reflection passes a mirrored wy, hence no upper clamp here)
+//   ww, wh  the ladder's size in screen-height units, so a lens keeps its
+//           shape whatever the window aspect is
+static float3 barsWall(float wx, float wy, float ww, float wh,
+                       int cols, int segs, float glow, float peakAmt,
+                       constant float* st, constant VizUniforms& u, float aa) {
+    float3 col = float3(0.0);
+    if (wx < 0.0 || wx > 1.0 || wy < 0.0 || wy > 1.0) { return col; }
+
+    float cf = wx * float(cols);
+    int ci = clamp(int(cf), 0, cols - 1);
+    float h = st[kBarsHeights + ci];
+    float pk = st[kBarsPeaks + ci];
+    float colFrac = (float(ci) + 0.5) / float(cols);
+
+    float cw = ww / float(cols);
+    float qx = (fract(cf) - 0.5) * cw;
+    float halfW = cw * 0.38;
+    float yh = wy * wh;      // height above the base, in screen-height units
+
+    // Two ways to draw a column. Segmented is the LED ladder; "0 segments"
+    // is one continuous bar, and it needs its own path rather than a ladder
+    // of very fine segments — once a segment is thinner than the pixel that
+    // anti-aliases it, the boundaries come back as banding.
+    float2 q, b;      // this pixel's position within the drawn shape
+    float unlitD;     // the dark lens/tube that is visible even when off
+    float lit, sc, capT;
+    if (segs >= 2) {
+        float ch = wh / float(segs);
+        float sf = wy * float(segs);
+        float si = floor(sf);
+        lit = clamp(h * float(segs) - si, 0.0, 1.0);
+        sc = (si + 0.5) / float(segs);
+        q = float2(qx, (fract(sf) - 0.5) * ch);
+        b = float2(halfW, ch * 0.35);
+        unlitD = sdRoundBox(q, b, 0.34 * min(b.x, b.y));
+        capT = max(0.55 / float(segs), 0.006);
+    } else {
+        lit = 1.0;                    // coverage comes from the bar's own edge
+        sc = wy;
+        b = float2(halfW, max(h * wh * 0.5, 1e-5));
+        q = float2(qx, yh - h * wh * 0.5);
+        unlitD = sdRoundBox(float2(qx, yh - wh * 0.5), float2(halfW, wh * 0.5), halfW * 0.35);
+        capT = 0.006;
+    }
+    float d = sdRoundBox(q, b, 0.34 * min(b.x, b.y));
+    float face = aaFill(d, aa);
+
+    // The hue ladder climbs the bar rather than running across the wall: a
+    // meter is read vertically, and 0.66 → 1.0 of the cosine palette happens
+    // to be exactly the green → amber → red of hardware in the default
+    // palette, while every other palette gets its own cool-to-hot run. The
+    // top of the scale is pushed red in *all* of them — the "over" cue is
+    // universal enough on real gear to be worth breaking palette purity for.
+    float3 hue = cosPalette(0.56 + 0.46 * sc + 0.05 * colFrac + 0.06 * u.centroid, u.palette);
+    float3 c = mix(hue, float3(1.0, 0.13, 0.04), smoothstep(0.76, 1.0, sc) * 0.7);
+    // Saturate and ramp: a lit LED is driven hard enough to wash toward white
+    // through the exposure curve, so the ladder needs more colour than the
+    // palette's raw value to survive the trip.
+    c = max(mix(float3(dot(c, float3(0.299, 0.587, 0.114))), c, 1.4), 0.0);
+    c *= 0.85 + 0.30 * sc;
+
+    // unlit lens: dark smoked plastic that still shows the whole ladder
+    float tube = aaFill(unlitD, aa);
+    col += mix(c, float3(0.5), 0.65) * tube * 0.030;
+    col += c * face * (0.35 + 1.6 * lit) * lit;           // the lit face
+    col += c * exp(-max(d, 0.0) * (34.0 / max(glow, 0.25))) * lit * 0.55 * glow;
+    // moulded highlight across the top of a lit lens
+    col += mix(float3(1.0), c, 0.45) * face * lit * 0.20
+         * smoothstep(-b.y, b.y, q.y) * smoothstep(b.x, 0.25 * b.x, fabs(q.x));
+
+    // Peak-hold cap: one LED hanging at the loudest recent value, its core
+    // driven white. `wy` and `pk` are both normalised, so `capT` is too — a
+    // little over half a segment, which snaps it to the lens grid.
+    // (`tube`, not `face`: the cap floats above the bar top, where the lit
+    // face has no coverage at all in continuous mode.)
+    float cap = smoothstep(capT, capT * 0.3, fabs(wy - pk)) * step(0.02, pk)
+              * clamp(peakAmt, 0.0, 1.0);
+    col += mix(c, float3(1.0), 0.30) * cap
+         * (tube * 0.95 + exp(-max(unlitD, 0.0) * 50.0) * (1.0 - tube) * 0.5 * glow);
+    return col;
+}
+
+// One lamp-lit analog VU meter, centred on `p` with ext-extents `ext`.
+// `value` 0…1 sweeps the needle across the arc; `lamp` pulses the backlight.
+static float3 barsVU(float3 col, float2 p, float2 ext, float value,
+                     float lamp, float glow, float aa, constant VizUniforms& u) {
+    if (fabs(p.x) > ext.x + 0.05 || fabs(p.y) > ext.y + 0.05) { return col; }
+
+    float bezelD = sdRoundBox(p, ext, min(ext.x, ext.y) * 0.22);
+    float faceD = sdRoundBox(p, ext - 0.011, min(ext.x, ext.y) * 0.14);
+    float bezel = aaFill(bezelD, aa);
+    float faceM = aaFill(faceD, aa);
+    float up = smoothstep(-ext.y, ext.y, p.y);
+
+    // machined frame with a top-lit bevel
+    col = mix(col, float3(0.075, 0.078, 0.088) * (0.5 + 1.0 * up), bezel);
+    col += float3(0.10, 0.105, 0.115) * smoothstep(0.0022, 0.0, fabs(bezelD)) * (0.25 + 0.9 * up);
+
+    // The face is cream card lit by a warm lamp behind the glass. The lamp
+    // takes a little of the palette so the meter belongs to the scene, but
+    // half-desaturated first — at full strength the palette can land on a
+    // saturated hue and the meter stops reading as a lamp-lit card at all.
+    float3 tint = cosPalette(0.10 + 0.30 * u.centroid, u.palette);
+    tint = mix(float3(dot(tint, float3(0.299, 0.587, 0.114))), tint, 0.5);
+    float3 lampCol = mix(float3(1.0, 0.84, 0.60), tint, 0.30);
+    float3 face = float3(1.05, 1.00, 0.86) * (0.55 + 0.80 * smoothstep(-ext.y * 1.5, ext.y, p.y));
+    face *= mix(float3(1.0), lampCol, 0.60) * (0.80 + 0.50 * lamp);
+    col = mix(col, face, faceM);
+
+    // Scale arc, struck from a pivot below the face like the real movement.
+    float2 pivot = float2(0.0, -ext.y * 1.30);
+    float2 rp = p - pivot;
+    float rr = length(rp);
+    float ang = atan2(rp.x, rp.y);
+    float R = ext.y * 1.95;
+    float aMax = 0.52;
+    float inArc = step(fabs(ang), aMax) * faceM;
+    col = mix(col, float3(0.10, 0.09, 0.08),
+              smoothstep(0.0030, 0.0, fabs(rr - R)) * inArc * 0.95);
+    // the red zone above 0 VU
+    col = mix(col, float3(0.80, 0.10, 0.07),
+              step(0.16, ang) * inArc * smoothstep(0.0042, 0.0, fabs(rr - R * 1.015)));
+    // graduations, every other one long
+    float tf = (ang + aMax) / (2.0 * aMax) * 10.0;
+    float ti = round(tf);
+    float tickLen = mix(0.055, 0.105, step(fract(ti * 0.5), 0.25)) * R;
+    float tick = smoothstep(0.0016, 0.0, fabs(tf - ti) * (2.0 * aMax / 10.0) * rr)
+               * step(rr, R) * step(R - tickLen, rr) * inArc;
+    col = mix(col, float3(0.08, 0.075, 0.07), tick);
+    // the bold 0 VU mark where the red zone begins
+    col = mix(col, float3(0.06, 0.055, 0.05),
+              smoothstep(0.0030, 0.0, fabs(ang - 0.16) * rr)
+              * step(R * 0.83, rr) * step(rr, R) * inArc);
+
+    // The needle, with its shadow cast on the card just below it.
+    float na = mix(-aMax * 0.97, aMax * 0.97, clamp(value, 0.0, 1.0));
+    float2 dir = float2(sin(na), cos(na));
+    float w = 0.0022 - 0.0012 * clamp(dot(rp, dir) / R, 0.0, 1.0);
+    col = mix(col, col * 0.62,
+              aaFill(sdSegment(rp - float2(0.0018, -0.0018), dir * R * 0.20, dir * R) - w, aa * 2.0)
+              * faceM * 0.55);
+    col = mix(col, float3(0.06, 0.05, 0.045),
+              aaFill(sdSegment(rp, dir * R * 0.20, dir * R * 1.005) - w, aa) * faceM);
+    col = mix(col, float3(0.13, 0.12, 0.11), aaFill(rr - ext.y * 0.09, aa) * faceM);
+
+    // glass: one diagonal reflection band, then a soft edge vignette
+    col += float3(0.85, 0.90, 1.0) * faceM
+         * exp(-pow((p.x * 0.7 + p.y * 1.5 - ext.y * 0.35) * 6.0, 2.0)) * 0.07;
+    col *= 1.0 - 0.22 * faceM * smoothstep(0.45, 1.0, length(p / ext));
+    // the lamp spilling out onto the panel around the bezel
+    col += lampCol * exp(-max(bezelD, 0.0) * 26.0) * (0.03 + 0.05 * lamp) * glow;
+    return col;
+}
+
+// The phosphor scope between the meters: the live waveform on a curved CRT.
+static float3 barsScope(float3 col, float2 p, float2 ext, float glow, float aa,
+                        constant float* wave, constant VizUniforms& u) {
+    if (fabs(p.x) > ext.x + 0.04 || fabs(p.y) > ext.y + 0.04) { return col; }
+
+    float bezelD = sdRoundBox(p, ext, 0.012);
+    float faceD = sdRoundBox(p, ext - 0.009, 0.010);
+    float bezel = aaFill(bezelD, aa);
+    float faceM = aaFill(faceD, aa);
+    col = mix(col, float3(0.060, 0.063, 0.072) * (0.5 + 1.0 * smoothstep(-ext.y, ext.y, p.y)), bezel);
+    col += float3(0.09) * smoothstep(0.0022, 0.0, fabs(bezelD));
+
+    // Barrel distortion, so the tube reads as glass rather than a flat rect.
+    float2 q = p / (ext - 0.009);
+    q *= 1.0 + 0.055 * dot(q, q);
+    if (max(fabs(q.x), fabs(q.y)) > 1.0) { return col; }
+    float3 screen = float3(0.012, 0.020, 0.017) * (1.0 - 0.45 * dot(q, q));
+
+    // graticule
+    float2 g = q * float2(6.0, 3.0);
+    float2 gd = fabs(g - round(g)) / float2(6.0, 3.0);
+    screen += float3(0.06, 0.10, 0.08) * smoothstep(0.006, 0.0, min(gd.x, gd.y));
+
+    // The trace: nearest distance to a few samples either side, so steep
+    // slopes stay a connected line instead of breaking into dots.
+    float gain = 0.72 * clamp(u.sensitivity, 0.2, 2.0);
+    float tx = q.x * 0.5 + 0.5;
+    float best = 1e3;
+    for (int k = -3; k <= 3; k++) {
+        float xs = tx + float(k) * 0.0055;
+        float ys = waveLerp(wave, xs) * gain;
+        best = min(best, length(float2((xs - tx) * 2.0, q.y - ys)));
+    }
+    float3 phosphor = mix(cosPalette(0.42 + 0.25 * u.centroid, u.palette),
+                          float3(0.55, 1.0, 0.70), 0.45);
+    screen += phosphor * (pow(0.035 / (best + 0.035), 2.6) * 1.5 + 0.13 / (best * 6.0 + 0.13) * glow);
+
+    // scanlines and a slow bright band rolling up the tube
+    screen *= 0.85 + 0.15 * sin(q.y * 190.0);
+    screen *= 1.0 + 0.10 * exp(-pow((q.y - fract(u.time * 0.11 * u.speed) * 2.4 + 1.2) * 3.0, 2.0));
+    col = mix(col, screen, faceM);
+    col += float3(0.8, 0.9, 1.0) * faceM
+         * exp(-pow((q.x * 0.6 + q.y * 1.1 - 0.55) * 2.6, 2.0)) * 0.030;
+    return col;
+}
+
+// The desk surface, in its own world coordinates: X across (-0.5…0.5 spans
+// the desk), Z into the screen (0 at the front edge, 0.45 at the meter
+// bridge). `aaX`/`aaZ` are one pixel measured in those units — they grow
+// toward the back, which is exactly the blur the foreshortening needs.
+static float3 barsDesk(float3 col, float X, float Z, float aaX, float aaZ,
+                       int chans, int cols, float glow, float room,
+                       constant float* st, constant VizUniforms& u) {
+    float aa = max(aaX, aaZ);
+    float edge = sdBox(float2(X, Z - 0.225), float2(0.5, 0.225));
+    if (edge > 0.012) {
+        // Off the desk: studio floor, lit by nothing but what the meter wall
+        // throws down onto it, with the desk's shadow pooling along its edge.
+        float3 floorCol = col * 0.5
+                        + float3(0.017, 0.018, 0.022) * (0.5 + 0.9 * vnoise(float2(X * 16.0, Z * 44.0)));
+        floorCol += cosPalette(0.60 + 0.16 * u.centroid, u.palette)
+                  * exp(-(0.45 - Z) * 5.0) * 0.055 * glow;
+        return floorCol * mix(1.0, 0.30, smoothstep(0.20, 0.0, edge));
+    }
+
+    float3 surface = float3(0.070, 0.073, 0.084);
+    surface *= 0.82 + 0.36 * vnoise(float2(X * 70.0, Z * 300.0));
+    surface += float3(0.030, 0.031, 0.038) * smoothstep(0.10, 0.45, Z) * room;
+    surface *= 1.0 - 0.50 * smoothstep(0.39, 0.45, Z);          // bridge shadow
+    // the armrest trim along the front edge, catching the room light
+    surface = mix(float3(0.115, 0.105, 0.092), surface, smoothstep(0.014, 0.034, Z));
+    col = mix(col, surface, aaFill(edge, aa));
+    col += float3(0.12) * smoothstep(0.0018, 0.0, fabs(edge)) * room;
+
+    float sw = 1.0 / float(chans);
+    float sf = (X + 0.5) / sw;
+    int ci = clamp(int(sf), 0, chans - 1);
+    float lx = (fract(sf) - 0.5) * sw;
+    float fader = st[kBarsFaders + ci];
+    float knob = st[kBarsKnobs + ci];
+    float3 accent = cosPalette(0.12 + 0.52 * ((float(ci) + 0.5) / float(chans))
+                               + 0.16 * u.centroid, u.palette);
+
+    // engraved separator between strips
+    float bnd = fabs(fabs(lx) - sw * 0.5);
+    col *= 1.0 - 0.55 * smoothstep(0.0040, 0.0, bnd);
+    col += float3(0.05, 0.052, 0.060) * smoothstep(0.0018, 0.0, fabs(bnd - 0.0042)) * room;
+
+    // Fader slot, its printed travel scale, and the moving cap.
+    float slotW = min(sw * 0.11, 0.013);
+    float2 fq = float2(lx, Z - 0.175);
+    float slotD = sdRoundBox(fq, float2(slotW, 0.115), slotW);
+    col = mix(col, float3(0.008, 0.008, 0.010), aaFill(slotD, aa));
+    col += float3(0.06) * smoothstep(0.0014, 0.0, fabs(slotD)) * room;
+    float tickZ = fabs(fract((Z - 0.062) / 0.0440) - 0.5) * 0.0440;
+    col += float3(0.10, 0.102, 0.11)
+         * smoothstep(0.0016, 0.0, tickZ)
+         * smoothstep(0.0040, 0.0, fabs(fabs(lx) - slotW - 0.008))
+         * step(0.055, Z) * step(Z, 0.292) * room;
+
+    float capZ = 0.070 + clamp(fader, 0.0, 1.0) * 0.205;
+    float2 cq = float2(lx, Z - capZ);
+    float capW = min(sw * 0.34, 0.040);
+    float capD = sdRoundBox(cq, float2(capW, 0.0165), 0.006);
+    float capM = aaFill(capD, aa);
+    col *= 1.0 - 0.6 * aaFill(sdRoundBox(cq + float2(0.0, 0.008), float2(capW, 0.020), 0.008),
+                              aa * 2.5) * (1.0 - capM);
+    // The cap is a moulded plastic block: bright on the face turned toward
+    // the viewer, falling into shadow along its far edge.
+    float3 capCol = float3(0.26, 0.265, 0.285) * (0.35 + 1.05 * smoothstep(0.020, -0.014, cq.y));
+    capCol *= 0.86 + 0.28 * vnoise(float2(lx * 420.0, 0.0));    // moulded ribs
+    col = mix(col, capCol, capM);
+    col += float3(0.16) * smoothstep(0.0022, 0.0, fabs(capD))
+         * smoothstep(-0.004, 0.012, cq.y) * room;              // lit top edge
+    float capLine = aaFill(sdRoundBox(cq, float2(capW * 0.86, 0.0022), 0.0018), aa);
+    col += accent * capLine * (0.25 + 1.7 * fader) * glow;
+    // spill onto the desk *around* the cap — inside is moulded plastic, and
+    // exp(-max(d,0)) is 1 everywhere inside a shape, which would flood it
+    col += accent * exp(-max(capD, 0.0) * 110.0) * (1.0 - capM) * (0.06 + 0.45 * fader) * glow;
+
+    // EQ knob: dished cap, pointer, and an LED collar that fills as it turns.
+    float kr = min(sw * 0.30, 0.028);
+    float2 kq = float2(lx, Z - 0.378);
+    float kd = length(kq) - kr;
+    float km = aaFill(kd, aa);
+    float3 knobCol = float3(0.155, 0.160, 0.178) * (0.45 + 1.00 * smoothstep(-kr, kr, kq.y));
+    knobCol *= 1.0 - 0.30 * smoothstep(kr * 0.45, kr, length(kq));
+    col = mix(col, knobCol, km);
+    col += float3(0.11) * smoothstep(0.0016, 0.0, fabs(kd)) * room;
+    float ka = mix(-2.35, 2.35, clamp(knob, 0.0, 1.0));
+    float2 kdir = float2(sin(ka), cos(ka));
+    col = mix(col, float3(0.85, 0.87, 0.92),
+              aaFill(sdSegment(kq, kdir * kr * 0.20, kdir * kr * 0.82) - kr * 0.10, aa) * km);
+    float collar = smoothstep(0.0030 + aa, 0.0, fabs(length(kq) - kr * 1.22))
+                 * step(fabs(atan2(kq.x, kq.y)), 2.35)
+                 * step(atan2(kq.x, kq.y), ka);
+    col += accent * collar * (0.20 + 1.3 * knob) * glow;
+
+    // channel lamp, between the knob and the head of the fader slot
+    float2 bq = float2(lx, Z - 0.315);
+    float bd = sdRoundBox(bq, float2(min(sw * 0.26, 0.028), 0.0085), 0.004);
+    float bm = aaFill(bd, aa);
+    col = mix(col, float3(0.055, 0.057, 0.064), bm);
+    col += accent * (bm + exp(-max(bd, 0.0) * 130.0) * 0.4)
+         * (0.05 + 1.1 * smoothstep(0.10, 0.75, fader)) * glow;
+
+    // The meter wall spills its colour down onto the back of the desk.
+    int wc = clamp(int((X + 0.5) * float(cols)), 0, cols - 1);
+    float3 spill = cosPalette(0.05 + 0.48 * ((float(wc) + 0.5) / float(cols))
+                              + 0.12 + 0.16 * u.centroid, u.palette);
+    col += spill * st[kBarsHeights + wc] * exp(-(0.45 - Z) * 7.0) * 0.30 * glow;
+    return col;
+}
+
+// (No `bands` at buffer(1): the columns arrive pre-aggregated and shaped in
+// `st`. The waveform stays at buffer(2) so that index means the same thing
+// here as in every other visualizer.)
+fragment float4 barsFragment(FSQuadOut in [[stage_in]],
+                             constant VizUniforms& u [[buffer(0)]],
+                             constant float* wave [[buffer(2)]],
+                             constant float* st [[buffer(3)]]) {
+    float2 uv = in.uv;
+    float A = u.resolution.x / max(u.resolution.y, 1.0);
+    float aa = 1.4 / max(u.resolution.y, 1.0);
+
+    int cols = clamp(int(u.p0 + 0.5), 8, 64);
+    int segs = int(u.p1 + 0.5);
+    float peakAmt = u.p2;
+    float glow = u.p3;
+    float deskAmt = clamp(u.p4, 0.0, 1.0);
+    int chans = clamp(int(u.p5 + 0.5), 4, 16);
+    float meters = clamp(u.p6, 0.0, 2.0);
+    float room = clamp(u.p7, 0.0, 2.0);
+    float lamp = st[kBarsLamp];
+
+    // Vertical layout, bottom to top: desk, gloss shelf (which catches the
+    // wall's reflection), LED ladder, meter bay. The two sliders that hide a
+    // section give its space back to the ladder rather than leaving a hole.
+    float bayH = 0.165 * min(meters, 1.0);
+    float bayHi = 0.986;
+    float bayLo = bayHi - bayH;
+    bool hasDesk = deskAmt > 0.03;
+    float horizon = 0.015 + 0.50 * deskAmt;
+    float panelLo = hasDesk ? horizon : 0.010;
+    float shelfHi = panelLo + 0.050;
+    float wallLo = shelfHi;
+    float wallHi = bayLo - (bayH > 0.001 ? 0.014 : 0.0);
+    float ladderHi = wallHi - 0.026;   // the strip above holds the over-lamps
+
+    // the room the console sits in
+    float3 col = float3(0.008, 0.008, 0.011);
+    col += cosPalette(0.55 + 0.25 * u.centroid, u.palette) * 0.012 * (0.35 + 0.65 * uv.y) * room;
+
+    if (hasDesk && uv.y < horizon) {
+        // Floor projection: a fixed world width appears `dy` wide on screen,
+        // so world x is (screen x)/dy and world depth is 1/dy. `e` stops the
+        // far edge at a finite distance — it is what sets how hard the desk
+        // converges (here, the back edge is 46% of the near edge's width).
+        float conv = 0.46;
+        float e = conv * horizon / (1.0 - conv);
+        float dyB = horizon + e;
+        float dy = horizon - uv.y + e;
+        float X = (uv.x - 0.5) * dyB / dy;
+        float Z = 0.45 * (1.0 / dy - 1.0 / dyB) / (1.0 / e - 1.0 / dyB);
+        // One pixel in world units, differentiated analytically (fwidth would
+        // be undefined in the quads that straddle the horizon).
+        float aaX = 1.4 * (dyB / dy) / max(u.resolution.x, 1.0);
+        float aaZ = 1.4 * 0.45 / (dy * dy * (1.0 / e - 1.0 / dyB)) / max(u.resolution.y, 1.0);
+        col = barsDesk(col, X, Z, aaX, aaZ, chans, cols, glow, room, st, u);
+    } else {
+        // ---- the meter bridge ----
+        float2 pc = float2((uv.x - 0.5) * A, uv.y - (panelLo + bayHi) * 0.5);
+        float2 ph = float2(0.492 * A, (bayHi - panelLo) * 0.5);
+        float panelD = sdRoundBox(pc, ph, 0.014);
+        float panel = aaFill(panelD, aa);
+        col = mix(col, barsPanel(uv, room, u), panel);
+        col += float3(0.075, 0.078, 0.088) * smoothstep(0.0030, 0.0, fabs(panelD))
+             * (0.30 + 0.70 * smoothstep(panelLo, bayHi, uv.y));
+
+        // The ladder sits in a smoked recess; the bevel is dark along the top
+        // inside edge and bright along the bottom, which is what reads as
+        // "cut into the panel" rather than "printed on it".
+        float2 wc = float2((uv.x - 0.5) * A, uv.y - (wallLo + wallHi) * 0.5);
+        float2 wh2 = float2(0.470 * A, (wallHi - wallLo) * 0.5);
+        float windowD = sdRoundBox(wc, wh2, 0.008);
+        float window = aaFill(windowD, aa);
+        col = mix(col, float3(0.014, 0.015, 0.019), window);
+        col += mix(float3(0.075), float3(0.012), smoothstep(-0.5, 0.5, wc.y / max(wh2.y, 1e-4)))
+             * smoothstep(0.0035, 0.0, fabs(windowD)) * window;
+
+        float ladderX0 = 0.045, ladderX1 = 0.955;
+        float wx = (uv.x - ladderX0) / (ladderX1 - ladderX0);
+        float ww = (ladderX1 - ladderX0) * A;
+        // The ladder stops just short of the recess floor. That sliver of
+        // sill is what separates the bars from their reflection below —
+        // without it the two run together into one continuous bar.
+        float ladderLo = wallLo + 0.011;
+        float wh = ladderHi - ladderLo;
+
+        // printed dB scale: engraved rules behind the columns, matching ticks
+        // in the margins outside the recess
+        float scaleY = (uv.y - ladderLo) / max(wh, 1e-4);
+        float rule = smoothstep(0.0016, 0.0, fabs(fract(scaleY * 5.0 + 0.5) - 0.5) / 5.0);
+        float overLine = smoothstep(0.0022, 0.0, fabs(scaleY - 0.86));
+        if (scaleY > 0.0 && scaleY < 1.0) {
+            float gapMask = 1.0 - step(fabs(fract(wx * float(cols)) - 0.5) * 2.0, 0.80);
+            col += float3(0.055, 0.058, 0.066) * rule * gapMask * step(0.0, wx) * step(wx, 1.0);
+            col += float3(0.25, 0.05, 0.03) * overLine * gapMask * step(0.0, wx) * step(wx, 1.0);
+            float margin = step(uv.x, ladderX0 - 0.004) + step(ladderX1 + 0.004, uv.x);
+            col += float3(0.12, 0.125, 0.14) * (rule + overLine) * margin * (1.0 - window) * room;
+        }
+
+        col += barsWall(wx, scaleY, ww, wh, cols, segs, glow, peakAmt, st, u, aa);
+
+        // Over-lamps: one tiny red LED per column, latched by the peak cap.
+        if (uv.y > ladderHi + 0.004 && uv.y < wallHi - 0.004 && wx > 0.0 && wx < 1.0) {
+            float lampX = fract(wx * float(cols)) - 0.5;
+            int lc = clamp(int(wx * float(cols)), 0, cols - 1);
+            float over = smoothstep(0.94, 1.0, st[kBarsPeaks + lc]);
+            float2 lq = float2(lampX * ww / float(cols), uv.y - (ladderHi + wallHi) * 0.5);
+            float ld = length(lq) - min(0.0055, ww / float(cols) * 0.22);
+            float lm = aaFill(ld, aa);
+            col += float3(0.30, 0.03, 0.02) * lm * 0.25;
+            col += float3(1.0, 0.12, 0.06) * over
+                 * (lm * 1.6 + exp(-max(ld, 0.0) * 90.0) * 0.8 * glow);
+        }
+
+        // Gloss shelf: the ladder reflected in the polished sill below it.
+        if (uv.y < shelfHi && uv.y > panelLo) {
+            float below = shelfHi - uv.y;
+            col *= 0.30;
+            col += barsWall(wx, (below + 0.011) / max(wh, 1e-4), ww, wh, cols, segs,
+                            glow, 0.0, st, u, aa * 3.0)
+                 * 0.26 * exp(-below * 30.0);
+            col += float3(0.05) * smoothstep(0.0022, 0.0, fabs(uv.y - shelfHi));
+        }
+
+        // ---- the meter bay ----
+        if (bayH > 0.001 && uv.y > bayLo - 0.02) {
+            float cy = (bayLo + bayHi) * 0.5;
+            float vuHy = bayH * 0.44;
+            float vuHx = vuHy * 1.45;
+            float vuHxUV = vuHx / A;
+            float cxL = 0.028 + vuHxUV;
+            float cxR = 0.972 - vuHxUV;
+            float gain = min(meters, 1.6);
+            col = barsVU(col, float2((uv.x - cxL) * A, uv.y - cy), float2(vuHx, vuHy),
+                         st[kBarsVU], lamp, glow * gain, aa, u);
+            col = barsVU(col, float2((uv.x - cxR) * A, uv.y - cy), float2(vuHx, vuHy),
+                         st[kBarsVU + 1], lamp, glow * gain, aa, u);
+            // The scope keeps a tube-like aspect instead of stretching to
+            // fill; whatever is left over stays panel.
+            float freeHx = max((cxR - cxL) * 0.5 * A - vuHx - 0.045, 0.02);
+            float scopeHx = min(freeHx, vuHy * 4.6);
+            col = barsScope(col, float2((uv.x - 0.5) * A, uv.y - cy),
+                            float2(scopeHx, vuHy * 0.94), glow * gain, aa, wave, u);
+
+            // Between scope and meters, a cluster of eight indicator LEDs —
+            // one per named band, sub-bass on the left through air on the
+            // right, mirrored on both sides of the bay.
+            float comps[8] = {u.subBass, u.bass, u.lowMid, u.mid,
+                              u.highMid, u.presence, u.treble, u.air};
+            float clusterX = (scopeHx + freeHx) * 0.5;
+            for (int i = 0; i < 8; i++) {
+                float2 lp = float2(fabs((uv.x - 0.5) * A) - clusterX,
+                                   uv.y - cy - (float(i / 4) - 0.5) * 0.026);
+                lp.x -= (float(i % 4) - 1.5) * 0.020;
+                float ld = length(lp) - 0.0042;
+                float lm = aaFill(ld, aa);
+                float e = clamp(comps[i] * u.sensitivity * 1.6, 0.0, 1.0);
+                float3 lc = cosPalette(0.66 + 0.30 * float(i) / 7.0, u.palette);
+                col += lc * (lm * (0.05 + 1.5 * e)
+                             + exp(-max(ld, 0.0) * 220.0) * e * 0.5 * glow) * gain;
+                col += float3(0.05) * smoothstep(0.0016, 0.0, fabs(ld + 0.0016)) * room;
+            }
+        }
+
+        // fixings, on the metal only
+        float pin = 1.0 - window;
+        float sy0 = panelLo + 0.020, sy1 = bayHi - 0.020;
+        col += barsScrew(float2((uv.x - 0.016) * A, uv.y - sy0), aa, room) * pin;
+        col += barsScrew(float2((uv.x - 0.984) * A, uv.y - sy0), aa, room) * pin;
+        col += barsScrew(float2((uv.x - 0.016) * A, uv.y - sy1), aa, room) * pin;
+        col += barsScrew(float2((uv.x - 0.984) * A, uv.y - sy1), aa, room) * pin;
+    }
+
+    // Room light: the lamp over the desk lifts with the kick, and the whole
+    // frame falls off toward the corners.
+    col *= 1.0 + 0.14 * lamp * room;
+    col *= 1.0 - 0.40 * room
+         * smoothstep(0.55, 1.45, length(float2((uv.x - 0.5) * 1.9, (uv.y - 0.5) * 1.25)));
+    // Film grain, reshuffled 12×/second rather than every frame: at display
+    // rate this reads as static rather than grain, and it is the one thing
+    // here that would flicker on a 120 Hz panel.
+    col += (hash21(uv * 640.0 + floor(u.time * 12.0)) - 0.5) * 0.009 * room;
+
+    // Vibrance, then an exposure curve rather than the Reinhard + S-curve the
+    // other visualizers finish with: this frame is lit *hardware*, not an
+    // additive glow, and the S-curve's midtone crush would swallow the panel
+    // detail. 1 - exp(-x) leaves the dark end nearly untouched and rolls the
+    // LED pile-ups smoothly into white.
+    float luma = dot(col, float3(0.299, 0.587, 0.114));
+    col = max(mix(float3(luma), col, 1.22), 0.0);
+    col = 1.0 - exp(-col * 1.18);
+    return float4(col, 1.0);
+}

@@ -119,6 +119,7 @@ enum VisualizerRegistry {
         NebulaVisualizer.descriptor,
         TunnelVisualizer.descriptor,
         AuroraVisualizer.descriptor,
+        BarsVisualizer.descriptor,
     ]
 
     /// Plugin entry point: external code can add visualizers at runtime.

@@ -17,7 +17,7 @@ shaders, Apple Events, sandboxing…) are introduced where they're used.
    raw samples become the `AudioSnapshot` that drives every visual.
 3. **[Rendering](rendering.md)** — how frames get drawn: Metal in a nutshell,
    the 60 fps render loop, and the CPU→GPU data contract.
-4. **[Visualizers](visualizers.md)** — the plugin system, how the three
+4. **[Visualizers](visualizers.md)** — the plugin system, how the four
    built-in visualizers work, and a step-by-step guide to writing a new one.
 5. **[macOS integration](macos-integration.md)** — permissions, sandboxing,
    controlling the Music app, window chrome, and the Xcode project's

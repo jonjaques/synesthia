@@ -39,7 +39,7 @@ Synesthia/
     ├── MetalVisualizerView.swift MetalRenderContext (optional), MTKView host, uniforms per
     │                             frame, occlusion pausing, adaptive render scale, Reduce
     │                             Motion damping
-    └── {Nebula,Tunnel,Aurora}Visualizer.swift
+    └── {Nebula,Tunnel,Aurora,Bars}Visualizer.swift
 
 SynesthiaTests/                   Swift Testing bundle; AudioAnalyzer DSP coverage
 Makefile                          Single entry point for every command (see below)
