@@ -52,6 +52,16 @@ final class AppState {
     var visualizerID: String {
         didSet { UserDefaults.standard.set(visualizerID, forKey: "visualizerID") }
     }
+    /// Loudness normalization: the analyzer slowly adapts its dB mappings to
+    /// the source's program level, so a quiet mic and loud mastered music
+    /// both land in the useful visual range without retuning Sensitivity.
+    /// Persisted; the analyzer owns the DSP, this just switches it.
+    var loudnessNormalizationEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(loudnessNormalizationEnabled, forKey: Self.loudnessKey)
+            analyzer.setAutoGainEnabled(loudnessNormalizationEnabled)
+        }
+    }
 
     var inputDevices: [AudioInputDevice] = []
     /// Changing the device while already listening retargets the capture
@@ -94,6 +104,7 @@ final class AppState {
 
     private static let welcomeKey = "hasSeenWelcome"
     private static let bookmarkKey = "audioFileBookmark"
+    private static let loudnessKey = "loudnessNormalization"
 
     private init() {
         systemCapture = SystemAudioCapture(analyzer: AudioAnalyzer.shared)
@@ -106,9 +117,18 @@ final class AppState {
         sourceKind = AudioSourceKind(rawValue: stored) ?? .demo
         let storedViz = UserDefaults.standard.string(forKey: "visualizerID") ?? ""
         visualizerID = VisualizerRegistry.descriptor(id: storedViz)?.id ?? VisualizerRegistry.all[0].id
+        // Default on; read via `bool(forKey:)` (not a plain object cast) so
+        // the screenshots-style `-loudnessNormalization NO` argument-domain
+        // injection keeps working.
+        loudnessNormalizationEnabled =
+            UserDefaults.standard.object(forKey: Self.loudnessKey) == nil
+            ? true
+            : UserDefaults.standard.bool(forKey: Self.loudnessKey)
         showsWelcome = !UserDefaults.standard.bool(forKey: Self.welcomeKey)
         fileURL = resolveBookmarkedFile()
         systemCapture.onExternalStop = { [weak self] in self?.handleSystemCaptureStopped() }
+        // didSet doesn't fire during init, so push the stored value once.
+        analyzer.setAutoGainEnabled(loudnessNormalizationEnabled)
     }
 
     /// The SCK stream died without us stopping it (permission revoked, display

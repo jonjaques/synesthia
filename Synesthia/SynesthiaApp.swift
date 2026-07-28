@@ -33,6 +33,12 @@ struct SynesthiaApp: App {
     }
 
     var body: some Scene {
+        // Registers the app-menu "Settings…" item and ⌘, automatically.
+        Settings {
+            SettingsView()
+                .environment(appState)
+        }
+
         WindowGroup {
             ContentView()
                 .environment(appState)

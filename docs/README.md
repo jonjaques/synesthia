@@ -57,6 +57,12 @@ web/                              Astro marketing site
 Run `make` for the list of tasks; `CLAUDE.md` at the repo root documents each
 one and the constraints behind them.
 
+## What's next
+
+**[Roadmap assessment](roadmap.md)** — every idea on the README's roadmap
+list, assessed: feasibility in the current code, rough cost, and the
+platform research (dated) behind the ones that depend on Apple's rules.
+
 ## Shipping
 
 1. **[Launch plan](app-store-launch-plan.md)** — the single working document:

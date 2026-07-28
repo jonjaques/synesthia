@@ -55,13 +55,17 @@ know what's playing.
 
 All visualizers share global **Sensitivity**, **Speed**, and five color
 **palettes** (Prism, Ember, Ocean, Violet, Mono) — see the slider icon in the
-control bar. Settings persist across launches.
+control bar. **Normalize Loudness** (on by default, in Settings — ⌘,) slowly
+adapts the analysis to how loud the source actually is, so a quiet mic and
+loud mastered music read the same without retuning Sensitivity. Settings
+persist across launches.
 
 ### Troubleshooting
 
 - **Visuals don't react** — check System Settings › Privacy & Security ›
   Screen & System Audio Recording, then click play again. If they react but
-  weakly, raise **Sensitivity** in the options popover.
+  weakly, give **Normalize Loudness** a few seconds to adapt (or check it's
+  on in Settings, ⌘,), or raise **Sensitivity** in the options popover.
 - **No track info / artwork** — source must be **Music app**, and Automation
   permission must be granted (System Settings › Privacy & Security ›
   Automation › Synesthia › Music).
@@ -294,15 +298,18 @@ shader as `VizUniforms.p0…p7`. Audio data arrives as a 64-float band array, a
 
 ## Roadmap / ideas
 
-- **True external plugins**: load `VisualizerDescriptor`s from `.bundle`s in
-  `~/Library/Application Support/Synesthia/Plugins` via `register(_:)`.
-- **More visualizers**: raymarched geometry, GPU-compute particle systems
-  (the CPU sim tops out around ~8k particles), classic bar spectrum.
-- **Per-visualizer palettes** and user-defined color palettes.
+Each of these is assessed in [docs/roadmap.md](docs/roadmap.md) —
+feasibility in the current code, rough cost, and the platform research
+behind the ones that depend on Apple's rules. Roughly in order of promise:
+
 - **Beat-synced scene changes** (auto-rotate visualizers every N bars).
-- **Loudness normalization** so Sensitivity doesn't need retuning per source.
-- **Now-playing via MediaRemote alternatives** for Spotify and other players
-  (currently only Music.app exposes metadata to us).
+- **More visualizers**: GPU-compute particle systems (the CPU sim tops out
+  around ~8k particles), raymarched geometry.
+- **Now-playing for Spotify** and other players (currently only Music.app
+  exposes metadata to us).
+- **User-defined color palettes** (palettes are already per-visualizer).
+- **True external plugins**: load visualizers from
+  `~/Library/Application Support/Synesthia/Plugins` via `register(_:)`.
 - **Screen saver target** reusing the same render stack.
 - **String Catalog localization** — UI strings are currently literals; the
   project has `STRING_CATALOG_GENERATE_SYMBOLS` enabled and should migrate.

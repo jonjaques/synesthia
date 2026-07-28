@@ -20,15 +20,18 @@ deleting the fallback branch, nothing else.
 
 ```
 Synesthia/
-├── SynesthiaApp.swift            @main; WindowGroup + Help/Playback/Visualizer menu commands
+├── SynesthiaApp.swift            @main; Settings scene (⌘,) + WindowGroup + Help/Playback/Visualizer
+│                                 menu commands
 ├── AppState.swift                @Observable hub: source switching, transport, permissions status
 ├── ContentView.swift             Canvas + auto-hiding ControlsBar + NowPlayingBadge + OptionsPanel
+├── SettingsView.swift            App-wide Settings window: Normalize Loudness toggle
 ├── WelcomeView.swift             First-run explainer: sources, permissions, System Settings links
 ├── Updater.swift                 Sparkle glue, `#if canImport(Sparkle)`; direct build only
 ├── Resources/DemoLoop.m4a        Generated demo track (scripts/make_demo_loop.py)
 ├── Audio/
 │   ├── AudioAnalyzer.swift       nonisolated, lock-guarded vDSP FFT → AudioSnapshot (64 bands,
-│   │                             waveform, bass/mid/treble/level, beat envelope)
+│   │                             waveform, bass/mid/treble/level, beat envelope); slow auto-gain
+│   │                             normalizes source loudness (Normalize Loudness toggle)
 │   └── AudioSources.swift        AudioSourceKind, SystemAudioCapture (SCK), InputDeviceCapture,
 │                                 FilePlayer, CoreAudio input-device enumeration
 ├── Music/MusicController.swift   Apple Events to Music.app: transport, poll loop, artwork

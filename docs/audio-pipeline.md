@@ -123,12 +123,40 @@ what looks right on screen:
 3. **Decibel mapping.** Loudness perception is also logarithmic. Raw
    magnitudes would make everything but the loudest peak invisibly small;
    converting to dB and normalizing (-72 dB → 0, -6 dB → 1) spreads the
-   useful dynamic range across 0…1.
+   useful dynamic range across 0…1. With **Normalize Loudness** on (the
+   default) this mapping is additionally shifted by a slow auto-gain — see
+   below.
 
 4. **Attack/release smoothing.** Borrowed from audio compressors: a band
    rises toward a new higher value fast (65% per pass) but falls slowly
    (12% per pass). Fast attack keeps drum hits punchy; slow release stops
    the visuals from strobing between analysis passes.
+
+### Loudness normalization (auto-gain)
+
+The fixed dB mapping assumes mastered-music levels. A quiet mic — or system
+audio at a quarter volume — would sit in the bottom of the range and every
+visualizer would barely move, which is why Sensitivity used to need retuning
+per source. The analyzer therefore runs a slow AGC:
+
+- **Track**: the program's recent peak short-term level (the RMS of each
+  pass, in dB). The tracker _primes_ on the first audible pass — snapping
+  straight to the observed level so a freshly switched source adapts in
+  about a second — then decays at ≈ 2.5 dB/s, slow enough that quiet
+  passages within a song still read as quiet.
+- **Gate**: below −55 dB nothing updates. Silence must _hold_ the gain, not
+  wind it up to maximum and amplify the noise floor (or blast the next
+  chorus).
+- **Apply**: `reference − peak` (reference −8 dB, clamped to −12…+24 dB) is
+  added to both the band mapping and `level`, smoothed asymmetrically — down
+  fast when a loud passage arrives, up over ~1 s — so the gain drifts rather
+  than pumps.
+
+With the tracked peak at the reference the gain is zero, so loud mastered
+music looks identical to the historical fixed mapping. The toggle
+("Normalize Loudness" in the Settings window, ⌘,) lives on `AppState`, is
+persisted, and simply flips the analyzer; disabling ramps the gain back to
+zero rather than jump-cutting.
 
 ### The derived features
 
@@ -139,7 +167,7 @@ Everything below is computed from the band array and packed into
 | ------------------------- | -------------------------------------------------- | --------------------------------------------------- |
 | `bands[64]`               | The spectrum itself                                | Steps 1–4 above                                     |
 | `waveform[256]`           | The raw wave shape, for oscilloscope-style visuals | Time-domain samples, downsampled                    |
-| `level`                   | Overall loudness                                   | RMS of the window, dB-mapped                        |
+| `level`                   | Overall loudness                                   | RMS of the window, dB-mapped (plus auto-gain)       |
 | `bass` / `mid` / `treble` | Coarse register energies                           | Averages over band ranges                           |
 | `components[8]`           | Finer named sub-bands (sub-bass … air)             | Averages over ranges mapped from fixed Hz edges     |
 | `beat`                    | Kick-drum envelope: 1 on a hit, exponential decay  | Bass energy vs. its own running average (see below) |
