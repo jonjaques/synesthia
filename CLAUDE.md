@@ -29,6 +29,8 @@ Synesthia/
 ├── SettingsView.swift            App-wide Settings window: Normalize Loudness toggle
 ├── WelcomeView.swift             First-run explainer: sources, permissions, System Settings links
 ├── Updater.swift                 Sparkle glue, `#if canImport(Sparkle)`; direct build only
+├── Icon.icon                     App icon (Icon Composer); Release + Direct
+├── IconDebug.icon                …same glyph, orange gradient; Debug only, excluded from ship
 ├── Resources/DemoLoop.m4a        Generated demo track (scripts/make_demo_loop.py)
 ├── Audio/
 │   ├── AudioAnalyzer.swift       nonisolated, lock-guarded vDSP FFT → AudioSnapshot (64 bands,
@@ -184,18 +186,24 @@ Capture first, match against the variable: `OUT=$(producer 2>&1 || true)` then `
 
 Three configurations, two app targets. **`Synesthia`/`Release` is the Mac App Store build and `Synesthia Direct`/`Direct` is the notarized direct download** — they differ in whether the Music.app integration and the updater exist at all.
 
-|                           | `Release` (App Store)    | `Direct`                        | `Debug`                         |
-| ------------------------- | ------------------------ | ------------------------------- | ------------------------------- |
-| Target                    | `Synesthia`              | `Synesthia Direct`              | either                          |
-| `MUSIC_APP_SOURCE`        | off                      | on                              | on                              |
-| Now-playing badge         | yes (no permission)      | yes                             | yes                             |
-| Transport + cover art     | no                       | opt-in                          | opt-in                          |
-| Sparkle                   | never                    | linked                          | Direct target only              |
-| Entitlements              | `Synesthia.entitlements` | `Synesthia-Direct.entitlements` | `Synesthia-Direct.entitlements` |
-| Apple Events entitlements | none                     | automation + Music exception    | same                            |
-| `network.client`          | no                       | yes (Sparkle)                   | yes                             |
+|                           | `Release` (App Store)     | `Direct`                        | `Debug`                         |
+| ------------------------- | ------------------------- | ------------------------------- | ------------------------------- |
+| Target                    | `Synesthia`               | `Synesthia Direct`              | either                          |
+| Bundle ID                 | `com.jonjaques.Synesthia` | same                            | **`…Synesthia.debug`**          |
+| App icon                  | `Icon.icon`               | `Icon.icon`                     | **`IconDebug.icon`**            |
+| `MUSIC_APP_SOURCE`        | off                       | on                              | on                              |
+| Now-playing badge         | yes (no permission)       | yes                             | yes                             |
+| Transport + cover art     | no                        | opt-in                          | opt-in                          |
+| Sparkle                   | never                     | linked                          | Direct target only              |
+| Entitlements              | `Synesthia.entitlements`  | `Synesthia-Direct.entitlements` | `Synesthia-Direct.entitlements` |
+| Apple Events entitlements | none                      | automation + Music exception    | same                            |
+| `network.client`          | no                        | yes (Sparkle)                   | yes                             |
 
 `#if MUSIC_APP_SOURCE` removes the whole of `PlayerRemote.swift` and every Apple Event with it, so the App Store build needs neither `automation.apple-events` nor any `temporary-exception.apple-events` — the single largest review risk this project had. **What it no longer removes is now-playing:** `NowPlayingObserver` reads distributed notifications, which cost no permission, so the store build shows the badge too. The flag now gates only transport control and cover art. Despite the name, there is no longer a `.musicApp` audio source. Likewise `#if canImport(Sparkle)` empties `Updater.swift` in the target that doesn't link it, so `SynesthiaApp.swift` needs no conditional at the call site. `scripts/build-appstore.sh` asserts against the built archive that neither leaked (no Apple Events entitlement, no `tell application "` string for any player, no Sparkle framework/link/`SUFeedURL`). Full rationale in `docs/distribution.md`.
+
+**`Debug` builds carry their own bundle ID and their own app icon, and both are deliberate.** TCC identifies an app by bundle ID **plus code-signing identity**, and the three configurations sign with three different certificates (Apple Development / Developer ID / Mac App Store). With one shared bundle ID they share one TCC record: grant Screen & System Audio Recording to a local build, launch a shipping copy, and the grant now points at the wrong binary — the loser is denied silently, with no prompt and no error, which reads as a capture bug in the app. `PRODUCT_BUNDLE_IDENTIFIER = com.jonjaques.Synesthia.debug` in the two `Debug` configurations splits the record, and with it the sandbox container, so dev preferences stop bleeding into an installed release. `Release` and `Direct` intentionally still share `com.jonjaques.Synesthia` — they are one product on two channels and changing `Direct` would break Sparkle updates for existing users. Sparkle's `$(PRODUCT_BUNDLE_IDENTIFIER)-spks`/`-spki` mach-lookup exceptions expand at build time and follow the suffix automatically; never hardcode them. Practical consequence: a `Debug` build must be authorized separately, including for `make screenshots`, which builds `Debug` unless given `--configuration Direct`.
+
+`Synesthia/IconDebug.icon` is `Icon.icon` with exactly one value changed — the `automatic-gradient` fill, indigo → orange — so a dev build is obvious in the Dock. `ASSETCATALOG_COMPILER_APPICON_NAME` picks it per configuration, and the four non-`Debug` app configurations set `EXCLUDED_SOURCE_FILE_NAMES = "IconDebug.icon"` so it never ships. Recolor by editing `fill` in `IconDebug.icon/icon.json`; touch nothing else. Note `ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES` is why the exclusion is needed — without it actool compiles every `.icon` it finds into the bundle regardless of which one is selected.
 
 Adding a _new_ configuration means cloning the `XCBuildConfiguration` objects at both project and target level and registering both in their `XCConfigurationList`s.
 

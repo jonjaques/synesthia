@@ -9,6 +9,8 @@ configurations**. Understanding that split is the key to everything else here.
 | Scheme                             | `Synesthia`                 | `Synesthia Direct`                        | both                            |
 | Configuration                      | `Release`                   | `Direct`                                  | `Debug`                         |
 | Goes to                            | Mac App Store               | synesthia.app                             | your Mac                        |
+| Bundle ID                          | `com.jonjaques.Synesthia`   | `com.jonjaques.Synesthia`                 | **`…Synesthia.debug`**          |
+| App icon                           | `Icon.icon`                 | `Icon.icon`                               | **`IconDebug.icon`** (orange)   |
 | `MUSIC_APP_SOURCE`                 | **off**                     | on                                        | on                              |
 | Now-playing badge                  | yes (no permission)         | yes                                       | yes                             |
 | Transport control + cover art      | absent                      | opt-in                                    | opt-in                          |
@@ -73,6 +75,59 @@ Anything added to one target's build settings must be added to the other's.
 `Synesthia/` is a `PBXFileSystemSynchronizedRootGroup` referenced by both
 targets, so _source files_ need no such care — a new `.swift` file anywhere
 under `Synesthia/` compiles into both automatically.
+
+---
+
+## Why Debug has its own bundle identifier
+
+**`Debug` builds are `com.jonjaques.Synesthia.debug`. `Release` and `Direct`
+are both `com.jonjaques.Synesthia`.**
+
+TCC identifies an app by **bundle identifier plus code-signing identity**, and
+the three configurations sign with three different certificates — Apple
+Development for `Debug`, Developer ID for `Direct`, Mac App Store for
+`Release`. Sharing one bundle ID across them means one TCC record that every
+build fights over: granting Screen & System Audio Recording to a locally built
+app and then launching a shipping copy (or the reverse) leaves the grant
+pointing at the wrong binary, and the app that lost is denied with no prompt
+and no error — the toggle in System Settings simply doesn't apply to it. It
+looks exactly like a capture bug in the app.
+
+Suffixing `Debug` splits the record. The development build gets its own row in
+each System Settings privacy pane, its own Automation grant, and — because the
+sandbox container is named after the bundle ID — its own
+`~/Library/Containers/com.jonjaques.Synesthia.debug`, so dev preferences
+(`hasSeenWelcome`, the chosen visualizer, the file bookmark) no longer bleed
+into an installed release copy. Authorize each one once; they stay
+independent.
+
+Consequences worth knowing:
+
+- **A `Debug` build needs its own permission grants.** The first system-audio
+  capture after this change prompts again. That is the point, not a
+  regression — and it applies to `make screenshots`, which builds `Debug` by
+  default (pass `--configuration Direct` to shoot the shipping build).
+- **Signing still works automatically.** Nothing in the entitlements requires
+  an explicit App ID, so Xcode provisions `…Synesthia.debug` for development
+  on its own.
+- **Sparkle follows along.** Its mach-lookup exceptions are written
+  `$(PRODUCT_BUNDLE_IDENTIFIER)-spks` / `-spki` and expand at build time, so
+  the XPC service names track the suffixed ID. Never hardcode them.
+- **`Release` and `Direct` deliberately still match.** They are the same
+  product on two channels; changing `Direct`'s ID would break Sparkle updates
+  for everyone already running it. The cost is that testing those two against
+  each other on one Mac has the collision described above — install one at a
+  time.
+
+**The icon follows the same split.** `Synesthia/IconDebug.icon` is a copy of
+`Icon.icon` with one value changed — the `automatic-gradient` fill, indigo →
+orange — so a development build is unmistakable in the Dock and in ⌘-Tab.
+`ASSETCATALOG_COMPILER_APPICON_NAME` selects it per configuration
+(`IconDebug` in `Debug`, `Icon` elsewhere), and the four non-`Debug` app
+configurations carry `EXCLUDED_SOURCE_FILE_NAMES = "IconDebug.icon"` so the
+extra ~660 KB never reaches a shipping bundle. Both `.icon` files are picked up
+by the synchronized group automatically; to recolor, edit `fill` in
+`IconDebug.icon/icon.json` and nothing else.
 
 ---
 
