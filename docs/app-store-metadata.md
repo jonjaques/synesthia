@@ -145,14 +145,14 @@ Thanks for reviewing Synesthia.
 
 NO PERMISSIONS ARE NEEDED TO SEE THE APP WORK.
 
-Synesthia launches on a bundled demo track and starts playing it immediately.
-The visualizer is animating within a second of launch on a machine that has
-granted nothing. A welcome sheet explains the optional audio sources; you can
-dismiss it with "Continue with the demo" and the app is fully functional.
+Synesthia launches into a welcome sheet explaining the optional audio sources.
+Click "Continue" — which grants nothing — and it starts playing a bundled demo
+track. The visualizer is animating a second later on a machine that has granted
+no permission at all, and the app is fully functional from there.
 
 To verify quickly:
-  1. Launch the app. The demo track begins playing on its own.
-  2. Dismiss the welcome sheet ("Continue with the demo").
+  1. Launch the app. A welcome sheet explains the audio sources.
+  2. Click "Continue". The bundled demo track begins playing.
   3. The canvas is animating in time with the audio.
   4. Use the "Visualizer" menu (or Cmd-1 / Cmd-2 / Cmd-3) to switch between
      Nebula, Spectrum Tunnel, and Aurora. All three react to the demo track.

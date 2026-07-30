@@ -160,7 +160,14 @@ struct ContentView: View {
             _ in
             appState.handleAppActivation()
         }
+        // `onDismiss` catches the sheet going away by any route the buttons
+        // don't own (Escape). Since first launch now leaves the canvas silent
+        // until the sheet is answered, a dismissal that skipped
+        // `completeWelcome` would leave the app running on nothing at all.
+        // It's a no-op after the buttons have already called it.
         .sheet(isPresented: $state.showsWelcome) {
+            appState.completeWelcome()
+        } content: {
             WelcomeView()
                 .environment(appState)
         }
@@ -712,6 +719,15 @@ struct ControlsPod: View {
                     Divider()
                     Button("Choose File…") { appState.openFilePanel() }
                 }
+                // The demo isn't in the list above (it isn't a source anyone
+                // chose), so this is where its transport lives — and where
+                // someone who has heard the loop enough times looks first.
+                if state.sourceKind == .demo {
+                    Divider()
+                    Button(appState.isDemoPlaying ? "Pause Demo Track" : "Play Demo Track") {
+                        appState.toggleCapture()
+                    }
+                }
             } label: {
                 PodMenuLabel(symbol: appState.sourceKind.symbol, title: appState.sourceKind.label)
             }
@@ -792,19 +808,26 @@ struct CaptureButton: View {
         .accessibilityAddTraits(active ? .isSelected : [])
     }
 
+    /// Sources this app is playing itself get transport glyphs; sources it is
+    /// listening to get the capture waveform. Reaching for a waveform to
+    /// silence the demo track is not an obvious move.
     private var symbol: String {
-        if appState.sourceKind == .audioFile {
-            return appState.isCaptureActive ? "pause.circle.fill" : "play.circle.fill"
+        switch appState.sourceKind {
+        case .demo, .audioFile:
+            appState.isCaptureActive ? "pause.circle.fill" : "play.circle.fill"
+        case .systemAudio, .inputDevice:
+            appState.isCaptureActive ? "waveform.circle.fill" : "waveform.circle"
         }
-        return appState.isCaptureActive ? "waveform.circle.fill" : "waveform.circle"
     }
 
     private var helpText: String {
         switch appState.sourceKind {
+        case .demo:
+            appState.isCaptureActive ? "Pause demo track" : "Play demo track"
         case .audioFile:
-            return appState.isCaptureActive ? "Pause file" : "Play file"
-        default:
-            return appState.isCaptureActive ? "Stop listening" : "Start listening"
+            appState.isCaptureActive ? "Pause file" : "Play file"
+        case .systemAudio, .inputDevice:
+            appState.isCaptureActive ? "Stop listening" : "Start listening"
         }
     }
 }

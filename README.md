@@ -20,8 +20,10 @@ via Sparkle. Or [build it from source](#contributing).
 
 ## Using it
 
-1. First launch plays a **bundled demo loop**, so you can see it work before
-   granting anything. A welcome sheet explains each source and what it costs.
+1. First launch opens a welcome sheet explaining each source and what it costs.
+   **Continue** grants nothing and plays a **bundled demo loop**, so you can
+   see it work before deciding. Pause it from the source menu, the play/pause
+   button, or the space bar.
 2. Pick **System audio** to visualize what you're actually listening to. macOS
    asks for **Screen & System Audio Recording** — the only sanctioned way to
    hear system output (audio only; the video leg is 2×2 px and discarded). If

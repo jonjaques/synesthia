@@ -8,11 +8,14 @@ import SwiftUI
 ///
 /// Two jobs, in this order of importance:
 ///
-/// 1. Prove the app works before asking for anything. The bundled demo track
-///    is already playing behind this sheet, so the visuals are visibly alive
-///    on a machine that has granted zero permissions. An App Review tester who
-///    grants nothing must still see the app function — the alternative is a
-///    black canvas and a 2.1 "app does not function" rejection.
+/// 1. Prove the app works before asking for anything. Continue — the default
+///    action, and the one that grants nothing — starts the bundled demo track,
+///    so the visuals are visibly alive on a machine with zero permissions. An
+///    App Review tester who grants nothing must still see the app function —
+///    the alternative is a black canvas and a 2.1 "app does not function"
+///    rejection. Nothing plays *underneath* this sheet: a first launch that
+///    starts making noise before the user has read a word of it is startling,
+///    and it buries the explanation under the thing it is explaining.
 /// 2. Deliver each permission's value proposition *before* macOS asks for it.
 ///    Choosing a source here is exactly what triggers the system prompt, so
 ///    the reasons get read first.
@@ -100,7 +103,15 @@ struct WelcomeView: View {
             .controlSize(.large)
             .keyboardShortcut(.defaultAction)
 
-            if appState.sourceKind == .demo, appState.isDemoPlaying {
+            if appState.firstRunDemoPending {
+                // The demo isn't running yet, so this is a promise rather than
+                // a description: Continue is the no-permissions path, and it
+                // has to say so or it reads as "dismiss and get nothing".
+                Text("Not sure yet? Continue plays a short demo track — nothing to grant.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            } else if appState.sourceKind == .demo, appState.isDemoPlaying {
                 Text("The demo track is playing behind this window. Reopen this guide from the Help menu.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -182,8 +193,10 @@ private struct SourceRow: View {
 
     var body: some View {
         Button {
-            appState.completeWelcome()
+            // Source first: `completeWelcome` starts the demo when nothing was
+            // chosen, and this is the choice.
             appState.selectSource(kind)
+            appState.completeWelcome()
             if kind == .audioFile, appState.fileURL == nil {
                 // Give the sheet a beat to start dismissing before the modal
                 // open panel takes over the run loop.
