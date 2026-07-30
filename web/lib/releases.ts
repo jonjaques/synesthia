@@ -115,3 +115,36 @@ export const IMMUTABLE = "public, max-age=31536000, immutable";
  * edge doing the work while still making a release visible almost immediately.
  */
 export const APPCAST_CACHE = "public, max-age=300, s-maxage=300";
+
+/**
+ * Every error answer from these routes, without exception.
+ *
+ * A response with no `cache-control` is not "uncached": Cloudflare applies a
+ * default Edge TTL, and for these routes it hands a 404 `max-age=14400`. Four
+ * hours. Every 404 here is a transient — the URL exists a few seconds later,
+ * once publish-release.sh finishes the upload — so caching one pins a lie over
+ * the exact window it is wrong in.
+ *
+ * That is not hypothetical. Publishing 1.2 shipped a DMG whose URL had been
+ * requested moments before it existed, and Sparkle spent the next several
+ * minutes reporting "An error occurred while downloading the update" against a
+ * bucket that already held the file. The bytes were fine; the edge was serving
+ * a cached 404. `no-store` is what keeps a miss from outliving itself.
+ */
+export const NO_STORE = "no-store";
+
+/** A plain-text error that will never be cached. */
+export function plainError(
+  status: number,
+  message: string,
+  extra?: HeadersInit,
+): Response {
+  return new Response(message, {
+    status,
+    headers: {
+      "content-type": "text/plain; charset=utf-8",
+      "cache-control": NO_STORE,
+      ...(extra as Record<string, string> | undefined),
+    },
+  });
+}

@@ -4,6 +4,7 @@ import {
   isSafeDmgName,
   matchesEtag,
   parseRange,
+  plainError,
 } from "../../lib/releases";
 
 /**
@@ -21,10 +22,7 @@ export const onRequest: PagesFunction<Env> = async (ctx) => {
   const { request, env, params, waitUntil } = ctx;
 
   if (request.method !== "GET" && request.method !== "HEAD") {
-    return new Response("Method not allowed", {
-      status: 405,
-      headers: { allow: "GET, HEAD" },
-    });
+    return plainError(405, "Method not allowed", { allow: "GET, HEAD" });
   }
 
   // `[[file]]` is a catch-all, so this arrives as an array of path segments.
@@ -34,10 +32,7 @@ export const onRequest: PagesFunction<Env> = async (ctx) => {
     segments.length === 1 ? decodeURIComponent(segments[0] ?? "") : "";
 
   if (!isSafeDmgName(name)) {
-    return new Response("Not found", {
-      status: 404,
-      headers: { "content-type": "text/plain; charset=utf-8" },
-    });
+    return notFound();
   }
 
   const key = `${DOWNLOAD_PREFIX}${name}`;
@@ -142,9 +137,11 @@ function baseHeaders(object: R2Object, name: string): Headers {
   return headers;
 }
 
+/**
+ * Always `no-store`. A 404 here means "not published yet", which stops being
+ * true the moment an upload lands — and a cached one would go on failing every
+ * client for hours after the release is live. See NO_STORE in lib/releases.
+ */
 function notFound(): Response {
-  return new Response("Not found", {
-    status: 404,
-    headers: { "content-type": "text/plain; charset=utf-8" },
-  });
+  return plainError(404, "Not found");
 }

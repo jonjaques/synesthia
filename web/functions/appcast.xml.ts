@@ -1,4 +1,9 @@
-import { APPCAST_KEY, APPCAST_CACHE, matchesEtag } from "../lib/releases";
+import {
+  APPCAST_KEY,
+  APPCAST_CACHE,
+  matchesEtag,
+  plainError,
+} from "../lib/releases";
 
 /**
  * `GET /appcast.xml` — the Sparkle feed, streamed out of R2.
@@ -19,10 +24,7 @@ export const onRequest: PagesFunction<Env> = async (ctx) => {
   const { request, env, waitUntil } = ctx;
 
   if (request.method !== "GET" && request.method !== "HEAD") {
-    return new Response("Method not allowed", {
-      status: 405,
-      headers: { allow: "GET, HEAD" },
-    });
+    return plainError(405, "Method not allowed", { allow: "GET, HEAD" });
   }
 
   const cache = caches.default;
@@ -47,10 +49,9 @@ export const onRequest: PagesFunction<Env> = async (ctx) => {
   });
 
   if (!object) {
-    return new Response("No appcast has been published yet.", {
-      status: 404,
-      headers: { "content-type": "text/plain; charset=utf-8" },
-    });
+    // Never cached: this is the feed every installed copy polls, so a 404 that
+    // outlives the upload that fixes it stops the whole update channel.
+    return plainError(404, "No appcast has been published yet.");
   }
 
   const headers = new Headers();

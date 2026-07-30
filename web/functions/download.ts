@@ -2,6 +2,7 @@ import {
   LATEST_KEY,
   DOWNLOAD_PREFIX,
   isSafeDmgName,
+  plainError,
   type Latest,
 } from "../lib/releases";
 
@@ -20,17 +21,17 @@ export const onRequest: PagesFunction<Env> = async (ctx) => {
   const { request, env } = ctx;
 
   if (request.method !== "GET" && request.method !== "HEAD") {
-    return new Response("Method not allowed", {
-      status: 405,
-      headers: { allow: "GET, HEAD" },
-    });
+    return plainError(405, "Method not allowed", { allow: "GET, HEAD" });
   }
 
   const object = await env.RELEASES.get(LATEST_KEY);
   if (!object) {
-    return new Response(
+    // 503, and emphatically not cached — latest.json appears mid-publish, and
+    // the edge holding this answer would keep the download button broken well
+    // after the release is live.
+    return plainError(
+      503,
       "No release has been published yet. The Mac App Store build is at https://synesthia.app",
-      { status: 503, headers: { "content-type": "text/plain; charset=utf-8" } },
     );
   }
 
@@ -38,20 +39,14 @@ export const onRequest: PagesFunction<Env> = async (ctx) => {
   try {
     latest = await object.json<Latest>();
   } catch {
-    return new Response("The release manifest is corrupt.", {
-      status: 500,
-      headers: { "content-type": "text/plain; charset=utf-8" },
-    });
+    return plainError(500, "The release manifest is corrupt.");
   }
 
   // latest.json is written by our own publish script, but it is still the one
   // piece of bucket content that steers a redirect — so it gets the same
   // filename check as a user-supplied path.
   if (!latest.file || !isSafeDmgName(latest.file)) {
-    return new Response("The release manifest names an unusable file.", {
-      status: 500,
-      headers: { "content-type": "text/plain; charset=utf-8" },
-    });
+    return plainError(500, "The release manifest names an unusable file.");
   }
 
   const target = new URL(`/${DOWNLOAD_PREFIX}${latest.file}`, request.url);
