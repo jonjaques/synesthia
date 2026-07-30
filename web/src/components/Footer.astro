@@ -1,0 +1,48 @@
+---
+/**
+ * The site's only footer — every page renders this one, so the four
+ * destinations (Home, Support, Privacy, GitHub) never drift apart between the
+ * landing page and the legal pages.
+ *
+ * The link to the page you are already on stays in the list rather than being
+ * dropped: a footer whose shape changes per page reads as three different
+ * footers. It is marked `aria-current="page"` and lit instead, matching the
+ * header nav in `Legal.astro`.
+ */
+import Mark from './Mark.astro';
+import GitHubLink from './GitHubLink.astro';
+import { SITE } from '../consts';
+
+const here = Astro.url.pathname.replace(/\/$/, '') || '/';
+const pages = [
+	['/', 'Home'],
+	['/support', 'Support'],
+	['/privacy', 'Privacy'],
+] as const;
+---
+
+<footer class="border-t border-line">
+	<div
+		class="rail flex flex-col items-center justify-between gap-4 py-8 text-sm text-mute sm:flex-row"
+	>
+		<div class="flex items-center gap-2.5">
+			<Mark size={20} class="h-5 w-5" />
+			<span class="font-display font-semibold tracking-tight text-dim">Synesthia</span>
+		</div>
+		<nav aria-label="Footer" class="flex items-center gap-6">
+			{
+				pages.map(([href, label]) => (
+					<a
+						href={href}
+						aria-current={here === href ? 'page' : undefined}
+						class:list={['transition-colors hover:text-paper', here === href && 'text-dim']}
+					>
+						{label}
+					</a>
+				))
+			}
+			<GitHubLink />
+		</nav>
+		<p>© 2026 {SITE.author}</p>
+	</div>
+</footer>

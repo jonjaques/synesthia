@@ -65,11 +65,12 @@ import { CONTACT, GA_ENABLED, LEGAL, SITE } from '../consts';
 
 		<dt>Automation (Music)</dt>
 		<dd>
-			Used only by the version of Synesthia downloaded directly from this site, and only for the
-			“Music app” source: reading the current track’s title, artist, album, and artwork so they can
-			be shown on screen, and sending play, pause, and skip commands. Nothing is written to your
-			library. <strong>The Mac App Store version does not include this feature and never sends
-			Apple Events at all.</strong>
+			Optional, and only in the version of Synesthia downloaded directly from this site. Granting it
+			adds play, pause, and skip buttons for your music player and pulls in real album artwork;
+			nothing is written to your library. The track title, artist, and album are shown without this
+			permission in both versions, because the players broadcast them system-wide already.
+			<strong>The Mac App Store version does not include this feature and never sends Apple Events
+			at all.</strong>
 		</dd>
 	</dl>
 
@@ -139,7 +140,7 @@ import { CONTACT, GA_ENABLED, LEGAL, SITE } from '../consts';
 					<li>Which download button was pressed, and where on the page it was.</li>
 					<li>Clicks on links leaving the site, and on the support email address.</li>
 					<li>How far down the page you scrolled, and which sections came into view.</li>
-					<li>Which of the three screenshots in the header you chose to look at.</li>
+					<li>Which of the screenshots in the header you chose to look at.</li>
 					<li>
 						Anonymous page-speed measurements — how quickly the page drew and responded — so a
 						performance regression is visible without asking anyone.
@@ -185,10 +186,25 @@ import { CONTACT, GA_ENABLED, LEGAL, SITE } from '../consts';
 		the same time as, the release that introduces it.
 	</p>
 
+	<h2>No purchases, no accounts, nothing to bill</h2>
+	<p>
+		Synesthia is <strong>free</strong>. There is no price, no subscription, no in-app purchase, and
+		no trial — so there is no account to create, no payment details to hand over, and no billing
+		data for anyone to hold. Nothing on this page is a paid tier: what the app does with your audio
+		is the same for everyone who runs it.
+	</p>
+	<p>
+		It is a side project rather than a business, which is the honest framing for the support that
+		comes with it: <strong>I read every message and I will do my best</strong> to fix what is broken
+		or explain what is happening, but I cannot promise a response time.
+	</p>
+
 	<h2>Contact</h2>
 	<p>
-		Questions about privacy: <a href={`mailto:${CONTACT.privacy}`}>{CONTACT.privacy}</a>. For
-		anything else, see the <a href="/support">support page</a>.
+		Questions about privacy — or anything else at all — go straight to me at <a
+			href={`mailto:${CONTACT.privacy}`}>{CONTACT.privacy}</a
+		>. It is my own address, not a queue. The <a href="/support">support page</a> answers the common
+		questions first, and the code is public if you would rather read it than ask.
 	</p>
 	<p>{SITE.name} is made by {SITE.author}.</p>
 </Legal>

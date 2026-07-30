@@ -10,7 +10,7 @@ export const SITE = {
   title: "Synesthia — Music you can see",
   tagline: "Music visualizer for macOS",
   description:
-    "Synesthia turns whatever your Mac is playing into light. A 64-band FFT drives three Metal visualizers in real time, from Apple Music, any app’s audio, a mic, or a file.",
+    "Synesthia turns whatever your Mac is playing into light. A 64-band FFT spectrum analyzer drives its GPU visualizers in real time, from Apple Music, any app’s audio, a mic, or a file.",
   author: "Jon Jaques",
   locale: "en_US",
   /** Twitter/X handle for the summary card. PLACEHOLDER. */
@@ -91,11 +91,16 @@ export const RELEASE = {
 /**
  * Contact addresses published on the support and privacy pages. Apple requires
  * a reachable support URL, and a dead address there is a review risk.
- * PLACEHOLDER — these need real mail routing on the synesthia.app domain.
+ *
+ * Both are the same personally-monitored mailbox: nothing routes on the
+ * synesthia.app domain, and a role address that bounces is worse than a
+ * personal one that doesn't. They stay two keys so support can move to
+ * support@synesthia.app on its own once that domain has mail, without touching
+ * the privacy policy.
  */
 export const CONTACT = {
-  support: "support@synesthia.app",
-  privacy: "privacy@synesthia.app",
+  support: "me@jonjaques.com",
+  privacy: "me@jonjaques.com",
 } as const;
 
 /**

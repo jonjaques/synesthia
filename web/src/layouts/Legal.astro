@@ -6,8 +6,8 @@
  */
 import Base from '../layouts/Base.astro';
 import Mark from '../components/Mark.astro';
-import GitHubLink from '../components/GitHubLink.astro';
-import { RELEASE, SITE } from '../consts';
+import Footer from '../components/Footer.astro';
+import { SITE } from '../consts';
 
 interface Props {
 	title: string;
@@ -76,21 +76,7 @@ const pages = [
 		</div>
 	</main>
 
-	<footer class="border-t border-line">
-		<div
-			class="rail flex flex-col items-center justify-between gap-4 py-8 text-sm text-mute sm:flex-row"
-		>
-			<div class="flex items-center gap-2.5">
-				<Mark size={20} class="h-5 w-5" />
-				<span class="font-display font-semibold tracking-tight text-dim">Synesthia</span>
-			</div>
-			<nav aria-label="Footer" class="flex items-center gap-6">
-				<a href="/" class="transition-colors hover:text-paper">Home</a>
-				<GitHubLink />
-			</nav>
-			<p>© 2026 {SITE.author}. {RELEASE.requires}.</p>
-		</div>
-	</footer>
+	<Footer />
 </Base>
 
 <style is:global>

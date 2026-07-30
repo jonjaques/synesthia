@@ -21,7 +21,7 @@
  *                   for rather than which one they scroll past.
  *   section_view    the same question answered by scroll: what got seen.
  *   scroll_depth    how far down a one-page pitch actually gets read.
- *   select_visualizer  which of the three hero shots people choose to look at.
+ *   select_visualizer  which of the hero shots people choose to look at.
  *   web_vitals      LCP/CLS/INP from real visitors, since a single-page site has
  *                   no other way to notice a regression.
  *

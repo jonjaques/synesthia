@@ -1,6 +1,6 @@
 /**
- * The landing page's JavaScript: reveal sections as they scroll in, and drive
- * the hero carousel.
+ * The landing page's JavaScript: reveal sections as they scroll in, drive the
+ * hero carousel, and open screenshots full size.
  *
  * There used to be a canvas re-implementation of the visualizers here, plus a
  * microphone demo. Both are gone — the page now shows real captures of the app
@@ -35,6 +35,17 @@ for (const el of document.querySelectorAll("[data-reveal]")) {
 
 const calm = window.matchMedia("(prefers-reduced-motion: reduce)");
 
+/**
+ * Whether a screenshot is open full size.
+ *
+ * The carousel has to know: opening the viewer moves focus to the dialog, which
+ * is a `focusout` as far as the carousel root is concerned, so its hover-pause
+ * releases and autoplay resumes behind the modal. Close the viewer four seconds
+ * later and you are looking at a different visualizer than the one you clicked.
+ * `lightboxchange` is fired by initLightbox on both edges.
+ */
+const zoomed = () => document.querySelector("dialog.lightbox[open]") !== null;
+
 function initCarousel(root: HTMLElement) {
   const stage = root.querySelector<HTMLElement>(".carousel-stage");
   const slides = [...root.querySelectorAll<HTMLElement>(".carousel-slide")];
@@ -66,6 +77,10 @@ function initCarousel(root: HTMLElement) {
     slides.forEach((slide, i) => {
       slide.toggleAttribute("data-active", i === index);
       slide.setAttribute("aria-hidden", i === index ? "false" : "true");
+      // Each slide contains a link to its full-size capture. The inactive ones
+      // are transparent rather than gone, so without `inert` the Tab key walks
+      // straight into links nobody can see.
+      slide.toggleAttribute("inert", i !== index);
     });
     tabs.forEach((tab, i) => {
       tab.setAttribute("aria-selected", i === index ? "true" : "false");
@@ -75,7 +90,12 @@ function initCarousel(root: HTMLElement) {
 
   const sync = () => {
     const run =
-      visible && !held && !stopped && !calm.matches && !document.hidden;
+      visible &&
+      !held &&
+      !stopped &&
+      !calm.matches &&
+      !document.hidden &&
+      !zoomed();
 
     if (run && timer === undefined) {
       timer = window.setInterval(() => show(index + 1), interval);
@@ -149,6 +169,7 @@ function initCarousel(root: HTMLElement) {
   }
 
   document.addEventListener("visibilitychange", sync);
+  document.addEventListener("lightboxchange", sync);
   calm.addEventListener("change", sync);
 
   new IntersectionObserver(
@@ -165,3 +186,73 @@ function initCarousel(root: HTMLElement) {
 for (const el of document.querySelectorAll<HTMLElement>("[data-carousel]")) {
   initCarousel(el);
 }
+
+/* ---------------------------------------------------------------- lightbox */
+
+/**
+ * Open a screenshot full size in the page's single `<dialog>`.
+ *
+ * The links work without any of this — each one points at the full-resolution
+ * transform — so everything here is an upgrade over a navigation, and every
+ * path that isn't a plain left click is left alone: ⌘-click, middle-click and
+ * "Open image in new tab" should still do what the visitor expects.
+ */
+function initLightbox() {
+  const dialog = document.querySelector<HTMLDialogElement>(
+    "[data-lightbox-dialog]",
+  );
+  // No `showModal` means no focus trap and no Escape, and a half-working modal
+  // is worse than the plain link it replaced.
+  if (!dialog || typeof dialog.showModal !== "function") return;
+
+  const image = dialog.querySelector<HTMLImageElement>("[data-lightbox-image]");
+  const label = dialog.querySelector<HTMLElement>("[data-lightbox-label]");
+  const original = dialog.querySelector<HTMLAnchorElement>(
+    "[data-lightbox-original]",
+  );
+  if (!image || !label || !original) return;
+
+  document.addEventListener("click", (event) => {
+    if (event.defaultPrevented || event.button !== 0) return;
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
+      return;
+
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    const link = target.closest<HTMLAnchorElement>("a[data-lightbox]");
+    if (!link) return;
+
+    event.preventDefault();
+
+    // The caption names the shot; the image inside the link already carries the
+    // long description, so reuse it rather than writing it twice.
+    const source = link.querySelector("img");
+    image.src = link.href;
+    image.alt = source?.alt ?? "";
+    label.textContent = link.dataset.label ?? "";
+    original.href = link.href;
+
+    dialog.showModal();
+    document.dispatchEvent(new Event("lightboxchange"));
+  });
+
+  // Clicking the padding around the figure closes it — the dialog element is
+  // the only thing under the pointer out there.
+  dialog.addEventListener("click", (event) => {
+    if (event.target === dialog) dialog.close();
+  });
+
+  dialog
+    .querySelector("[data-lightbox-close]")
+    ?.addEventListener("click", () => dialog.close());
+
+  // Drop the decoded image when the viewer closes. Holding several megapixels
+  // of AVIF for a dialog nobody is looking at is pure resident memory.
+  dialog.addEventListener("close", () => {
+    image.removeAttribute("src");
+    image.alt = "";
+    document.dispatchEvent(new Event("lightboxchange"));
+  });
+}
+
+initLightbox();

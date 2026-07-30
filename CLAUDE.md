@@ -60,8 +60,13 @@ Synesthia/
 SynesthiaTests/                   Swift Testing bundle; AudioAnalyzer DSP, VizUniforms layout,
                                   now-playing parsing/arbitration
 Makefile                          Single entry point for every command (see below)
+VERSION                           "<marketing> (<build>)" — a mirror of project.pbxproj,
+                                  rewritten and re-asserted by bump-version.sh
+docs/releases/<version>.md        Release notes, one file per version; rendered into the
+                                  Sparkle appcast's <description>
 scripts/                          make_demo_loop.py, build-appstore.sh, build-direct.sh,
-                                  make-appcast.sh, publish-release.sh, sparkle-keys.sh,
+                                  bump-version.sh, release-notes.py, make-appcast.sh,
+                                  publish-release.sh, sparkle-keys.sh,
                                   release.env (shared), check-metadata.py,
                                   take-screenshots.sh + shotkit.swift
 Synesthia-Direct-Info.plist       Sparkle's 3 Info.plist keys (Direct target only)
@@ -106,6 +111,9 @@ make format           # prettier --write, then `swift format --in-place`
 make demo-track       # python3 scripts/make_demo_loop.py
 make screenshots      # scripts/take-screenshots.sh → web/src/assets/screenshots/<run>
 make check-metadata   # scripts/check-metadata.py
+
+make version          # print VERSION — the current marketing version and build number
+make bump BUMP=minor  # cut a release: bump every copy, draft docs/releases/<v>.md, commit, tag
 
 make appstore         # archive + assert + export for the Mac App Store
 make appstore-upload  # …and upload to App Store Connect

@@ -1,0 +1,43 @@
+---
+/**
+ * The full-size viewer. One `<dialog>` for the whole page — every screenshot
+ * link points at its own image and boot.ts swaps the `src` in, so eight shots
+ * cost one element instead of eight.
+ *
+ * It is an enhancement, not the mechanism. Each shot is a real `<a href>`
+ * pointing at the full-size transform, so with no JavaScript — or with a
+ * ⌘-click, or "Open image in new tab" — the visitor still gets the file. The
+ * dialog only intercepts a plain left click.
+ *
+ * `showModal()` is doing the accessibility work here: it traps focus, makes the
+ * rest of the page inert, closes on Escape, and returns focus to the link that
+ * opened it. That is the entire reason this is a `<dialog>` and not a div.
+ */
+---
+
+<dialog class="lightbox" data-lightbox-dialog aria-label="Screenshot, full size">
+	<!-- The close button comes first so it is the first thing focus lands on and
+	     the first thing a screen reader reaches — the image below it is
+	     decorative once its caption has been read. -->
+	<button type="button" class="lightbox-close" data-lightbox-close aria-label="Close">
+		<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+			<path
+				d="M4 4l8 8M12 4l-8 8"
+				stroke="currentColor"
+				stroke-width="1.5"
+				stroke-linecap="round"
+				fill="none"></path>
+		</svg>
+	</button>
+
+	<figure class="lightbox-figure">
+		<!-- `alt` and `src` are filled from the link that was clicked. Empty here
+		     rather than absent: an `<img>` with no `alt` at all is announced by
+		     its filename. -->
+		<img data-lightbox-image alt="" />
+		<figcaption class="lightbox-caption">
+			<span data-lightbox-label></span>
+			<a data-lightbox-original href="#" target="_blank" rel="noopener">Open the file</a>
+		</figcaption>
+	</figure>
+</dialog>

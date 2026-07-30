@@ -18,7 +18,7 @@ const faqs = [
 	},
 	{
 		q: 'Why does a music visualizer need screen recording permission?',
-		a: 'macOS has no dedicated API for capturing system audio. The only sanctioned route is ScreenCaptureKit — the screen-recording framework — which can attach an audio stream to a screen capture. Synesthia takes that video leg at 2×2 pixels and throws every frame away. It never captures your screen.',
+		a: 'macOS gives an app no way to record system audio on its own. The only route Apple provides is screen recording, which can carry the sound alongside the picture — so that is the permission macOS asks for. Synesthia takes the picture at 2×2 pixels and throws every frame away. It never captures your screen.',
 	},
 	{
 		q: 'Can I use it without granting anything?',
@@ -38,7 +38,7 @@ const faqs = [
 	},
 	{
 		q: 'Where did the Music app source go?',
-		a: 'It is present in the version downloaded directly from this site, and not in the Mac App Store version. To visualize Apple Music in the App Store version, choose “System audio” — it sees Music.app perfectly; only the on-screen track name and transport buttons are missing.',
+		a: 'It is gone from both versions, and nothing was lost with it. Music has no audio stream of its own to tap, so that source always went through the same system-audio capture — choose “System audio” and it hears Music exactly as before. The track name still appears on its own in both versions. The one thing only the version from this site can do is drive playback: play, pause and skip buttons, plus real album artwork.',
 	},
 	{
 		q: 'It says Metal is unavailable.',
@@ -71,8 +71,9 @@ const faqSchema = {
 >
 	<h2>Get in touch</h2>
 	<p>
-		Email <a href={`mailto:${CONTACT.support}`}>{CONTACT.support}</a>. It reaches a real person and
-		I answer.
+		Email <a href={`mailto:${CONTACT.support}`}>{CONTACT.support}</a>. That is my own address, not a
+		queue — Synesthia is free and a side project rather than a business, so I cannot promise a
+		response time, but I read every message and I will do my best to fix what is broken.
 	</p>
 	<p>
 		Synesthia is open source under the MIT license. If you would rather file a bug in public — or

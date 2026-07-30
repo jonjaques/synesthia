@@ -166,6 +166,7 @@
 	   and traffic lights in the alpha channel, so those get shadow only; the
 	   full-screen ones are opaque and get clipped to a radius here. */
   .plate {
+    display: block;
     border-radius: 0.875rem;
     overflow: hidden;
     border: 1px solid var(--color-line);
@@ -190,14 +191,176 @@
       );
   }
 
+  /* -------------------------------------------------------------- full size
+
+	   Every screenshot links to its own full-resolution transform, and the
+	   affordance for that is a corner badge rather than anything drawn over the
+	   image — these plates are the loudest thing on the page and an overlay on
+	   hover would fight them.
+
+	   `cursor: zoom-in` is the honest cursor for what the click does. The badge
+	   only appears on hover or keyboard focus, except where there is no hover to
+	   wait for: on a touch screen it sits at half strength permanently, because
+	   otherwise nothing on the page says the image is tappable at all. */
+  .shot-zoom {
+    display: block;
+    position: relative;
+    cursor: zoom-in;
+  }
+
+  .zoom-badge {
+    position: absolute;
+    top: 0.625rem;
+    right: 0.625rem;
+    display: grid;
+    place-items: center;
+    width: 1.75rem;
+    height: 1.75rem;
+    border-radius: 0.5rem;
+    border: 1px solid var(--color-line);
+    background: color-mix(in oklab, var(--color-ink) 78%, transparent);
+    backdrop-filter: blur(6px);
+    color: var(--color-dim);
+    opacity: 0;
+    transition:
+      opacity 0.18s var(--ease-out-quart),
+      color 0.18s var(--ease-out-quart);
+  }
+
+  .zoom-badge svg {
+    width: 0.875rem;
+    height: 0.875rem;
+  }
+
+  .shot-zoom:hover .zoom-badge,
+  .shot-zoom:focus-visible .zoom-badge {
+    opacity: 1;
+    color: var(--color-paper);
+  }
+
+  @media (hover: none) {
+    .zoom-badge {
+      opacity: 0.55;
+    }
+  }
+
+  /* The viewer itself. `<dialog>` supplies the focus trap, the Escape key and
+	   the focus restore; all that is left is to make it look like the page.
+
+	   No entry animation: the image is the content, and fading in several
+	   megapixels reads as a slow load rather than as polish. */
+  .lightbox {
+    width: 100%;
+    max-width: none;
+    height: 100%;
+    max-height: none;
+    margin: 0;
+    padding: clamp(0.75rem, 3vw, 2.5rem);
+    border: 0;
+    background: transparent;
+    color: var(--color-paper);
+    overflow: hidden;
+  }
+
+  .lightbox::backdrop {
+    background: color-mix(in oklab, #05040a 88%, transparent);
+    backdrop-filter: blur(4px);
+  }
+
+  .lightbox-figure {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.875rem;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+  }
+
+  /* `min-height: 0` so the flex item is allowed to shrink below the image's
+	   intrinsic height — without it a 2146 px capture overflows the dialog and
+	   the caption is pushed off-screen. */
+  .lightbox-figure img {
+    min-height: 0;
+    max-width: 100%;
+    max-height: 100%;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    border-radius: 0.5rem;
+  }
+
+  .lightbox-caption {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: center;
+    gap: 0.25rem 1rem;
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--color-mute);
+    text-align: center;
+  }
+
+  .lightbox-caption a {
+    color: var(--color-dim);
+    text-decoration: underline;
+    text-decoration-color: var(--color-line);
+    text-underline-offset: 3px;
+    transition: color 0.18s var(--ease-out-quart);
+  }
+
+  .lightbox-caption a:hover {
+    color: var(--color-paper);
+  }
+
+  .lightbox-close {
+    position: absolute;
+    top: clamp(0.75rem, 3vw, 2.5rem);
+    right: clamp(0.75rem, 3vw, 2.5rem);
+    z-index: 1;
+    display: grid;
+    place-items: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: 0.625rem;
+    border: 1px solid var(--color-line);
+    background: color-mix(in oklab, var(--color-raised) 82%, transparent);
+    backdrop-filter: blur(6px);
+    color: var(--color-dim);
+    cursor: pointer;
+    transition:
+      color 0.18s var(--ease-out-quart),
+      border-color 0.18s var(--ease-out-quart);
+  }
+
+  .lightbox-close svg {
+    width: 1rem;
+    height: 1rem;
+  }
+
+  .lightbox-close:hover {
+    color: var(--color-paper);
+    border-color: var(--color-mute);
+  }
+
+  /* The page must not scroll behind an open viewer. `:has` is doing the work
+	   of a class that JavaScript would otherwise have to add and remove. */
+  html:has(dialog.lightbox[open]) {
+    overflow: hidden;
+  }
+
   /* ---------------------------------------------------------------- carousel
 
-	   Three captures of the same window, crossfading in a fixed 4:3 box. All
-	   the source frames are 2048 × 1536, so the aspect ratio holds the layout
-	   still and nothing jumps between slides. */
+	   Captures of the same window, crossfading in a fixed 16:10 box. Every
+	   source frame is 2880 × 1800, so the aspect ratio holds the layout still
+	   and nothing jumps between slides. */
   .carousel-stage {
     position: relative;
-    aspect-ratio: 4 / 3;
+    aspect-ratio: 16 / 10;
   }
 
   .carousel-slide {
@@ -209,6 +372,10 @@
 
   .carousel-slide[data-active] {
     opacity: 1;
+  }
+
+  .carousel-slide[inert] {
+    pointer-events: none;
   }
 
   /* The controls do nothing without JS, so they only exist with it. */
