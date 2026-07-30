@@ -208,8 +208,15 @@ struct ContentView: View {
     @ViewBuilder
     private var badge: some View {
         if let info = appState.nowPlaying {
-            NowPlayingBadge(info: info, compact: layout == .compact)
-                .frame(maxWidth: badgeMaxWidth, alignment: .leading)
+            NowPlayingBadge(
+                info: info,
+                paletteIndex: appState.settings.tuning(for: appState.visualizerID).paletteIndex,
+                compact: layout == .compact
+            )
+            .frame(maxWidth: badgeMaxWidth, alignment: .leading)
+            // A track that arrives mid-session shouldn't just pop into
+            // existence next to the other pods.
+            .transition(.opacity.combined(with: .move(edge: .leading)))
         }
     }
 
@@ -453,6 +460,9 @@ struct PermissionCard: View {
 
 struct NowPlayingBadge: View {
     let info: NowPlayingInfo
+    /// Which palette the artwork tile samples — the current visualizer's, so
+    /// the badge belongs to the same picture as the canvas behind it.
+    let paletteIndex: Int
     /// Drops the album from the subtitle when horizontal room is tight.
     var compact = false
 
@@ -465,23 +475,10 @@ struct NowPlayingBadge: View {
     private var artSize: CGFloat { chromePodHeight - Self.inset * 2 }
 
     var body: some View {
-        HStack(spacing: 10) {
-            Group {
-                if let artwork = info.artwork {
-                    Image(nsImage: artwork)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                } else {
-                    ZStack {
-                        Rectangle().fill(.white.opacity(0.08))
-                        Image(systemName: "music.note")
-                            .font(.system(size: 18, weight: .semibold))
-                            .foregroundStyle(.white.opacity(0.55))
-                    }
-                }
-            }
-            .frame(width: artSize, height: artSize)
-            .clipShape(.rect(cornerRadius: Self.cornerRadius - Self.inset))
+        let content = HStack(spacing: 10) {
+            ArtworkTile(
+                info: info, paletteIndex: paletteIndex,
+                size: artSize, cornerRadius: Self.cornerRadius - Self.inset)
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(info.title)
@@ -491,10 +488,34 @@ struct NowPlayingBadge: View {
             .lineLimit(1)
             .padding(.trailing, 6)
         }
+        // A paused player still deserves its badge, but it shouldn't read as
+        // loudly as one that's making the canvas move.
+        .opacity(info.isPlaying ? 1 : 0.62)
+        .animation(.easeInOut(duration: 0.25), value: info.isPlaying)
         .chromeForeground()
         .padding(Self.inset)
         .frame(height: chromePodHeight)
-        .chromeGlass(in: .rect(cornerRadius: Self.cornerRadius))
+
+        // Clicking through to the player is the shortcut you reach for the
+        // moment you want to change what's on — far quicker than hunting for
+        // the app in the Dock. Only offered when there's somewhere to go.
+        if let player = info.player {
+            Button {
+                NSRunningApplication.runningApplications(withBundleIdentifier: player.bundleID)
+                    .first?
+                    .activate()
+            } label: {
+                content
+            }
+            .buttonStyle(.plain)
+            .chromeGlass(in: .rect(cornerRadius: Self.cornerRadius), interactive: true)
+            .help("Show in \(player.name)")
+            .accessibilityLabel("\(info.title) by \(info.artist) in \(player.name)")
+            .accessibilityHint("Brings \(player.name) to the front")
+        } else {
+            content
+                .chromeGlass(in: .rect(cornerRadius: Self.cornerRadius))
+        }
     }
 
     /// Artist and album share one line — three stacked lines no longer fit the
@@ -516,6 +537,104 @@ struct NowPlayingBadge: View {
             }
         }
         .font(.subheadline)
+    }
+}
+
+/// The square at the leading edge of the now-playing badge.
+///
+/// Real cover art when there is any. When there isn't — which is always in the
+/// Mac App Store build, and always for Spotify — this is a gradient sampled
+/// from the current visualizer's palette at an offset derived from the album
+/// name, with the reporting player's icon in the corner.
+///
+/// That is a design decision, not a placeholder. Nobody puts image bytes in a
+/// distributed notification, so the alternative was either a grey square with a
+/// music note in it, or a network round-trip per track to look art up. The tile
+/// costs nothing, is stable per record (so it reads as *this album's* colour
+/// rather than noise), sits in the same palette as the canvas, and the player
+/// icon answers the question the artwork would have: where is this coming from?
+struct ArtworkTile: View {
+    let info: NowPlayingInfo
+    let paletteIndex: Int
+    let size: CGFloat
+    let cornerRadius: CGFloat
+
+    /// The corner icon, sized so it reads at a glance without eating the tile.
+    private var badgeSize: CGFloat { max(14, size * 0.36) }
+
+    var body: some View {
+        ZStack(alignment: .bottomTrailing) {
+            gradient
+            if let artwork = info.artwork {
+                Image(nsImage: artwork)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: size, height: size)
+                    .transition(.opacity)
+            } else {
+                // A soft highlight off the top-leading corner keeps the flat
+                // gradient from looking like a swatch.
+                LinearGradient(
+                    colors: [.white.opacity(0.22), .clear],
+                    startPoint: .topLeading, endPoint: .center)
+                if info.player == nil {
+                    Image(systemName: info.symbol)
+                        .font(.system(size: size * 0.4, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.85))
+                        .shadow(color: .black.opacity(0.3), radius: 2, y: 1)
+                        .frame(width: size, height: size)
+                }
+            }
+            if let icon = info.playerIcon {
+                Image(nsImage: icon)
+                    .resizable()
+                    .frame(width: badgeSize, height: badgeSize)
+                    // A dark scrim under the icon: app icons are drawn to sit
+                    // on a Dock, not on an arbitrary bright gradient.
+                    .background(
+                        Circle().fill(.black.opacity(0.35)).blur(radius: 2).padding(-1)
+                    )
+                    .padding(3)
+                    .accessibilityHidden(true)
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(.rect(cornerRadius: cornerRadius))
+        .overlay {
+            RoundedRectangle(cornerRadius: cornerRadius)
+                .strokeBorder(.white.opacity(0.16), lineWidth: 0.5)
+        }
+        .animation(.easeInOut(duration: 0.3), value: info.artwork)
+    }
+
+    private var gradient: LinearGradient {
+        let t = Self.paletteOffset(for: info.seed)
+        return LinearGradient(
+            colors: [
+                Palettes.swiftUIColor(t, palette: paletteIndex),
+                Palettes.swiftUIColor(Self.wrap(t + 0.42), palette: paletteIndex),
+            ],
+            startPoint: .topLeading, endPoint: .bottomTrailing)
+    }
+
+    /// Where in the palette an album sits: deterministic, evenly spread, and
+    /// stable across launches.
+    ///
+    /// This is FNV-1a rather than `String.hashValue` on purpose. Swift seeds
+    /// its hasher per process, so `hashValue` would give the same album a
+    /// different colour every time the app started — the one property the tile
+    /// most needs is that it doesn't.
+    static func paletteOffset(for seed: String) -> Float {
+        var hash: UInt64 = 0xcbf2_9ce4_8422_2325
+        for byte in seed.utf8 {
+            hash ^= UInt64(byte)
+            hash = hash &* 0x0000_0100_0000_01b3
+        }
+        return Float(hash % 1000) / 1000
+    }
+
+    private static func wrap(_ t: Float) -> Float {
+        t.truncatingRemainder(dividingBy: 1)
     }
 }
 
@@ -569,6 +688,15 @@ struct ControlsPod: View {
                         }
                         Button("Grant Access…") { appState.showWelcome() }
                     }
+                }
+
+                // Offered only once a player has actually been detected, so the
+                // Automation prompt it raises has an obvious cause. Absent
+                // entirely from the App Store build, which sends no Apple
+                // Events — see AppState.connectPlayerControl.
+                if let offer = appState.playerControlOffer {
+                    Divider()
+                    Button("Control \(offer.name)…") { appState.connectPlayerControl() }
                 }
 
                 if state.sourceKind == .inputDevice {
@@ -911,13 +1039,7 @@ struct PalettePicker: View {
     }
 
     private func gradient(for palette: Int) -> LinearGradient {
-        let stops = (0..<6).map { i -> Color in
-            let c = Palettes.color(Float(i) / 5.0, palette: palette)
-            return Color(
-                red: Double(max(0, min(1, c.x))),
-                green: Double(max(0, min(1, c.y))),
-                blue: Double(max(0, min(1, c.z))))
-        }
+        let stops = (0..<6).map { Palettes.swiftUIColor(Float($0) / 5.0, palette: palette) }
         return LinearGradient(colors: stops, startPoint: .leading, endPoint: .trailing)
     }
 }

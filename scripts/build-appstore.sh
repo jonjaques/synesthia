@@ -79,10 +79,15 @@ if grep -q "apple-events" <<<"$ARCHIVE_ENTS"; then
 fi
 echo "  apple-events         : absent (correct for the App Store build)"
 
-if grep -q 'tell application "Music"' <<<"$ARCHIVE_STRINGS"; then
+# Matches ANY scriptable player, not just Music: PlayerRemote carries a dialect
+# per player (Music, Spotify, …) and a new one must not be able to slip past an
+# assertion that only knew about the first. This is why Scripts.swift spells out
+# each script as a complete literal instead of interpolating the app name in —
+# interpolation would erase the very string being looked for.
+if grep -q 'tell application "' <<<"$ARCHIVE_STRINGS"; then
 	fail "AppleScript source is compiled in — MUSIC_APP_SOURCE leaked into Release"
 fi
-echo "  Music.app AppleScript: absent"
+echo "  AppleScript          : absent (no 'tell application' string for any player)"
 
 # Sparkle is linked by the `Synesthia Direct` target only. If it ever shows up
 # here, the wrong target was archived — and an App Store app that bundles its

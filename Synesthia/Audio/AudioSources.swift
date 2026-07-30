@@ -12,19 +12,17 @@ import ScreenCaptureKit
 ///   The only source that needs **no** permission at all, which is why it is
 ///   the first-launch default — the visuals are provably alive before any TCC
 ///   prompt fires (see docs/app-store-launch-plan.md §B4).
-/// - `musicApp`: control Music.app over Apple Events for transport/metadata,
-///   while *hearing* it through the same system-audio tap as `systemAudio`
-///   (Music doesn't expose its audio stream directly). Compiled in only when
-///   `MUSIC_APP_SOURCE` is defined — the Mac App Store configuration ships
-///   without it so the build needs no Apple Events entitlements at all (§B5).
 /// - `systemAudio`: everything the Mac plays, captured with ScreenCaptureKit.
+///   This is also where now-playing lives: `NowPlayingObserver` recognizes
+///   whatever media player is producing that audio and the badge names the
+///   track. There is deliberately no separate "Music app" source any more —
+///   it was never a distinct *audio* path (Music exposes no stream, so it went
+///   through this same tap), and making it a source meant a user had to know
+///   which one to pick. See docs/macos-integration.md.
 /// - `inputDevice`: a microphone/line-in, tapped with AVAudioEngine.
 /// - `audioFile`: a local file played by this app itself.
 enum AudioSourceKind: String, CaseIterable, Identifiable, Codable {
     case demo
-    #if MUSIC_APP_SOURCE
-    case musicApp
-    #endif
     case systemAudio
     case inputDevice
     case audioFile
@@ -43,9 +41,6 @@ enum AudioSourceKind: String, CaseIterable, Identifiable, Codable {
     var label: String {
         switch self {
         case .demo: "Demo Track"
-        #if MUSIC_APP_SOURCE
-        case .musicApp: "Music App"
-        #endif
         case .systemAudio: "System Audio"
         case .inputDevice: "Audio Input"
         case .audioFile: "Audio File"
@@ -56,9 +51,6 @@ enum AudioSourceKind: String, CaseIterable, Identifiable, Codable {
     var symbol: String {
         switch self {
         case .demo: "music.quarternote.3"
-        #if MUSIC_APP_SOURCE
-        case .musicApp: "music.note"
-        #endif
         case .systemAudio: "speaker.wave.3"
         case .inputDevice: "mic"
         case .audioFile: "waveform"
@@ -70,9 +62,6 @@ enum AudioSourceKind: String, CaseIterable, Identifiable, Codable {
     var requiredPermission: PrivacyPermission? {
         switch self {
         case .demo, .audioFile: nil
-        #if MUSIC_APP_SOURCE
-        case .musicApp: .screenAndSystemAudio
-        #endif
         case .systemAudio: .screenAndSystemAudio
         case .inputDevice: .microphone
         }
@@ -102,7 +91,7 @@ enum PrivacyPermission: String, Identifiable, CaseIterable {
         case .screenAndSystemAudio:
             "macOS has no dedicated “record system audio” API — the only sanctioned route is ScreenCaptureKit, the screen-recording framework, so hearing what your Mac plays is gated behind Screen & System Audio Recording. Synesthia uses the audio alone; the video leg is captured at 2×2 pixels and every frame is discarded."
         case .automation:
-            "Lets Synesthia ask the Music app what is playing and drive play, pause, and skip. Nothing is written back to your library."
+            "Optional. Synesthia already knows what's playing without this. Granting it adds play, pause, and skip buttons for your music player, and pulls in real album artwork. Nothing is written back to your library."
         case .microphone:
             "Lets Synesthia listen to a microphone, line-in, or instrument interface. The audio is analyzed in real time and never recorded."
         }

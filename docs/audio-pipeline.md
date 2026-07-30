@@ -27,14 +27,13 @@ get their audio in very different ways:
 
 ```mermaid
 flowchart TD
-    MUSIC["<b>Music app</b><br>transport & metadata via Apple Events…"]
+    DEMO["<b>Demo track</b><br>bundled loop, AVAudioEngine + mixer tap"]
     SYS["<b>System audio</b><br>ScreenCaptureKit stream"]
     INPUT["<b>Audio input</b><br>AVAudioEngine input-node tap"]
     FILEP["<b>Audio file</b><br>AVAudioEngine player + mixer tap"]
-    TAP["…audio via the same<br>ScreenCaptureKit tap as System audio"]
     AN["AudioAnalyzer.appendMono()"]
 
-    MUSIC --> TAP --> AN
+    DEMO --> AN
     SYS --> AN
     INPUT --> AN
     FILEP --> AN
@@ -60,13 +59,12 @@ Two non-obvious requirements (both learned the hard way; see `CLAUDE.md`):
 `excludesCurrentProcessAudio = true` keeps Synesthia's own output (the file
 player) out of the capture, preventing feedback.
 
-### Music app
-
-The **Music app** source is a hybrid: `MusicController` speaks AppleScript
-to Music.app for _control and metadata_ (play/pause, track title, artwork —
-see [macOS integration](macos-integration.md)), while the _audio itself_
-comes through the same `SystemAudioCapture` tap as the System audio source,
-because Music offers no direct audio stream.
+There used to be a fifth entry here, a **Music app** source. It was never a
+distinct audio path — Music exposes no stream of its own, so it already read
+through this same tap — and it now exists as a metadata _layer_ over System
+Audio instead: `NowPlayingObserver` recognizes whichever player is producing
+the audio, for Music, Spotify and anything else in the table. See
+[macOS integration](macos-integration.md#now-playing-three-layers).
 
 ### Audio input — `InputDeviceCapture`
 

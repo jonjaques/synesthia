@@ -271,6 +271,18 @@ enum Palettes {
         let angle = 6.28318 * (c * t + d)
         return a + b * SIMD3<Float>(cos(angle.x), cos(angle.y), cos(angle.z))
     }
+
+    /// The same sample as a SwiftUI `Color`, clamped. Used by every palette
+    /// swatch and by the now-playing artwork tile. Clamping matters: a cosine
+    /// palette overshoots 0…1 at some phases, and `Color` does not fold that
+    /// back for you.
+    static func swiftUIColor(_ t: Float, palette: Int) -> Color {
+        let c = color(t, palette: palette)
+        return Color(
+            red: Double(max(0, min(1, c.x))),
+            green: Double(max(0, min(1, c.y))),
+            blue: Double(max(0, min(1, c.z))))
+    }
 }
 
 // MARK: - Settings

@@ -1,6 +1,6 @@
 # Synesthia developer documentation
 
-Synesthia is a macOS music visualizer: it listens to audio (the Music app,
+Synesthia is a macOS music visualizer: it listens to audio (anything your Mac plays,
 anything the Mac is playing, a microphone, or a local file), analyzes it in
 real time, and renders GPU visuals that react to what it hears.
 
@@ -20,7 +20,7 @@ shaders, Apple Events, sandboxing…) are introduced where they're used.
 4. **[Visualizers](visualizers.md)** — the plugin system, how the four
    built-in visualizers work, and a step-by-step guide to writing a new one.
 5. **[macOS integration](macos-integration.md)** — permissions, sandboxing,
-   controlling the Music app, window chrome, and the Xcode project's
+   reading and driving other apps' playback, window chrome, and the Xcode project's
    non-obvious configuration choices.
 
 ## Source map
@@ -38,7 +38,9 @@ Synesthia/
 │   ├── AudioAnalyzer.swift       FFT analysis; produces AudioSnapshot
 │   └── AudioSources.swift        The audio capture/playback engines
 ├── Music/
-│   └── MusicController.swift     Remote-controls Music.app via Apple Events
+│   ├── NowPlayingObserver.swift  Reads what Music/Spotify are playing from their
+│   │                             distributed notifications — no permission at all
+│   └── PlayerRemote.swift        Transport + cover art via Apple Events, opt-in
 │                                 (compiled out of the App Store build)
 └── Visualizers/
     ├── VisualizerCore.swift      Plugin protocol, registry, palettes, settings
@@ -73,7 +75,7 @@ platform research (dated) behind the ones that depend on Apple's rules.
    if you're picking the release back up.** The direct download is live; the
    App Store submission is not.
 2. **[Distribution](distribution.md)** — how two targets produce two different
-   binaries, why the Music.app feature and Sparkle exist in only one of them,
+   binaries, why player control and Sparkle exist in only one of them,
    versioning, and the build/notarize/publish pipelines.
 3. **[App Store metadata](app-store-metadata.md)** — drafts of every listing
    field plus the review notes. Length-checked by `scripts/check-metadata.py`.

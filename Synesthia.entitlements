@@ -4,10 +4,17 @@
 <dict>
 	<!-- Mac App Store entitlements.
 	     Deliberately does NOT contain com.apple.security.automation.apple-events
-	     or the temporary exception for com.apple.Music: the Music.app source is
-	     compiled out of this configuration (no MUSIC_APP_SOURCE), so the app
-	     sends no Apple Events at all. See Synesthia-Direct.entitlements for the
-	     direct-download build, and docs/app-store-launch-plan.md §B5.
+	     or any temporary exception: the whole Apple Events layer is compiled out
+	     of this configuration (no MUSIC_APP_SOURCE), so the app sends no Apple
+	     Events at all. See Synesthia-Direct.entitlements for the direct-download
+	     build, and docs/app-store-launch-plan.md §B5.
+
+	     This build still shows what you are listening to. Now-playing metadata
+	     arrives as a distributed notification broadcast by the player itself —
+	     no entitlement, no TCC prompt, nothing to request — which is why the
+	     store build needs none of the above. See NowPlayingObserver and
+	     docs/macos-integration.md.
+
 	     com.apple.security.assets.music.read-only was removed — nothing reads
 	     the music library (§B6). -->
 	<key>com.apple.security.app-sandbox</key>

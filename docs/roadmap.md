@@ -9,11 +9,10 @@ are dated because they will drift (Apple changes TCC and private-framework
 policy between point releases). Sources at the bottom.
 
 The short version: **beat-synced scene changes** is now the best
-effort-to-payoff bet, and it inherited most of its groundwork from the two
-items that have since shipped (loudness normalization and GPU-compute
-particles). Spotify now-playing is viable but only via the AppleScript route.
-The screen saver target should wait — the third-party screen saver story on
-macOS 26 is in bad shape.
+effort-to-payoff bet, and it inherited most of its groundwork from the three
+items that have since shipped (loudness normalization, GPU-compute particles,
+and multi-player now-playing). The screen saver target should wait — the
+third-party screen saver story on macOS 26 is in bad shape.
 
 ## Already shipped (the README list was stale)
 
@@ -32,6 +31,57 @@ macOS 26 is in bad shape.
   it with auto-gain disabled, and a new test section covers convergence,
   the silence gate, and the disable ramp. Sensitivity is now purely a
   visual-response control — worth the release note.
+- **Now-playing for Spotify and other players** — shipped, and the assessment
+  below it was wrong in the most useful direction. It concluded that
+  AppleScript was the only viable route and that the App Store build therefore
+  could not have the feature. Both halves turned out to be false, because it
+  only considered the two routes it already knew about (MediaRemote, dead since
+  15.4; Apple Events, entitlement-bound) and never asked what the players
+  themselves volunteer.
+
+  They volunteer everything that matters. Music and Spotify both broadcast
+  title, artist, album and play state as **distributed notifications**, which
+  cost no entitlement, no TCC prompt, no private API and no polling. The
+  blocker in the way of that answer was a widely repeated claim that the App
+  Sandbox strips `userInfo` from distributed notifications; it does not — the
+  real rule constrains sandboxed _senders_. Verified on macOS 26.5 with an
+  ad-hoc-signed sandboxed binary before a line of the feature was written, and
+  again end-to-end in the shipping app with both players.
+
+  What that changed, beyond one roadmap item:
+
+  - **The Mac App Store build gained the feature outright**, rather than
+    shipping without it. `MUSIC_APP_SOURCE` now gates only transport control
+    and cover art. No new entitlement was needed anywhere; the store build
+    still contains zero Apple Events, and `build-appstore.sh` still proves it
+    (the assertion was widened from `tell application "Music"` to any player).
+  - **A source disappeared instead of one being added.** `.musicApp` was never
+    a distinct audio path — Music exposes no stream, so it already went through
+    the same ScreenCaptureKit tap as System Audio — which meant the picker
+    offered two options that sounded identical and differed only in metadata.
+    Now-playing became a _layer_ over System Audio, and the roadmap's
+    `NowPlayingSource` protocol was unnecessary: `MediaPlayer` is a table row.
+  - **The remaining Apple Events became genuinely optional and opt-in.** The
+    1 Hz poll is gone. Nothing sends an event until the user picks
+    "Control Spotify…" from a menu, so the Automation prompt lands one click
+    after they asked for exactly that, instead of at launch.
+  - **Two things a broadcast can't carry**, both anticipated poorly. Cover art
+    isn't in the payload, so the badge draws a palette-derived gradient tile
+    with the player's icon instead of a grey square — which reads as
+    intentional and costs no network request. And a player only posts on a
+    _transition_, so launching into already-playing music shows no badge until
+    the next song; `PlayerRemote.seed` closes that where Apple Events exist,
+    and the store build picks the badge up a song late.
+  - **Spotify's AppleScript flakiness never came up.** The retry tolerance the
+    assessment recommended is in `seed` (an empty title is discarded rather
+    than published), but the notification path made it nearly moot.
+
+  Still open, and deliberately: only Music and Spotify are in the table. Both
+  were verified against real payloads. Players in the iTunes tradition (VOX,
+  Swinsian, Doppler) are one row each and need no parsing changes, but shipping
+  rows nobody has watched a payload from is guesswork — and an unverified row
+  is inert rather than harmful, which makes it tempting.
+
 - **GPU-compute particle systems** — shipped, and Nebula was rewritten onto
   it. The assessment below was right that the plumbing was friendly: the kernel
   is one more encoder in the same command buffer, and the ~4k CPU ceiling became
@@ -103,29 +153,6 @@ code:
   a photosensitivity rationale for its existing damping; auto-rotating on
   beats is exactly the kind of flashing behavior that rationale covers.
 
-### 2. Now-playing for Spotify and other players
-
-The general approach is dead: since macOS 15.4, `mediaremoted` verifies an
-entitlement and denies now-playing information to non-Apple clients, so the
-private MediaRemote framework returns nothing useful to us. The community
-workaround (`mediaremote-adapter`) launches `/usr/bin/perl` — a system
-binary that _is_ entitled — with a helper framework injected. Clever, but
-Synesthia is sandboxed in **both** distributions, a spawned process inherits
-the sandbox, and none of it would survive App Store review. Do not build on
-MediaRemote.
-
-What is viable: mirror the existing Music.app pattern for Spotify —
-AppleScript over Apple Events, an `automation.apple-events` +
-`temporary-exception.apple-events` entitlement for `com.spotify.client`,
-compiled into the Direct build only behind the same `#if MUSIC_APP_SOURCE`
-discipline (this is the exact review risk the App Store build already
-strips). The code has the right seam: views consume only
-`AppState.NowPlayingInfo`, which already merges two sources (Music.app and
-the demo track), so a `NowPlayingSource` protocol drops in cleanly. One
-flag: Spotify's AppleScript interface has recurring reports (through 2025)
-of intermittently empty title/artist, so build in the same retry tolerance
-`MusicController` already applies to artwork.
-
 ## Feasible, but wait for a reason
 
 ### User-defined color palettes
@@ -143,6 +170,35 @@ fails the build.
 The UI is already data-driven — both palette pickers iterate
 `Palettes.names` and render swatches by sampling `Palettes.color` — so a
 palette editor is the real work, not the plumbing.
+
+### Apple Events in the Mac App Store build
+
+**Not currently planned, recorded because it is the obvious next question.**
+The store build shows what is playing but cannot pause it or show real cover
+art, because it ships no Apple Events at all. Closing that gap means asking
+App Review for `com.apple.security.automation.apple-events` plus a
+`temporary-exception.apple-events` array for `com.apple.Music` and
+`com.spotify.client`.
+
+That is a real, granted-in-practice request — apps do ship it — but it is
+deliberately declined for now, on two grounds. It reintroduces the single
+largest review risk the project spent effort removing (see
+[app-store-launch-plan.md](app-store-launch-plan.md) §B5), and it weakens the
+`build-appstore.sh` leak assertions from "no `tell application` string may
+exist" to something conditional, which is a much worse invariant to hold.
+Neither of those is a permanent objection.
+
+The argument for revisiting it gets stronger with time, not weaker: an app with
+a clean review history asking for a scoped exception, whose whole
+now-playing feature demonstrably works _without_ it, is a far easier
+conversation than a first submission asking for the same thing as a
+prerequisite. The order matters — ship layer 2, then ask for layer 3.
+
+If it is ever taken up, the code side is nearly free. `PlayerRemote` is already
+a separate file behind one flag, the scripts are already per-player literals,
+and `AppState.connectPlayerControl` is already the single opt-in gate. The work
+is entirely in the entitlements, the review notes, and rewriting the
+assertions — not in the app.
 
 ### True external plugins
 

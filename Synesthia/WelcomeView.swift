@@ -123,12 +123,8 @@ struct WelcomeView: View {
         switch kind {
         case .demo:
             ""
-        #if MUSIC_APP_SOURCE
-        case .musicApp:
-            "Playback control, track titles, and album artwork, straight from Music."
-        #endif
         case .systemAudio:
-            "Anything your Mac is playing — a browser, a streaming app, a game."
+            "Anything your Mac is playing — Music, Spotify, a browser, a game. Track titles appear on their own when a player is recognized."
         case .inputDevice:
             "Live sound from a microphone, an instrument, or an audio interface."
         case .audioFile:
@@ -140,16 +136,6 @@ struct WelcomeView: View {
         switch kind {
         case .demo:
             nil
-        #if MUSIC_APP_SOURCE
-        case .musicApp:
-            appState.screenAudioGranted
-                ? PermissionFootnote(
-                    text: "Ready — Music may ask once before it can be controlled",
-                    symbol: "checkmark.seal.fill", ready: true)
-                : PermissionFootnote(
-                    text: "Asks for Screen & System Audio Recording, and to control Music",
-                    symbol: "lock.fill", ready: false)
-        #endif
         case .systemAudio:
             appState.screenAudioGranted
                 ? PermissionFootnote(

@@ -5,12 +5,28 @@ import Observation
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Track metadata for the on-screen badge.
+/// Track metadata for the on-screen badge, whatever its origin — a media
+/// player we detected, the bundled demo, or a file the user opened.
 struct NowPlayingInfo {
     var title: String
     var artist: String
     var album: String
+    /// Real cover art, only when a player handed over the actual bytes. Nil
+    /// otherwise, and the badge draws a palette tile in its place rather than
+    /// an empty square.
     var artwork: NSImage?
+    /// The player this came from, when it came from one. Drives whether
+    /// transport and click-through-to-the-player are on offer.
+    var player: MediaPlayer?
+    /// That player's Dock icon, for the corner badge on the artwork tile.
+    var playerIcon: NSImage?
+    /// False when the reporting player is paused, which dims the badge.
+    var isPlaying: Bool
+    /// Glyph for the tile when there is neither cover art nor a player icon.
+    var symbol: String
+    /// Stable string the tile's gradient is derived from. The album where
+    /// there is one, so a whole record shares a colour.
+    var seed: String
 }
 
 /// Central app state: which audio source is active, which visualizer is
@@ -27,8 +43,12 @@ final class AppState {
     static let shared = AppState()
 
     let analyzer = AudioAnalyzer.shared
+    /// Passive, permission-free detection of what any known media player is
+    /// playing. Runs in every build; see `NowPlayingObserver`.
+    let nowPlayingObserver = NowPlayingObserver()
     #if MUSIC_APP_SOURCE
-    let music = MusicController()
+    /// The opt-in Apple Events layer: transport control and real cover art.
+    let remote = PlayerRemote()
     #endif
     let settings = VisualizerSettings()
 
@@ -103,9 +123,10 @@ final class AppState {
     private(set) var blockedPermission: PrivacyPermission?
 
     #if MUSIC_APP_SOURCE
-    /// Auto-latching onto an already-playing Music.app is attempted once per
-    /// launch, so a user who deliberately stopped capture isn't fought with.
-    private var attemptedAutoCapture = false
+    /// Whether the user has opted into driving their player over Apple Events.
+    /// Persisted, because the macOS Automation grant persists too — asking
+    /// again on every launch would be worse than remembering the answer.
+    private(set) var playerControlEnabled: Bool
     #endif
     private var statusClearTask: Task<Void, Never>?
     /// Held while audio is flowing so the display doesn't sleep mid-song.
@@ -116,6 +137,7 @@ final class AppState {
     private static let welcomeKey = "hasSeenWelcome"
     private static let bookmarkKey = "audioFileBookmark"
     private static let loudnessKey = "loudnessNormalization"
+    private static let playerControlKey = "playerControlEnabled"
 
     private init() {
         systemCapture = SystemAudioCapture(analyzer: AudioAnalyzer.shared)
@@ -125,7 +147,7 @@ final class AppState {
         // First launch defaults to the bundled demo: it needs no permission,
         // so the canvas is alive before anything can be denied.
         let stored = UserDefaults.standard.string(forKey: "sourceKind") ?? ""
-        sourceKind = AudioSourceKind(rawValue: stored) ?? .demo
+        sourceKind = AudioSourceKind(rawValue: Self.migrated(stored)) ?? .demo
         let storedViz = UserDefaults.standard.string(forKey: "visualizerID") ?? ""
         visualizerID = VisualizerRegistry.descriptor(id: storedViz)?.id ?? VisualizerRegistry.all[0].id
         // Default on; read via `bool(forKey:)` (not a plain object cast) so
@@ -136,10 +158,25 @@ final class AppState {
             ? true
             : UserDefaults.standard.bool(forKey: Self.loudnessKey)
         showsWelcome = !UserDefaults.standard.bool(forKey: Self.welcomeKey)
+        #if MUSIC_APP_SOURCE
+        playerControlEnabled = UserDefaults.standard.bool(forKey: Self.playerControlKey)
+        #endif
         fileURL = resolveBookmarkedFile()
         systemCapture.onExternalStop = { [weak self] in self?.handleSystemCaptureStopped() }
-        // didSet doesn't fire during init, so push the stored value once.
+        // didSet doesn't fire during init, so push the stored values once.
         analyzer.setAutoGainEnabled(loudnessNormalizationEnabled)
+        UserDefaults.standard.set(sourceKind.rawValue, forKey: "sourceKind")
+    }
+
+    /// Rewrites a stored source kind that no longer exists.
+    ///
+    /// `musicApp` was retired: now-playing is a layer over system audio rather
+    /// than a source of its own, and system audio is what that source was
+    /// really listening to all along (Music.app exposes no audio stream, so it
+    /// went through the same ScreenCaptureKit tap). Anyone whose last session
+    /// used it lands on the source that still behaves identically.
+    private static func migrated(_ stored: String) -> String {
+        stored == "musicApp" ? AudioSourceKind.systemAudio.rawValue : stored
     }
 
     /// The SCK stream died without us stopping it (permission revoked, display
@@ -158,14 +195,16 @@ final class AppState {
 
     func onAppear() {
         inputDevices = AudioInputDeviceList.all()
+        // Detection runs regardless of source and costs nothing — no
+        // permission, no polling, one callback per track change.
+        nowPlayingObserver.onTrackChange = { [weak self] player, track in
+            self?.handleTrackChange(player: player, track: track)
+        }
+        nowPlayingObserver.start()
+        seedConnectedPlayers()
         switch sourceKind {
         case .demo:
             startDemo()
-        #if MUSIC_APP_SOURCE
-        case .musicApp:
-            music.startPolling()
-            autoStartCaptureIfMusicPlaying()
-        #endif
         case .systemAudio:
             Task { await startSystemCapture() }
         case .inputDevice, .audioFile:
@@ -179,10 +218,11 @@ final class AppState {
     var isPlaying: Bool {
         switch sourceKind {
         case .demo: isDemoPlaying
-        #if MUSIC_APP_SOURCE
-        case .musicApp: music.isPlaying
-        #endif
-        case .systemAudio, .inputDevice: isCapturing
+        case .systemAudio:
+            // Once transport is on screen the buttons drive the *player*, so
+            // they have to show the player's state, not ours.
+            showsTransport ? (detectedTrack?.isPlaying ?? false) : isCapturing
+        case .inputDevice: isCapturing
         case .audioFile: isFilePlaying
         }
     }
@@ -191,29 +231,52 @@ final class AppState {
     var isCaptureActive: Bool {
         switch sourceKind {
         case .demo: isDemoPlaying
-        #if MUSIC_APP_SOURCE
-        case .musicApp: isCapturing
-        #endif
         case .systemAudio, .inputDevice: isCapturing
         case .audioFile: isFilePlaying
         }
     }
 
-    /// Which sources give us prev/play/next rather than being capture-only.
+    /// The player Synesthia can see, if any. Scoped to the system-audio source
+    /// on purpose: that is the only source that is actually *hearing* the
+    /// player, and a Spotify badge over a live microphone feed would be a lie.
+    var detectedPlayer: MediaPlayer? {
+        guard sourceKind == .systemAudio else { return nil }
+        return nowPlayingObserver.current?.player
+    }
+
+    private var detectedTrack: NowPlayingTrack? {
+        guard sourceKind == .systemAudio else { return nil }
+        return nowPlayingObserver.current?.track
+    }
+
+    /// Whether prev/play/next are on offer — i.e. we found a player we know how
+    /// to drive *and* the user has opted into letting us drive it.
     var showsTransport: Bool {
         #if MUSIC_APP_SOURCE
-        sourceKind == .musicApp
+        playerControlEnabled && detectedPlayer?.isScriptable == true
         #else
         false
         #endif
     }
 
-    var windowTitle: String {
+    /// The player to offer control of, when there is one and the user hasn't
+    /// taken us up on it yet. Nil in the App Store build, which sends no Apple
+    /// Events at all, so the offer never appears there.
+    var playerControlOffer: MediaPlayer? {
         #if MUSIC_APP_SOURCE
-        if sourceKind == .musicApp, let track = music.track, !track.title.isEmpty {
+        guard !playerControlEnabled, let player = detectedPlayer, player.isScriptable else {
+            return nil
+        }
+        return player
+        #else
+        nil
+        #endif
+    }
+
+    var windowTitle: String {
+        if let track = detectedTrack, !track.title.isEmpty {
             return track.artist.isEmpty ? track.title : "\(track.title) — \(track.artist)"
         }
-        #endif
         if sourceKind == .demo {
             return DemoTrack.title
         }
@@ -225,19 +288,33 @@ final class AppState {
 
     /// Track metadata, only when we genuinely have some.
     var nowPlaying: NowPlayingInfo? {
-        #if MUSIC_APP_SOURCE
-        if sourceKind == .musicApp, let track = music.track {
+        if let player = detectedPlayer, let track = detectedTrack {
             return NowPlayingInfo(
-                title: track.title, artist: track.artist,
-                album: track.album, artwork: music.artwork)
+                title: track.title, artist: track.artist, album: track.album,
+                artwork: artwork(for: track), player: player,
+                playerIcon: nowPlayingObserver.playerIcon,
+                isPlaying: track.isPlaying, symbol: "music.note",
+                seed: track.paletteSeed)
         }
-        #endif
         if sourceKind == .demo {
             return NowPlayingInfo(
-                title: DemoTrack.title, artist: DemoTrack.subtitle,
-                album: "", artwork: nil)
+                title: DemoTrack.title, artist: DemoTrack.subtitle, album: "",
+                artwork: nil, player: nil, playerIcon: nil,
+                isPlaying: isDemoPlaying, symbol: "music.quarternote.3",
+                seed: DemoTrack.title)
         }
         return nil
+    }
+
+    /// Cover art for a track, when the opt-in Apple Events layer managed to
+    /// fetch some *and* it belongs to this track rather than the last one.
+    private func artwork(for track: NowPlayingTrack) -> NSImage? {
+        #if MUSIC_APP_SOURCE
+        guard remote.artworkIdentity == track.artworkKey else { return nil }
+        return remote.artwork
+        #else
+        return nil
+        #endif
     }
 
     // MARK: - Transport
@@ -250,20 +327,17 @@ final class AppState {
 
     private func handlePlay() async {
         #if MUSIC_APP_SOURCE
-        if sourceKind == .musicApp {
+        if showsTransport, let player = detectedPlayer {
             // Starting playback with no capture attached would leave the canvas
-            // dead, so latch on first. Deliberately only when Music is *not*
-            // playing: if it is, the user may just be re-attaching capture after
-            // granting the permission, and toggling would pause their music.
-            if !music.isPlaying && !isCapturing {
+            // dead, so latch on first. Deliberately only when the player is
+            // *not* playing: if it is, the user may just be re-attaching
+            // capture after granting the permission, and toggling would pause
+            // their music.
+            if !(detectedTrack?.isPlaying ?? false), !isCapturing {
                 await startSystemCapture()
             }
-            music.togglePlayPause()
-            if music.automationDenied {
-                setStatus(
-                    "Synesthia isn't allowed to control Music. Enable it in System Settings › Privacy & Security › Automation."
-                )
-            }
+            remote.togglePlayPause(player)
+            reportAutomationRefusal(for: player)
             return
         }
         #endif
@@ -284,10 +358,6 @@ final class AppState {
             } else {
                 startDemo()
             }
-        #if MUSIC_APP_SOURCE
-        case .musicApp:
-            await toggleSystemCapture()
-        #endif
         case .systemAudio:
             await toggleSystemCapture()
         case .inputDevice:
@@ -338,8 +408,9 @@ final class AppState {
 
     func nextTrack() {
         #if MUSIC_APP_SOURCE
-        if sourceKind == .musicApp {
-            music.nextTrack()
+        if showsTransport, let player = detectedPlayer {
+            remote.nextTrack(player)
+            reportAutomationRefusal(for: player)
             return
         }
         #endif
@@ -348,8 +419,9 @@ final class AppState {
 
     func previousTrack() {
         #if MUSIC_APP_SOURCE
-        if sourceKind == .musicApp {
-            music.previousTrack()
+        if showsTransport, let player = detectedPlayer {
+            remote.previousTrack(player)
+            reportAutomationRefusal(for: player)
             return
         }
         #endif
@@ -368,6 +440,89 @@ final class AppState {
             break
         }
     }
+
+    // MARK: - Player control (opt-in Apple Events)
+
+    /// Turns on the Apple Events layer for the detected player.
+    ///
+    /// This is the *only* thing that can send a first Apple Event, and it runs
+    /// solely from an explicit menu command. That ordering is the whole point:
+    /// macOS raises its Automation prompt on that first event, and a prompt the
+    /// user asked for one click earlier is a very different experience from one
+    /// that ambushes them at launch. Everything up to here — title, artist,
+    /// album, play state — already worked with no permission at all.
+    func connectPlayerControl() {
+        #if MUSIC_APP_SOURCE
+        guard let player = playerControlOffer else { return }
+        setPlayerControlEnabled(true)
+        // The seed doubles as the permission probe: it either comes back with
+        // what's playing, or trips `automationDenied`.
+        if let update = remote.seed(player) {
+            nowPlayingObserver.ingest(update, from: player)
+        }
+        if remote.automationDenied {
+            // Roll the opt-in back so the menu offers it again rather than
+            // leaving the app in a state that claims control it doesn't have.
+            setPlayerControlEnabled(false)
+            setStatus(
+                "Synesthia isn't allowed to control \(player.name). Enable it in System Settings › Privacy & Security › Automation."
+            )
+        } else if let track = nowPlayingObserver.current?.track {
+            handleTrackChange(player: player, track: track)
+        }
+        #endif
+    }
+
+    #if MUSIC_APP_SOURCE
+    private func setPlayerControlEnabled(_ enabled: Bool) {
+        playerControlEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: Self.playerControlKey)
+        if !enabled { remote.clearArtwork() }
+    }
+
+    /// Surfaces a refused Apple Event once, as a banner. Deliberately *not* a
+    /// `blockedPermission` card: control is an enhancement, and the canvas is
+    /// still perfectly alive without it.
+    private func reportAutomationRefusal(for player: MediaPlayer) {
+        guard remote.automationDenied else { return }
+        setStatus(
+            "Synesthia isn't allowed to control \(player.name). Enable it in System Settings › Privacy & Security › Automation."
+        )
+    }
+
+    /// Asks every running scriptable player what it's playing. Only runs when
+    /// the user already opted in, so it never triggers the prompt itself; it
+    /// exists to close the "launched into already-playing music" gap that a
+    /// broadcast-only route cannot close on its own.
+    private func seedConnectedPlayers() {
+        guard playerControlEnabled else { return }
+        for player in MediaPlayer.all where player.isScriptable && player.isRunning {
+            if let update = remote.seed(player) {
+                nowPlayingObserver.ingest(update, from: player)
+            }
+        }
+    }
+
+    /// A new track arrived, so chase its cover art. Artwork lags a track change
+    /// — noticeably so when streaming — hence the couple of retries on top of
+    /// the immediate attempt.
+    private func handleTrackChange(player: MediaPlayer, track: NowPlayingTrack) {
+        guard playerControlEnabled, player.isScriptable else { return }
+        let key = track.artworkKey
+        remote.beginArtwork(for: player, identity: key)
+        Task { [weak self] in
+            for delay in [0.7, 1.6] {
+                try? await Task.sleep(for: .seconds(delay))
+                guard let self else { return }
+                self.remote.refreshArtwork(for: player, identity: key)
+            }
+        }
+    }
+    #else
+    private func seedConnectedPlayers() {}
+
+    private func handleTrackChange(player: MediaPlayer, track: NowPlayingTrack) {}
+    #endif
 
     // MARK: - First run
 
@@ -406,10 +561,6 @@ final class AppState {
         switch kind {
         case .demo, .audioFile:
             true
-        #if MUSIC_APP_SOURCE
-        case .musicApp:
-            screenAudioGranted
-        #endif
         case .systemAudio:
             screenAudioGranted
         case .inputDevice:
@@ -565,21 +716,16 @@ final class AppState {
 
             switch sourceKind {
             case .demo:
-                stopMusicPolling()
                 startDemo()
-            #if MUSIC_APP_SOURCE
-            case .musicApp:
-                music.startPolling()
-                autoStartCaptureIfMusicPlaying()
-            #endif
             case .systemAudio:
-                stopMusicPolling()
+                // Detection keeps running across source changes, but a player
+                // that has been sitting paused since before the switch will not
+                // re-announce itself, so ask.
+                seedConnectedPlayers()
                 await startSystemCapture()
             case .inputDevice:
-                stopMusicPolling()
                 inputDevices = AudioInputDeviceList.all()
             case .audioFile:
-                stopMusicPolling()
                 if let fileURL {
                     // After a relaunch the bookmark gave us a URL but the
                     // player has nothing loaded yet.
@@ -592,28 +738,6 @@ final class AppState {
             }
         }
     }
-
-    private func stopMusicPolling() {
-        #if MUSIC_APP_SOURCE
-        music.stopPolling()
-        #endif
-    }
-
-    #if MUSIC_APP_SOURCE
-    /// If Music is already playing when the app opens, attach the system
-    /// audio tap automatically so the visuals come alive without a click.
-    private func autoStartCaptureIfMusicPlaying() {
-        guard !attemptedAutoCapture, music.isMusicAppRunning else { return }
-        attemptedAutoCapture = true
-        Task {
-            // Give the first poll a moment to land, then latch on if Music is already playing.
-            try? await Task.sleep(for: .seconds(1.5))
-            if sourceKind == .musicApp, music.isPlaying, !isCapturing {
-                await startSystemCapture()
-            }
-        }
-    }
-    #endif
 
     private func startSystemCapture(isRetry: Bool = false) async {
         guard !isCapturing else { return }

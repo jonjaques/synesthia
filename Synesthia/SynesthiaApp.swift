@@ -107,6 +107,16 @@ struct SynesthiaApp: App {
                 }
                 .keyboardShortcut(.leftArrow, modifiers: [.command])
 
+                // Same opt-in as the control pod's menu; the transport items
+                // above only reach the detected player once this is granted.
+                if let offer = appState.playerControlOffer {
+                    Divider()
+
+                    Button("Control \(offer.name)…") {
+                        appState.connectPlayerControl()
+                    }
+                }
+
                 Divider()
 
                 Button(captureMenuTitle) {

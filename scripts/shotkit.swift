@@ -1,6 +1,7 @@
 // shotkit — the small amount of AppKit that `take-screenshots.sh` can't do from
-// the shell: find the app's window, size it, toggle full screen, and nudge the
-// mouse so the auto-hiding chrome comes back before a capture.
+// the shell: find the app's window, size it, toggle full screen, nudge the mouse
+// so the auto-hiding chrome comes back before a capture, and flatten a capture
+// onto an opaque canvas of an exact size (`compose`, for the App Store).
 //
 // Compiled on demand by scripts/take-screenshots.sh. Everything here runs
 // against *another* process, so the invoking terminal needs Accessibility
@@ -14,6 +15,8 @@
 
 import AppKit
 import ApplicationServices
+import ImageIO
+import UniformTypeIdentifiers
 
 func die(_ message: String) -> Never {
     FileHandle.standardError.write(Data("shotkit: \(message)\n".utf8))
@@ -109,10 +112,44 @@ func fmt(_ value: CGFloat) -> String {
     return String(Int(rounded))
 }
 
+// MARK: - Images
+
+func loadImage(_ path: String) -> CGImage {
+    guard let source = CGImageSourceCreateWithURL(URL(fileURLWithPath: path) as CFURL, nil),
+        let image = CGImageSourceCreateImageAtIndex(source, 0, nil)
+    else { die("could not read an image from \(path)") }
+    return image
+}
+
+/// Writes a PNG. The bitmap handed in is built with `.noneSkipLast`, so ImageIO
+/// emits a truecolour PNG with no alpha channel — which is what App Store
+/// Connect requires and what a plain window capture is not.
+func writePNG(_ image: CGImage, to path: String) {
+    guard
+        let destination = CGImageDestinationCreateWithURL(
+            URL(fileURLWithPath: path) as CFURL, UTType.png.identifier as CFString, 1, nil)
+    else { die("could not create a PNG at \(path)") }
+    CGImageDestinationAddImage(destination, image, nil)
+    guard CGImageDestinationFinalize(destination) else { die("could not write \(path)") }
+}
+
+func parseColor(_ hex: String) -> (r: CGFloat, g: CGFloat, b: CGFloat) {
+    var text = hex
+    if text.hasPrefix("#") { text.removeFirst() }
+    guard text.count == 6, let value = UInt32(text, radix: 16) else {
+        die("expected a six-digit hex colour like 000000, got '\(hex)'")
+    }
+    return (
+        CGFloat((value >> 16) & 0xFF) / 255,
+        CGFloat((value >> 8) & 0xFF) / 255,
+        CGFloat(value & 0xFF) / 255
+    )
+}
+
 let args = Array(CommandLine.arguments.dropFirst())
 guard let command = args.first else {
     die(
-        "usage: shotkit <ax-trusted|display|window|activate|resize|fullscreen|is-fullscreen|mouse-get|jiggle> …"
+        "usage: shotkit <ax-trusted|display|window|activate|resize|fullscreen|is-fullscreen|mouse-get|jiggle|compose> …"
     )
 }
 
@@ -188,6 +225,57 @@ case "is-fullscreen":
 case "mouse-get":
     let point = CGEvent(source: nil)?.location ?? .zero
     print("\(fmt(point.x)) \(fmt(point.y))")
+
+case "compose":
+    // compose <in.png> <out.png> <width> <height> <fit|fill> <RRGGBB>
+    //
+    // Redraws a capture onto an opaque canvas of exactly <width>x<height>, which
+    // is the whole of what App Store Connect asks of a Mac screenshot: one of
+    // four fixed 16:10 pixel sizes, and no alpha channel. `fit` scales the whole
+    // capture in and fills the remainder with the background colour (so nothing
+    // is ever cropped away); `fill` scales to cover and centre-crops.
+    //
+    // Prints "<scaled width> <scaled height>" — the size the capture itself
+    // occupies on the canvas, so the caller can tell whether it had to upscale.
+    guard args.count > 6 else { die("usage: compose <in> <out> <w> <h> <fit|fill> <RRGGBB>") }
+    let width = Int(numberArgument(3)), height = Int(numberArgument(4))
+    guard width > 0, height > 0 else { die("compose: expected a positive canvas size") }
+    let mode = args[5]
+    guard mode == "fit" || mode == "fill" else { die("compose: mode must be 'fit' or 'fill'") }
+    let background = parseColor(args[6])
+    let image = loadImage(args[1])
+
+    // Keep the capture's own RGB profile — Display P3 on any current Mac — so
+    // the shaders' saturated output isn't clipped into sRGB on the way out.
+    // Anything not RGB (there shouldn't be) is normalised to sRGB.
+    let space =
+        image.colorSpace.flatMap { $0.model == .rgb ? $0 : nil }
+        ?? CGColorSpace(name: CGColorSpace.sRGB)!
+    guard
+        let context = CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+            space: space, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)
+    else { die("compose: could not create a \(width)x\(height) bitmap") }
+
+    context.setFillColor(red: background.r, green: background.g, blue: background.b, alpha: 1)
+    context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+    context.interpolationQuality = .high
+
+    let source = CGSize(width: image.width, height: image.height)
+    let ratios = (x: CGFloat(width) / source.width, y: CGFloat(height) / source.height)
+    let scale = mode == "fit" ? min(ratios.x, ratios.y) : max(ratios.x, ratios.y)
+    let drawn = CGSize(
+        width: (source.width * scale).rounded(), height: (source.height * scale).rounded())
+    context.draw(
+        image,
+        in: CGRect(
+            x: ((CGFloat(width) - drawn.width) / 2).rounded(),
+            y: ((CGFloat(height) - drawn.height) / 2).rounded(),
+            width: drawn.width, height: drawn.height))
+
+    guard let composed = context.makeImage() else { die("compose: could not render the canvas") }
+    writePNG(composed, to: args[2])
+    print("\(fmt(drawn.width)) \(fmt(drawn.height))")
 
 case "jiggle":
     // jiggle <x> <y> — two distinct moves so the destination is always a

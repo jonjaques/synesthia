@@ -1,7 +1,7 @@
 # macOS integration
 
-Everything platform-specific: permissions, sandboxing, remote-controlling
-the Music app, window chrome, and the Xcode project's non-obvious
+Everything platform-specific: permissions, sandboxing, reading and driving
+other apps' music playback, window chrome, and the Xcode project's non-obvious
 configuration. If a feature "works but silently does nothing", the answer is
 usually on this page.
 
@@ -15,11 +15,16 @@ why the app watches for specific error codes and shows hint banners.
 
 Synesthia touches three TCC domains:
 
-| Permission                      | Triggered by                                   | Needed for                                 | On denial                                                 |
-| ------------------------------- | ---------------------------------------------- | ------------------------------------------ | --------------------------------------------------------- |
-| Screen & System Audio Recording | first `SCShareableContent`/`startCapture` call | System audio + Music app sources           | capture start throws; banner points to System Settings    |
-| Automation → Music              | first Apple Event sent to Music                | transport control, track metadata, artwork | AppleScript error -1743; `automationDenied` flag → banner |
-| Microphone                      | `AVCaptureDevice.requestAccess`                | Audio input source                         | `microphoneDenied` error → banner                         |
+| Permission                      | Triggered by                                    | Needed for                   | On denial                                                 |
+| ------------------------------- | ----------------------------------------------- | ---------------------------- | --------------------------------------------------------- |
+| Screen & System Audio Recording | first `SCShareableContent`/`startCapture` call  | System audio source          | capture start throws; permission card over the canvas     |
+| Microphone                      | `AVCaptureDevice.requestAccess`                 | Audio input source           | `microphoneDenied` error → permission card                |
+| Automation → a music player     | first Apple Event, sent only on explicit opt-in | transport control, cover art | AppleScript error -1743; `automationDenied` flag → banner |
+
+Note what is **not** in that table: knowing what is playing. That needs no
+permission at all — see [Now playing](#now-playing-three-layers) below. The
+Automation row is the only optional one, is never triggered without a direct
+user command, and does not exist in the Mac App Store build.
 
 ```mermaid
 sequenceDiagram
@@ -28,14 +33,14 @@ sequenceDiagram
     participant TCC as macOS (TCC)
     participant SCK as ScreenCaptureKit
 
-    U->>App: clicks ▶ (Music source)
+    U->>App: picks the System Audio source
     App->>SCK: start system-audio capture
     SCK->>TCC: is Screen & System Audio Recording granted?
     TCC-->>U: permission prompt (first time)
     U->>TCC: Allow
-    Note over App,SCK: the first startCapture after a fresh grant<br>can still fail — the user just clicks ▶ again
+    Note over App,SCK: the first startCapture after a fresh grant<br>can still fail — startSystemCapture retries once,<br>quietly, before surfacing anything
     App->>SCK: start (second attempt) ✓
-    Note over App: handlePlay deliberately avoids toggling Music<br>into pause on that second click — it only starts<br>playback when Music isn't already playing
+    Note over App: handlePlay avoids toggling a detected player<br>into pause on a later click — it only starts<br>playback when the player isn't already playing
 ```
 
 ## Sandbox and entitlements
@@ -47,53 +52,159 @@ group doesn't treat it as a resource):
 
 - `com.apple.security.device.audio-input` — microphone/line-in
 - `com.apple.security.files.user-selected.read-only` — files chosen in the open panel
-- `com.apple.security.assets.music.read-only` — music library
+- `com.apple.security.files.bookmarks.app-scope` — so a chosen file survives relaunch
+
+`Synesthia-Direct.entitlements` adds two more, and **only the direct-download
+build has them**:
+
 - `com.apple.security.automation.apple-events` — sending Apple Events at all
 - `com.apple.security.temporary-exception.apple-events` for `com.apple.Music`
-  — required because Music declares no scripting-targets groups; this
-  exception would need review for App Store distribution
+  and `com.spotify.client` — required because neither declares a
+  scripting-targets group
+
+Those two buy transport control and cover art, nothing more. The App Store
+build ships neither, compiles out every line of AppleScript, and still shows
+what you are listening to.
 
 Sandbox violations are the classic cause of _silent_ failures (e.g. reading
 a file outside the container just fails); check here before debugging logic.
 
-## Controlling the Music app (`MusicController`)
+## Now playing: three layers
 
-There is no modern public API for "what is Music playing?" — the canonical
-route is still **Apple Events**, macOS's decades-old inter-app scripting
-mechanism, driven from Swift by executing AppleScript snippets via
-`NSAppleScript`. Music pushes no notifications to third parties, so the app
-**polls once a second** while the Music source is active:
+"What is playing, and can we control it?" is not one feature but three, each
+with its own permission cost. They are deliberately independent, so losing the
+top layer costs nothing below it.
+
+| Layer                 | Mechanism                                 | Permission            | Builds      |
+| --------------------- | ----------------------------------------- | --------------------- | ----------- |
+| 1. Hearing the audio  | ScreenCaptureKit system-audio tap         | Screen & System Audio | both        |
+| 2. Knowing the track  | distributed notifications from the player | **none**              | both        |
+| 3. Driving the player | Apple Events (`NSAppleScript`)            | Automation, opt-in    | Direct only |
+
+There is deliberately **no separate "Music app" audio source**. There never
+really was one: Music exposes no audio stream, so that source was already
+listening through the same ScreenCaptureKit tap as System Audio — the only
+difference was the metadata, which is now layer 2 and applies to every player.
+Making it a source meant a user had to know which of two identical-sounding
+options to pick. Stored settings naming `musicApp` migrate to `systemAudio`
+(`AppState.migrated`).
+
+### Layer 2: knowing the track, for free (`NowPlayingObserver`)
+
+Media players broadcast their own state as **distributed notifications** — the
+system-wide `NSNotification` bus, delivered by `distnoted`. The payload carries
+title, artist, album and play state:
+
+| Player  | Notification                                                         | Verified                    |
+| ------- | -------------------------------------------------------------------- | --------------------------- |
+| Music   | `com.apple.Music.playerInfo` (+ `com.apple.iTunes.playerInfo` alias) | macOS 26.5                  |
+| Spotify | `com.spotify.client.PlaybackStateChanged`                            | Spotify desktop, macOS 26.5 |
+
+This asks for **nothing**: no entitlement, no TCC prompt, no private API, no
+polling. It is the reason the Mac App Store build can show a now-playing badge
+at all, and it replaced a 1 Hz Apple Events poll that needed an entitlement the
+store build could not have.
+
+Four things worth knowing before touching it:
+
+- **The sandbox does not strip `userInfo`.** This is widely claimed and is
+  wrong. The documented restriction is on sandboxed _senders_ — a sandboxed app
+  may not _post_ a `userInfo` dictionary. Receiving one is fine, verified on
+  macOS 26.5 by running an ad-hoc-signed sandboxed binary (container created,
+  so the sandbox was live) and watching full payloads arrive. If you are ever
+  tempted to "fix" this by adding an entitlement, don't; there isn't one.
+- **`suspensionBehavior: .deliverImmediately` is mandatory, not a tweak.** The
+  default coalesces notifications while the app is inactive, and inactive is the
+  _normal_ case here: the user is in Spotify picking the next song while
+  Synesthia renders behind it. Immediate delivery is also the reason the code
+  uses the selector-based `addObserver` — the block-based overload has no
+  suspension argument, which is what `NotificationRelay` exists to bridge.
+- **Key spellings are a dialect problem.** Music and Spotify agree on `Name`,
+  `Artist`, `Album` and `Player State` but not on track identity
+  (`PersistentID`, an `NSNumber`, vs `Track ID`, a `spotify:track:…` string).
+  Each field takes the first key present rather than using a per-player map, so
+  a new player row usually needs no parsing changes — and a dialect that isn't
+  recognized yields no title, which is dropped, so a wrong guess is inert
+  rather than visible.
+- **A broadcast only fires on a transition.** Launching into already-playing
+  music therefore shows no badge until the next track or play/pause. Layer 3
+  closes that with `PlayerRemote.seed` where it exists; the store build simply
+  picks the badge up a song late, which is why nothing else in the UI depends
+  on it.
+
+`.stopped` is kept distinct from a paused track: players post it when playback
+ends altogether, and it means the badge should _go away_ rather than freeze on
+the last song. Two players running at once is a real case (Music paused,
+Spotify playing), so reports are ranked and whoever is actually playing wins
+regardless of who reported last.
+
+### Layer 3: driving the player (`PlayerRemote`)
+
+Apple Events, macOS's decades-old inter-app scripting mechanism, driven from
+Swift by executing AppleScript snippets via `NSAppleScript`. This is the only
+way to get transport control or cover-art bytes, and it is the only part that
+costs a permission.
 
 ```mermaid
 sequenceDiagram
-    participant MC as MusicController
-    participant OS as macOS (Apple Events)
-    participant M as Music.app
+    actor U as User
+    participant App as Synesthia
+    participant TCC as macOS (TCC)
+    participant P as Music / Spotify
 
-    loop every 1 s (only while Music source active)
-        MC->>MC: is Music running? (NSWorkspace)
-        Note over MC: checked first — sending any event<br>to a closed app would launch it
-        MC->>OS: compiled AppleScript: state + track info
-        OS->>M: Apple Event
-        M-->>MC: "playing\nTitle\nArtist\nAlbum\nID"
-        opt track changed & artwork missing
-            MC->>M: fetch artwork (≤ 3 retries — artwork lags track changes)
-        end
-    end
+    Note over App: badge is already showing — layer 2 needed no permission
+    U->>App: "Control Spotify…" (source menu or Playback menu)
+    App->>P: first Apple Event (seed: state + track)
+    P->>TCC: is Automation granted?
+    TCC-->>U: permission prompt
+    U->>TCC: Allow
+    P-->>App: "playing\nTitle\nArtist\nAlbum\nID"
+    App->>P: fetch cover art (≤ 3 tries — artwork lags track changes)
+    Note over App: transport buttons appear in the control pod
 ```
+
+The ordering is the point. Nothing sends an Apple Event until the user picks
+"Control …" from a menu, so the Automation prompt always arrives one click
+after the user asked for exactly that — never as a launch-time ambush. If it is
+refused, the opt-in rolls back so the menu offers it again instead of leaving
+the app claiming control it does not have. On later launches the opt-in is
+remembered (`playerControlEnabled`), because the macOS grant persists too.
 
 Quirks encoded in the implementation (all learned the hard way):
 
 - **AppleScript constants don't coerce to text**: `player state as text`
-  _throws_; the script maps the constant to a string with `is playing`
+  _throws_; the scripts map the constant to a string with `is playing`
   comparisons instead. From Swift this bug is invisible — the script just
   returns nil.
-- **Artwork**: `raw data of artwork 1` returns the original JPEG/PNG;
-  `data` is a fallback. Artwork lags track changes, hence the retry loop.
-- **Scripts are compiled once** and cached per source string; the 1 Hz poll
-  reuses the compiled object.
-- **Error -1743** = automation denied (drives the settings-hint banner);
-  **-600** = app not running.
+- **Every script is a complete literal per player**, not a template with the
+  app name interpolated in. `scripts/build-appstore.sh` asserts that no
+  `tell application "` string survives into the store binary; building the
+  scripts by interpolation would delete the very string that assertion looks
+  for.
+- **Artwork**: `raw data of artwork 1` returns the original JPEG/PNG; `data` is
+  a fallback. Artwork lags track changes, hence the retries, and it is filed
+  under the track's `artworkKey` so a slow fetch can't land on the next song.
+  **Spotify is deliberately excluded**: it exposes only a remote `artwork url`,
+  and a network request per track is a privacy cost the palette tile avoids.
+- **Scripts are compiled once** and cached per source string.
+- **Error -1743** = automation denied (drives the hint banner); **-600** = app
+  not running. Both are treated as "denied", and `isRunning` is checked first
+  so asking a closed player a question can never launch it.
+
+### The artwork tile
+
+With no cover art — always in the store build, always for Spotify — the badge
+does not draw an empty square. `ArtworkTile` fills it with a gradient sampled
+from the _current visualizer's palette_, at an offset hashed from the album
+name, with the player's Dock icon in the corner
+(`NSRunningApplication.icon`, which needs no file access and so works in the
+sandbox, unlike `NSWorkspace.icon(forFile:)` against `/Applications`).
+
+The hash is hand-rolled FNV-1a rather than `String.hashValue`, because Swift
+seeds its hasher per process: `hashValue` would give the same album a different
+colour on every launch, and stability is the one property the tile most needs.
+Seeding on the album rather than the track means playing straight through a
+record doesn't strobe through hues.
 
 ## Window chrome (`WindowChrome.swift`)
 

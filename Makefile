@@ -103,7 +103,7 @@ format: ## Reformat in place: Prettier, then swift-format (.swift-format)
 demo-track: ## Regenerate Synesthia/Resources/DemoLoop.m4a (deterministic)
 	python3 scripts/make_demo_loop.py
 
-screenshots: ## Capture every visualizer into web/src/assets/screenshots (see script header)
+screenshots: ## Capture every visualizer into web/src/assets/screenshots/<run>, incl. App Store sizes
 	./scripts/take-screenshots.sh $(ARGS)
 
 # ==== Release  (docs/distribution.md)

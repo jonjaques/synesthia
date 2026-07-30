@@ -2,7 +2,9 @@
 
 A Metal-powered music visualizer for macOS, in the spirit of the classic
 iTunes/Music visualizer — but tone-reactive: a 64-band log-spaced FFT drives
-every visual, so bass, mids, and treble each shape the picture differently.
+every visual, so bass, mids, and treble each shape the picture differently. It
+names the track you're listening to in Music or Spotify without asking for a
+single permission to do it.
 
 **[synesthia.app](https://synesthia.app)** — download, screenshots, and support.
 
@@ -18,31 +20,40 @@ via Sparkle. Or [build it from source](#contributing).
 
 ## Using it
 
-1. Launch the app and click **▶** in the control bar (move the mouse to reveal
-   it). With the default **Music app** source, this starts playback in Music (a
-   random library track if nothing is queued) and attaches a system-audio tap.
-2. On first run macOS asks for two permissions:
-   - **Automation → Music** — play/pause control and track metadata
-   - **Screen & System Audio Recording** — to hear what's playing (audio only;
-     the video leg is never read). If you grant it after the first attempt,
-     just click play again; the app re-attaches without pausing Music.
-3. Shortcuts: `Space` play/pause · `⌘1`–`⌘4` switch visualizer · `⌘→/←`
-   next/previous track · `⌘O` open an audio file · green button / `⌃⌘F`
-   fullscreen.
+1. First launch plays a **bundled demo loop**, so you can see it work before
+   granting anything. A welcome sheet explains each source and what it costs.
+2. Pick **System audio** to visualize what you're actually listening to. macOS
+   asks for **Screen & System Audio Recording** — the only sanctioned way to
+   hear system output (audio only; the video leg is 2×2 px and discarded). If
+   you grant it after the first attempt, the app retries on its own.
+3. Start playing something in **Music** or **Spotify** and the now-playing
+   badge fills in by itself — title, artist, album, and the player's icon.
+   This needs **no permission of any kind**; the players broadcast it.
+4. Optional: **Control Music… / Control Spotify…** in the source menu adds
+   play/pause/skip buttons and real album artwork. That one does ask for
+   Automation, only when you click it, and only in the direct-download build.
+5. Shortcuts: `Space` play/pause · `⌘1`–`⌘4` switch visualizer · `⌘→/←`
+   next/previous track · `⌘L` start/stop listening · `⌘O` open an audio file ·
+   green button / `⌃⌘F` fullscreen.
 
 ### Audio sources (control bar, left menu)
 
-| Source           | What it does                                          | Metadata shown                |
-| ---------------- | ----------------------------------------------------- | ----------------------------- |
-| **Music app**    | Controls Music.app, taps system audio                 | Title, artist, album, artwork |
-| **System audio** | Visualizes anything the Mac plays (Spotify, browser…) | —                             |
-| **Audio input**  | Mic, line-in, or any input device (picker in menu)    | Device name                   |
-| **Audio file**   | Plays a local file in-app, loops it                   | Filename                      |
+| Source           | What it does                                               | Metadata shown                    |
+| ---------------- | ---------------------------------------------------------- | --------------------------------- |
+| **System audio** | Anything the Mac plays — Music, Spotify, a browser, a game | Title, artist, album, player icon |
+| **Audio input**  | Mic, line-in, or any input device (picker in menu)         | Device name                       |
+| **Audio file**   | Plays a local file in-app, loops it                        | Filename                          |
 
-Capture auto-attaches on launch for the System audio source, and auto-latches
-onto Music if it's already playing when the app opens. Track metadata and
-artwork only appear in **Music app** mode — the other sources have no way to
-know what's playing.
+There is no separate "Music app" source any more, and that is an improvement
+rather than a removal: it was never a different way of _hearing_ anything (Music
+has no audio stream to tap, so it always went through the same system-audio
+capture) and the metadata it used to be needed for now works for every
+recognized player. Now-playing is a layer on top of **System audio**, not a
+mode you have to switch into.
+
+Recognized players today are **Music** and **Spotify**. Adding another is one
+table row in `NowPlayingObserver.swift` — see
+[docs/macos-integration.md](docs/macos-integration.md#now-playing-three-layers).
 
 ### Visualizers
 
@@ -66,9 +77,14 @@ persist across launches.
   Screen & System Audio Recording, then click play again. If they react but
   weakly, give **Normalize Loudness** a few seconds to adapt (or check it's
   on in Settings, ⌘,), or raise **Sensitivity** in the options popover.
-- **No track info / artwork** — source must be **Music app**, and Automation
-  permission must be granted (System Settings › Privacy & Security ›
-  Automation › Synesthia › Music).
+- **No track info** — the source must be **System audio**, and the badge only
+  appears once the player _changes_ something: players broadcast their state on
+  a transition, not on request, so skip a track or hit pause and it will fill
+  in. Only Music and Spotify are recognized.
+- **No album artwork** — cover art isn't in what the players broadcast, so the
+  badge draws a palette-derived tile with the player's icon instead. Real
+  artwork needs **Control Music…** (Automation permission, direct-download
+  build, Music only — Spotify offers no local artwork).
 
 ## Contributing
 
@@ -187,8 +203,10 @@ and **`ARGS`** to forward flags to the wrapped script, e.g.
 repeats in fullscreen. Each run writes under its own prefix
 (`20260725-174312Z-nebula-windowed.png`) so takes accumulate rather than
 overwrite; `ARGS="--prefix hero"` names one yourself, `--prefix ''` drops it.
-It assumes **Music.app is already playing** so the
-now-playing badge and artwork are populated. Because it drives another app's
+It assumes **Music or Spotify is already playing** so the
+now-playing badge and artwork are populated (it passes
+`-playerControlEnabled YES` to seed the state at launch, since players only
+broadcast on a transition). Because it drives another app's
 window, the terminal you run it from needs two grants in System Settings ›
 Privacy & Security: **Accessibility** (resize the window, move the pointer so
 the auto-hiding chrome reappears) and **Screen & System Audio Recording**
@@ -200,8 +218,9 @@ missing. `./scripts/take-screenshots.sh --help` lists the options.
 Synesthia ships through two independent channels, built from **two targets over
 three configurations**. The short version: `Synesthia Direct` / `Direct` is the
 notarized download from synesthia.app and is the only one with Sparkle and the
-Music.app integration; `Synesthia` / `Release` is the Mac App Store build and
-contains neither. [docs/distribution.md](docs/distribution.md) has the full
+Apple Events layer (transport control and cover art); `Synesthia` / `Release`
+is the Mac App Store build and contains neither. Both show the now-playing
+badge, which needs no permission at all. [docs/distribution.md](docs/distribution.md) has the full
 rationale; [docs/app-store-launch-plan.md](docs/app-store-launch-plan.md) tracks
 what is still outstanding.
 
@@ -253,8 +272,8 @@ make appstore-upload      # …and send it to App Store Connect
 ```
 
 `make appstore` refuses to continue unless the archive is universal, carries no
-`get-task-allow`, no Apple Events entitlement, no `tell application "Music"`
-string, and **no Sparkle** — the store build must not ship an updater. Flip
+`get-task-allow`, no Apple Events entitlement, no `tell application "…"`
+string for any player, and **no Sparkle** — the store build must not ship an updater. Flip
 `APP_STORE_AVAILABLE` in `web/src/consts.ts` once review actually passes.
 
 ## How it works
@@ -268,7 +287,8 @@ SystemAudioCapture (ScreenCaptureKit)  ─┐
 InputDeviceCapture (AVAudioEngine tap) ─┼─▶ AudioAnalyzer ──▶ AudioSnapshot ──▶ MetalVisualizerView ──▶ active Visualizer
 FilePlayer (AVAudioEngine + tap)       ─┘    (vDSP FFT)       (lock-guarded)      (MTKView, 60 fps)      (Metal pipelines)
 
-MusicController (Apple Events) ──▶ transport + now-playing metadata/artwork
+NowPlayingObserver (distributed notifications, no permission) ──▶ title/artist/album/state
+PlayerRemote (Apple Events, opt-in, direct build)            ──▶ transport + cover art
 ```
 
 - `AudioAnalyzer` ingests mono samples from any audio thread, runs a
@@ -305,8 +325,6 @@ behind the ones that depend on Apple's rules. Roughly in order of promise:
 - **Beat-synced scene changes** (auto-rotate visualizers every N bars).
 - **More visualizers**: flocking and fluid-like sims on the compute path
   Nebula opened up, raymarched geometry.
-- **Now-playing for Spotify** and other players (currently only Music.app
-  exposes metadata to us).
 - **User-defined color palettes** (palettes are already per-visualizer).
 - **True external plugins**: load visualizers from
   `~/Library/Application Support/Synesthia/Plugins` via `register(_:)`.

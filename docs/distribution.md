@@ -10,7 +10,8 @@ configurations**. Understanding that split is the key to everything else here.
 | Configuration                      | `Release`                   | `Direct`                                  | `Debug`                         |
 | Goes to                            | Mac App Store               | synesthia.app                             | your Mac                        |
 | `MUSIC_APP_SOURCE`                 | **off**                     | on                                        | on                              |
-| Music.app source in the UI         | absent                      | present                                   | present                         |
+| Now-playing badge                  | yes (no permission)         | yes                                       | yes                             |
+| Transport control + cover art      | absent                      | opt-in                                    | opt-in                          |
 | Apple Events code compiled in      | **none**                    | yes                                       | yes                             |
 | Sparkle linked                     | **never**                   | yes                                       | Direct target only              |
 | Entitlements file                  | `Synesthia.entitlements`    | `Synesthia-Direct.entitlements`           | `Synesthia-Direct.entitlements` |
@@ -23,21 +24,30 @@ configurations**. Understanding that split is the key to everything else here.
 Two separate reasons drive the split, and they cut the same way.
 
 **Apple Events.** `com.apple.security.temporary-exception.apple-events` →
-`com.apple.Music` is the single largest Mac App Store review risk this project
-has; Music.app publishes no scripting-targets group, so that exception is the
-only way to drive it. Outside the store it carries no risk at all. Rather than
-choose, the App Store build simply doesn't contain the feature — `#if
-MUSIC_APP_SOURCE` removes the source case, the `MusicController` class, and
-every Apple Event with it.
+`com.apple.Music` / `com.spotify.client` is the single largest Mac App Store
+review risk this project has; neither app publishes a scripting-targets group,
+so that exception is the only way to drive them. Outside the store it carries
+no risk at all. Rather than choose, the App Store build simply doesn't contain
+the feature — `#if MUSIC_APP_SOURCE` removes `PlayerRemote` and every Apple
+Event with it.
+
+What that costs is much less than it used to. Knowing _what is playing_ needs
+no permission at all — players broadcast it as distributed notifications — so
+the flag now gates only transport control and cover art, and the store build
+shows the same now-playing badge as the direct one. See
+[macOS integration](macos-integration.md#now-playing-three-layers) for the
+three layers, and [the roadmap](roadmap.md#apple-events-in-the-mac-app-store-build)
+for why asking review for the exception later is a better bet than asking now.
 
 **Sparkle.** Mac App Store apps must not ship their own updater — the store
 does that job, and bundling one (along with an XPC service whose whole purpose
 is installing code) invites rejection under guideline 2.4.5. Sparkle is
 therefore linked by the `Synesthia Direct` target and nothing else.
 
-Users of the App Store build lose the now-playing badge, the transport buttons,
-and self-updating — not the ability to visualize Apple Music. "System audio"
-captures Music.app perfectly well.
+Users of the App Store build lose the transport buttons, real cover art, and
+self-updating. They keep the now-playing badge — title, artist, album, play
+state, for Music and Spotify alike — and the ability to visualize anything the
+Mac plays.
 
 Both build scripts assert all of this against the _built archive_ and refuse to
 continue if any of it leaks in either direction.

@@ -34,7 +34,8 @@ flowchart LR
     subgraph ui["UI (main thread, event-driven)"]
         AS["AppState"]
         CV["ContentView<br>(controls chrome)"]
-        MC["MusicController<br>(Apple Events → Music.app)"]
+        NP["NowPlayingObserver<br>(distributed notifications — no permission)"]
+        PR["PlayerRemote<br>(Apple Events, opt-in, Direct only)"]
     end
 
     SCK --> AN
@@ -77,7 +78,7 @@ flowchart TD
     end
     subgraph mainThread["Main thread"]
         DRAW["MTKView draw callback<br>latest()"]
-        UI2["SwiftUI + AppState + MusicController"]
+        UI2["SwiftUI + AppState + NowPlayingObserver"]
     end
     LOCK{{"NSLock inside AudioAnalyzer"}}
     CB -- "append samples,<br>run FFT every 1024" --> LOCK
@@ -112,8 +113,10 @@ keeping audio data out of the observation system entirely:
   lock as a plain value.
 - The audio thread never blocks on anything slower than a short lock.
 
-Only `AppState`, `MusicController`, and `VisualizerSettings` are
-`@Observable`, and they hold _control_ state, which changes at human speed.
+Only `AppState`, `NowPlayingObserver`, `PlayerRemote` and `VisualizerSettings`
+are `@Observable`, and they hold _control_ state, which changes at human speed.
+Now-playing is event-driven rather than polled, so it invalidates views once
+per track change — a handful of times an hour, not per frame.
 
 ## Startup sequence
 
@@ -122,18 +125,19 @@ sequenceDiagram
     participant App as SynesthiaApp (@main)
     participant CV as ContentView
     participant AS as AppState
-    participant MC as MusicController
+    participant NP as NowPlayingObserver
     participant SC as SystemAudioCapture
 
     App->>CV: WindowGroup shows ContentView
     CV->>AS: onAppear()
     AS->>AS: enumerate input devices
-    alt source == Music app (default)
-        AS->>MC: startPolling()  (1 Hz Apple Events)
-        AS->>AS: autoStartCaptureIfMusicPlaying()
-        Note over AS,SC: after ~1.5 s, if Music is playing,<br>attach the system-audio tap automatically
+    AS->>NP: start()
+    Note over NP: registers for every known player's<br>distributed notifications — no permission,<br>regardless of the active source
+    alt source == Demo (first launch)
+        AS->>AS: startDemo()  — needs no permission at all
     else source == System audio
         AS->>SC: start()  (may trigger permission prompt)
+        Note over AS: if the user opted into player control,<br>also seeds state over Apple Events, because<br>a broadcast only fires on a transition
     end
     Note over CV: MetalVisualizerView is already drawing —<br>black/quiet until audio flows
 ```

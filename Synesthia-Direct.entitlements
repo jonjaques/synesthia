@@ -4,10 +4,19 @@
 <dict>
 	<!-- Direct-download (Developer ID / notarized) and Debug entitlements.
 	     Identical to the App Store set plus the two Apple Events entitlements
-	     the Music.app source needs. The temporary exception is required because
-	     Music.app publishes no scripting-targets group; outside the Mac App
-	     Store it carries no review risk. Builds using this file must also
-	     define MUSIC_APP_SOURCE. -->
+	     the optional player-control layer needs.
+
+	     Note what these are *not* for: knowing what is playing needs no
+	     permission at all, because players broadcast it as a distributed
+	     notification (see NowPlayingObserver). These buy the two things a
+	     broadcast cannot carry — transport control and real cover art — and
+	     the app sends its first Apple Event only when the user picks
+	     "Control Music…" / "Control Spotify…" from a menu.
+
+	     The temporary exception is required because neither Music nor Spotify
+	     publishes a scripting-targets group; outside the Mac App Store it
+	     carries no review risk. Builds using this file must also define
+	     MUSIC_APP_SOURCE. -->
 	<key>com.apple.security.app-sandbox</key>
 	<true/>
 	<key>com.apple.security.device.audio-input</key>
@@ -21,6 +30,7 @@
 	<key>com.apple.security.temporary-exception.apple-events</key>
 	<array>
 		<string>com.apple.Music</string>
+		<string>com.spotify.client</string>
 	</array>
 	<!-- Sparkle. Only the `Synesthia Direct` target links it; the App Store
 	     target has no updater and none of these three entitlements.
