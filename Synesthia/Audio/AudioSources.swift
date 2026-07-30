@@ -31,16 +31,24 @@ enum AudioSourceKind: String, CaseIterable, Identifiable, Codable {
 
     var id: String { rawValue }
 
+    /// The sources offered in the source picker. The demo track is
+    /// deliberately not one of them — it lives in the welcome window and the
+    /// Help menu, so the picker only lists things a user would genuinely
+    /// listen to.
+    static var selectable: [AudioSourceKind] {
+        allCases.filter { $0 != .demo }
+    }
+
     /// User-facing name in the source menu.
     var label: String {
         switch self {
-        case .demo: "Demo track"
+        case .demo: "Demo Track"
         #if MUSIC_APP_SOURCE
-        case .musicApp: "Music app"
+        case .musicApp: "Music App"
         #endif
-        case .systemAudio: "System audio"
-        case .inputDevice: "Audio input"
-        case .audioFile: "Audio file"
+        case .systemAudio: "System Audio"
+        case .inputDevice: "Audio Input"
+        case .audioFile: "Audio File"
         }
     }
 
@@ -92,11 +100,11 @@ enum PrivacyPermission: String, Identifiable, CaseIterable {
     var explanation: String {
         switch self {
         case .screenAndSystemAudio:
-            "macOS has no dedicated “record system audio” API. The only sanctioned route is ScreenCaptureKit, the screen-recording framework, so capturing what your Mac is playing is gated behind this permission. Synesthia captures the video leg at 2×2 pixels and throws every frame away — it only wants the audio."
+            "macOS has no dedicated “record system audio” API — the only sanctioned route is ScreenCaptureKit, the screen-recording framework, so hearing what your Mac plays is gated behind Screen & System Audio Recording. Synesthia uses the audio alone; the video leg is captured at 2×2 pixels and every frame is discarded."
         case .automation:
             "Lets Synesthia ask the Music app what is playing and drive play, pause, and skip. Nothing is written back to your library."
         case .microphone:
-            "Lets Synesthia listen to a microphone or line-in input."
+            "Lets Synesthia listen to a microphone, line-in, or instrument interface. The audio is analyzed in real time and never recorded."
         }
     }
 

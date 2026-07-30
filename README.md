@@ -46,12 +46,12 @@ know what's playing.
 
 ### Visualizers
 
-| Name                | Idea                                                                                                 | Options                 |
-| ------------------- | ---------------------------------------------------------------------------------------------------- | ----------------------- |
-| **Nebula**          | 3D orbiting particle cloud; each particle is bound to a frequency band and flares when its band hits | Density, Glow, Swirl    |
-| **Spectrum Tunnel** | Flight through a tube whose angular slices are the live spectrum                                     | Twist, Glow             |
-| **Aurora**          | Layered ribbons riding the waveform, each glowing with its slice of the spectrum                     | Ribbons, Wave height    |
-| **Bars**            | A studio console: LED spectrum wall with peak holds, analog VU meters, and a desk of moving faders   | Columns, Segments, Desk |
+| Name                | Idea                                                                                               | Options                     |
+| ------------------- | -------------------------------------------------------------------------------------------------- | --------------------------- |
+| **Nebula**          | ~100k GPU-simulated particles orbiting a bass core, galaxy disc, and comet halo                    | Density, Trails, Turbulence |
+| **Spectrum Tunnel** | Flight through a tube whose angular slices are the live spectrum                                   | Twist, Glow                 |
+| **Aurora**          | Layered ribbons riding the waveform, each glowing with its slice of the spectrum                   | Ribbons, Wave height        |
+| **Bars**            | A studio console: LED spectrum wall with peak holds, analog VU meters, and a desk of moving faders | Columns, Segments, Desk     |
 
 All visualizers share global **Sensitivity**, **Speed**, and five color
 **palettes** (Prism, Ember, Ocean, Violet, Mono) — see the slider icon in the
@@ -293,7 +293,7 @@ Visualizers are plugins (`Synesthia/Visualizers/VisualizerCore.swift`):
    would use).
 
 Declared options automatically appear in the Options popover and arrive in the
-shader as `VizUniforms.p0…p7`. Audio data arrives as a 64-float band array, a
+shader as the `p` array in `VizUniforms`. Audio data arrives as a 64-float band array, a
 256-float waveform, plus derived scalars — see `AudioAnalyzer.swift`.
 
 ## Roadmap / ideas
@@ -303,8 +303,8 @@ feasibility in the current code, rough cost, and the platform research
 behind the ones that depend on Apple's rules. Roughly in order of promise:
 
 - **Beat-synced scene changes** (auto-rotate visualizers every N bars).
-- **More visualizers**: GPU-compute particle systems (the CPU sim tops out
-  around ~8k particles), raymarched geometry.
+- **More visualizers**: flocking and fluid-like sims on the compute path
+  Nebula opened up, raymarched geometry.
 - **Now-playing for Spotify** and other players (currently only Music.app
   exposes metadata to us).
 - **User-defined color palettes** (palettes are already per-visualizer).

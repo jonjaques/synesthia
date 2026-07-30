@@ -106,22 +106,115 @@ Each frame the coordinator packs everything a shader might want into a
 flowchart LR
     SNAP[("AudioSnapshot")] --> U
     CLOCK["time, dt, resolution"] --> U
+    FRAME["derived frame state<br>beatHit, trebleHit, beatCount,<br>frame, reduceMotion, intro"] --> U
     TUNE["VisualizerSettings<br>sensitivity, speed, palette"] --> U
-    OPTS["descriptor options → p0…p7"] --> U
-    U["VizUniforms<br>28 floats / 112 bytes"] -- "raw byte copy<br>(setFragmentBytes)" --> MSL["struct VizUniforms<br>in Shaders.metal"]
+    OPTS["descriptor options → p[0…15]"] --> U
+    U["VizUniforms<br>42 floats / 168 bytes"] -- "raw byte copy<br>(setFragmentBytes / setBytes)" --> MSL["struct VizUniforms<br>in Shaders.metal"]
 ```
 
 The struct exists **twice**: once in Swift (`VisualizerCore.swift`) and once
 in MSL (`Shaders.metal`). The GPU receives the Swift struct's raw bytes
 and reinterprets them as the MSL struct, so _the two layouts must stay
-byte-identical_ — same fields, same order, currently 28 floats / 112 bytes.
-Adding a field means updating both and keeping the sizes in sync; a mismatch
-doesn't crash, it silently shifts every subsequent field into the wrong
-shader variable.
+byte-identical_ — same fields, same order, currently 42 floats / 168 bytes.
+A mismatch doesn't crash: it silently shifts every subsequent field into the
+wrong shader variable, which reads as a visualizer that has gone inexplicably
+wrong. **Both sides therefore assert the layout**: MSL has
+`static_assert(sizeof(VizUniforms) == 168)`, and `VizUniformsTests` pins the
+Swift size, every field's offset, and the contiguity of the option block. A
+one-sided edit fails the build or the test suite.
+
+Growing the struct is the supported way to give every visualizer a new input.
+Two rules: **append at the end**, and update the byte count in both files and
+the test. The option block is the exception — it has to stay contiguous,
+because MSL declares it as `float p[16]` and _indexes_ it:
+
+- Sixteen slots rather than eight, because a compute visualizer wants more
+  knobs than a fragment shader does (Nebula uses ten).
+- Indexable rather than named, because a generic host for data-only plugins
+  (see [roadmap](roadmap.md)) has to map a manifest's declared options onto
+  slots whose meaning it doesn't know. `VizUniforms.parameterCount` is the one
+  number the host, the docs, and the tests all read.
+- Each visualizer names its own slots at the top of its shader section
+  (`constant int kNebulaTurbulence = 3;`), so shader bodies say
+  `u.p[kNebulaTurbulence]` instead of `u.p[3]` plus a comment.
+
+Six fields carry **state the host derives once** rather than making every
+visualizer redo it. The important pair is `beatHit`/`trebleHit`: `beat` and
+`trebleBeat` are envelopes that decay smoothly, so nothing downstream can tell
+"loud-ish" from "a kick landed on _this_ frame" — and an impulse in a
+simulation has to be applied on exactly one frame. Detecting the rising edge
+needs the previous frame's value, which the host has and a GPU kernel does not.
+`beatCount` and `frame` are free clocks, `reduceMotion` lets an effect with no
+audio feature to damp (a particle sim's turbulence) tone itself down, and
+`intro` ramps 0 → 1 after a visualizer is built so a switch can fade in instead
+of popping.
 
 Bulk data rides alongside the uniforms the same way: the 64-float band array
-and (for Aurora) the 256-float waveform are passed with `setFragmentBytes`,
+and the 256-float waveform are passed with `setFragmentBytes` / `setBytes`,
 Metal's no-ceremony path for small per-draw data (< 4 KB).
+
+## GPU compute: simulation without the CPU
+
+Most of the visualizers only ever draw. Nebula also **simulates**, and it does
+that in a compute pass — a shader that runs over a grid of threads instead of
+over triangles and pixels, reading and writing GPU memory. `Visualizer.draw`
+receives the `MTLCommandBuffer` itself, so a compute pass is just one more
+encoder in the same frame; `makeComputePipeline` builds the pipeline exactly as
+`makeRenderPipeline` builds a render one.
+
+`GPUParticleSystem` (`ParticleSystem.swift`) is the reusable half: it owns the
+buffers, the ping-pong, the dispatch sizing and the binding convention, while
+the visualizer owns the state layout and the two kernels. A flocking or fluid
+visualizer would supply a different layout and different kernels and reuse the
+rest.
+
+```mermaid
+flowchart LR
+    subgraph GPU["one command buffer"]
+        SEED["nebulaSeed<br>(once, over the whole capacity)"]
+        STEP["nebulaStep<br>one thread per particle"]
+        SCENE["background + instanced sprite quads<br>→ float16 HDR target"]
+        MIPS["blit: generateMipmaps"]
+        BLOOM["blur a coarse level<br>→ 1/8-resolution target"]
+        TONE["tonemap → drawable"]
+        SEED --> STEP --> SCENE --> MIPS --> BLOOM --> TONE
+    end
+    A[("state buffer A")] -- read --> STEP
+    STEP -- write --> B[("state buffer B")]
+    B -- "swap; vertex stage reads" --> SCENE
+```
+
+What it buys, and why the CPU version couldn't:
+
+- **~100k particles instead of ~4k.** The old simulation was a serial Swift
+  loop on the render thread; every particle cost main-thread time _inside_ the
+  frame. 100k particles are 100k independent GPU threads and cost the render
+  thread one dispatch.
+- **Device-private memory.** With no CPU writes the buffers can be
+  `.storageModePrivate` — the fastest memory the GPU has, and unreachable from
+  the CPU by construction. The old shared buffers had to be triple-buffered
+  behind a semaphore so the CPU couldn't overwrite a frame the GPU was still
+  reading; all of that is gone.
+- **No CPU mirrors.** Nebula's body-orbit function used to exist in both Swift
+  and MSL with a "keep these in sync" comment. The kernel and the background
+  shader now call the same MSL function.
+
+Two conventions worth knowing:
+
+- **Buffer indices are fixed**, so different visualizers' kernels read the same
+  way and the scaffolding can bind the shared ones itself:
+  `0` state in (read-only), `1` state out, `2` `VizUniforms`, `3` bands,
+  `4` waveform, `5`+ the visualizer's own. See `GPUParticleSystem.Binding`.
+- **The step kernel reads one buffer and writes the other**, then they swap.
+  Nebula's particles only read their own slot, so it could update in place — but
+  read-only-in/write-only-out is the shape any neighbor-reading kernel
+  (flocking, SPH) requires, and it costs one extra buffer. Both are seeded over
+  the full capacity on the first step, so every slot holds valid state even
+  before the Density control reaches it.
+
+Dispatch uses `dispatchThreads` rather than `dispatchThreadgroups`, which lets
+Metal size the ragged last threadgroup itself — so the kernel needs no bounds
+check and never runs on a particle that doesn't exist.
 
 ## Drawing techniques used
 
@@ -139,22 +232,46 @@ These are the graphics idioms you'll meet in the shaders, all standard:
 - **Value noise / fBm** (`vnoise`, `fbm`): smoothly interpolated random
   values, then several octaves of it summed. The standard recipe for smoke,
   haze, and clouds.
-- **Point sprites** (Nebula): the GPU can rasterize a single vertex as a
-  screen-aligned square (`point_size`); the fragment shader shades a
-  Gaussian falloff to turn the square into a soft glowing dot.
+- **Instanced sprite quads** (Nebula): one four-vertex quad per particle,
+  corners generated from the vertex index, positioned by the vertex shader
+  reading the simulation buffer directly — no vertex buffer, no per-particle
+  draw call. Metal _can_ rasterize a single vertex as a screen-aligned square
+  (`point_size`, which is what Nebula used to do), but a point sprite is always
+  axis-aligned and capped at a device-dependent size; a quad can be scaled and
+  **oriented**, which is what lets a particle stretch along its own velocity
+  into a motion-blur streak.
 - **Additive blending** (Nebula's particles): fragments are _added_ to the
   framebuffer instead of replacing it, so overlapping particles brighten
   like overlapping lights. Configured in `makeRenderPipeline`.
+- **Divergence-free flow** (Nebula's turbulence): each component of the field
+  depends only on the _other_ two axes, which makes its divergence exactly zero
+  (the Arnold–Beltrami–Childress family). Incompressibility is the point — a
+  field with sinks vacuums the whole cloud into a few knots within seconds,
+  while this one shears it into filaments and keeps them moving, for a dozen
+  sin/cos rather than the two dozen noise fetches a curl-of-noise field costs.
+- **Bloom off the mip chain** (Nebula): `generateMipmaps` is a blit, and a mip
+  chain is most of a bloom pyramid — but only the downsample half. Sampling a
+  coarse level and stretching it back to full screen shows the level's own
+  bilinear tent as 128-pixel blocks, and hiding that with a few offset taps just
+  makes the taps visible as crosses (both were built and thrown away). The fix
+  is to **blur in coarse space**: one pass takes a 5×5 Gaussian of level 4 into
+  a 1/8-resolution target, and the tonemap samples _that_ bilinearly. A smooth
+  image stays smooth at any magnification.
 - **Reinhard tone mapping** (`c/(1+c)`): all that additive glow can exceed
   1.0; this rolls it smoothly back into displayable range instead of
   clipping to flat white.
 
 ## Where the pixels come from, per visualizer
 
-| Visualizer      | CPU work per frame                                | GPU passes                                     |
-| --------------- | ------------------------------------------------- | ---------------------------------------------- |
-| Spectrum Tunnel | none (just uniforms)                              | 1 fullscreen fragment shader                   |
-| Aurora          | none (just uniforms)                              | 1 fullscreen fragment shader                   |
-| Nebula          | simulate ≤ 4096 particles, write to shared buffer | fullscreen background + additive point sprites |
+| Visualizer      | CPU work per frame              | GPU passes                                                                                     |
+| --------------- | ------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Spectrum Tunnel | none (just uniforms)            | 1 fullscreen fragment shader                                                                   |
+| Aurora          | none (just uniforms)            | 1 fullscreen fragment shader                                                                   |
+| Nebula          | none (encode a dispatch)        | compute step (≤ 131072 particles) → HDR background + instanced sprites → mips → blur → tonemap |
+| Bars            | console ballistics → one buffer | 1 fullscreen fragment shader                                                                   |
+
+Measured on an M5, 2560×1600 drawable with ~81k particles: Nebula holds 60 fps
+at 11.7 ms of GPU time and full render scale — cheaper _per pixel_ than the
+tunnel, which is the one visualizer that routinely sits at half scale.
 
 See [Visualizers](visualizers.md) for how each one turns audio into imagery.

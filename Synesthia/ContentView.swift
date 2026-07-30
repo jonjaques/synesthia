@@ -78,14 +78,21 @@ struct ContentView: View {
 
             VStack(spacing: 8) {
                 if let message = appState.statusMessage {
-                    Text(message)
-                        .font(.callout)
-                        .foregroundStyle(.yellow)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 8)
-                        .chromeGlass(in: .capsule)
-                        .padding(.top, 12)
-                        .transition(.move(edge: .top).combined(with: .opacity))
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.callout)
+                            .foregroundStyle(.yellow)
+                            .accessibilityHidden(true)
+                        Text(message)
+                            .font(.callout)
+                    }
+                    .chromeForeground()
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .frame(maxWidth: 520)
+                    .chromeGlass(in: .rect(cornerRadius: 18))
+                    .padding(.top, 12)
+                    .transition(.move(edge: .top).combined(with: .opacity))
                 }
                 // The window has no title bar text any more, so sources without
                 // a now-playing badge get their name here instead.
@@ -104,11 +111,22 @@ struct ContentView: View {
                 Spacer()
             }
 
+            // The canvas can't come alive without the permission, so the call
+            // to action sits centered where the visuals would be — and stays
+            // put while the rest of the chrome fades.
+            if let blocked = appState.blockedPermission {
+                PermissionCard(permission: blocked)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .transition(.opacity.combined(with: .scale(scale: 0.97)))
+            }
+
             bottomChrome
                 .opacity(chromeVisible ? 1 : 0)
                 .allowsHitTesting(chromeVisible)
                 .animation(.easeInOut(duration: 0.35), value: chromeVisible)
         }
+        .animation(.easeInOut(duration: 0.25), value: appState.statusMessage)
+        .animation(.easeOut(duration: 0.2), value: appState.blockedPermission)
         .background(Color.black)
         .background(ChromelessWindow())
         .frame(minWidth: minimumContentSize.width, minHeight: minimumContentSize.height)
@@ -135,6 +153,12 @@ struct ContentView: View {
         .onAppear {
             appState.onAppear()
             showChromeTemporarily()
+        }
+        // Re-activation is the moment a user comes back from System Settings,
+        // so it's when cached permission state is most likely stale.
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) {
+            _ in
+            appState.handleAppActivation()
         }
         .sheet(isPresented: $state.showsWelcome) {
             WelcomeView()
@@ -373,6 +397,58 @@ private struct ChromeGlass<S: InsettableShape>: ViewModifier {
     }
 }
 
+// MARK: - Permission card
+
+/// Centered over a canvas that can't come alive because a macOS privacy
+/// permission is missing. Replaces what used to be a yellow one-line banner:
+/// it names the permission, restates what granting it buys, and offers the
+/// fix. `AppState.handleAppActivation` clears it automatically when the user
+/// returns from System Settings with the box ticked.
+struct PermissionCard: View {
+    @Environment(AppState.self) private var appState
+    let permission: PrivacyPermission
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Image(systemName: permission.symbol)
+                .font(.system(size: 32, weight: .medium))
+                .foregroundStyle(.white.opacity(0.9))
+                .padding(.bottom, 6)
+                .accessibilityHidden(true)
+            title
+                .font(.title3.weight(.semibold))
+            Text(permission.explanation)
+                .font(.callout)
+                .foregroundStyle(.white.opacity(0.75))
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 10) {
+                Button("Open System Settings…") {
+                    appState.openPermissionSettings(permission)
+                }
+                .buttonStyle(.borderedProminent)
+                Button("Try Again") {
+                    appState.retryBlockedSource()
+                }
+            }
+            .padding(.top, 12)
+        }
+        .chromeForeground()
+        .padding(.horizontal, 32)
+        .padding(.vertical, 28)
+        .frame(width: 430)
+        .chromeGlass(in: .rect(cornerRadius: 24))
+    }
+
+    private var title: Text {
+        switch permission {
+        case .screenAndSystemAudio: Text("Allow System Audio Capture")
+        case .automation: Text("Allow Control of Music")
+        case .microphone: Text("Allow Microphone Access")
+        }
+    }
+}
+
 // MARK: - Now playing badge
 
 struct NowPlayingBadge: View {
@@ -451,18 +527,49 @@ struct NowPlayingBadge: View {
 struct ControlsPod: View {
     @Environment(AppState.self) private var appState
 
+    /// The selectable sources whose permission is granted (or unneeded),
+    /// plus whatever is active right now — the demo, or a source whose
+    /// permission was just revoked — so the checkmark always has a row.
+    private var pickerSources: [AudioSourceKind] {
+        var kinds = AudioSourceKind.selectable.filter { appState.isSourceAvailable($0) }
+        if !kinds.contains(appState.sourceKind) {
+            kinds.insert(appState.sourceKind, at: 0)
+        }
+        return kinds
+    }
+
+    /// Sources that need a permission the user hasn't granted, shown disabled.
+    private var lockedSources: [AudioSourceKind] {
+        AudioSourceKind.selectable.filter {
+            !appState.isSourceAvailable($0) && $0 != appState.sourceKind
+        }
+    }
+
     var body: some View {
         @Bindable var state = appState
 
         HStack(spacing: 8) {
             Menu {
                 Picker("Audio Source", selection: $state.sourceKind) {
-                    ForEach(AudioSourceKind.allCases) { kind in
+                    ForEach(pickerSources) { kind in
                         Label(kind.label, systemImage: kind.symbol).tag(kind)
                     }
                 }
                 .pickerStyle(.inline)
                 .labelsHidden()
+
+                if !lockedSources.isEmpty {
+                    Section("Needs Permission") {
+                        ForEach(lockedSources) { kind in
+                            Button {
+                            } label: {
+                                Label(kind.label, systemImage: kind.symbol)
+                            }
+                            .disabled(true)
+                        }
+                        Button("Grant Access…") { appState.showWelcome() }
+                    }
+                }
 
                 if state.sourceKind == .inputDevice {
                     Divider()
@@ -691,11 +798,18 @@ struct OptionsPanel: View {
                     if !descriptor.options.isEmpty {
                         OptionSection("\(descriptor.name) Options") {
                             ForEach(descriptor.options) { option in
-                                LabeledSlider(
-                                    name: option.name,
-                                    value: settings.binding(descriptor.id, option: option),
-                                    range: option.range,
-                                    defaultValue: option.defaultValue)
+                                switch option.kind {
+                                case .slider:
+                                    LabeledSlider(
+                                        name: option.name,
+                                        value: settings.binding(descriptor.id, option: option),
+                                        range: option.range,
+                                        defaultValue: option.defaultValue)
+                                case .toggle:
+                                    LabeledToggle(
+                                        name: option.name,
+                                        isOn: settings.binding(descriptor.id, toggle: option))
+                                }
                             }
                         }
                     }
@@ -844,6 +958,25 @@ struct LabeledSlider: View {
                     .foregroundStyle(isModified ? .primary : .secondary)
             }
             Slider(value: $value, in: range)
+        }
+    }
+}
+
+/// The switch counterpart of `LabeledSlider`, for options that are on or off.
+/// No per-row revert: flipping it back is already one click.
+struct LabeledToggle: View {
+    let name: String
+    @Binding var isOn: Bool
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(name).font(.caption)
+            Spacer(minLength: 4)
+            Toggle(name, isOn: $isOn)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .accessibilityLabel(name)
         }
     }
 }

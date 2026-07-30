@@ -35,10 +35,10 @@ final class BarsVisualizer: Visualizer {
             VisualizerOption(id: "segments", name: "LED segments", range: 0...40, defaultValue: 22),
             VisualizerOption(id: "peaks", name: "Peak hold", range: 0.0...2.0, defaultValue: 1.0),
             VisualizerOption(id: "glow", name: "Glow", range: 0.3...2.5, defaultValue: 1.0),
+            .toggle(id: "deskPanel", name: "Show desk panel", defaultOn: true),
             VisualizerOption(id: "desk", name: "Desk", range: 0.0...1.0, defaultValue: 0.6),
             VisualizerOption(id: "channels", name: "Channels", range: 4...16, defaultValue: 8),
             VisualizerOption(id: "meters", name: "Meters", range: 0.0...2.0, defaultValue: 1.0),
-            VisualizerOption(id: "room", name: "Room", range: 0.0...2.0, defaultValue: 1.0),
         ],
         make: { try BarsVisualizer(device: $0, library: $1, pixelFormat: $2) })
 
@@ -120,7 +120,7 @@ final class BarsVisualizer: Visualizer {
     }
 
     static func channels(_ u: VizUniforms) -> Int {
-        min(max(Int(u.p5.rounded()), 4), maxChannels)
+        min(max(Int(u.p6.rounded()), 4), maxChannels)
     }
 
     // MARK: - Meter simulation

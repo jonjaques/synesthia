@@ -42,13 +42,15 @@ Synesthia/
 │                                 (compiled out of the App Store build)
 └── Visualizers/
     ├── VisualizerCore.swift      Plugin protocol, registry, palettes, settings
+    ├── ParticleSystem.swift      GPU-resident particle simulation scaffolding
     ├── Shaders.metal             All GPU shader code (build-time compiled)
     ├── MetalVisualizerView.swift The render loop host
-    ├── NebulaVisualizer.swift    Particle-cloud visualizer
+    ├── NebulaVisualizer.swift    GPU-compute particle-cloud visualizer
     ├── TunnelVisualizer.swift    Spectrum-tunnel visualizer
-    └── AuroraVisualizer.swift    Waveform-ribbon visualizer
+    ├── AuroraVisualizer.swift    Waveform-ribbon visualizer
+    └── BarsVisualizer.swift      Studio-console visualizer
 
-SynesthiaTests/                   Swift Testing bundle; AudioAnalyzer coverage
+SynesthiaTests/                   Swift Testing bundle; AudioAnalyzer + uniforms-layout coverage
 Makefile                          Every build/asset/release command in one place
 scripts/                          Demo-track generator, screenshot capture, release pipelines
 web/                              Astro marketing site

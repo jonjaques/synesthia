@@ -1,6 +1,10 @@
+import AVFoundation
+import AppKit
 import SwiftUI
 
-/// First-run explainer.
+/// First-run explainer, styled after the welcome panes of Apple's own apps:
+/// app icon, greeting, one clickable row per audio source stating its value
+/// and its permission cost up front, a privacy note, and a single Continue.
 ///
 /// Two jobs, in this order of importance:
 ///
@@ -9,178 +13,237 @@ import SwiftUI
 ///    on a machine that has granted zero permissions. An App Review tester who
 ///    grants nothing must still see the app function — the alternative is a
 ///    black canvas and a 2.1 "app does not function" rejection.
-/// 2. Name each permission, say plainly what it buys and why macOS requires
-///    it, and offer a one-click deep link into the right System Settings pane.
+/// 2. Deliver each permission's value proposition *before* macOS asks for it.
+///    Choosing a source here is exactly what triggers the system prompt, so
+///    the reasons get read first.
 ///
 /// See docs/app-store-launch-plan.md §B4.
 struct WelcomeView: View {
     @Environment(AppState.self) private var appState
 
-    /// The sources worth putting in front of someone on first launch, paired
-    /// with what it costs to use them.
-    private var options: [SourceOption] {
-        var items: [SourceOption] = [
-            SourceOption(
-                kind: .demo,
-                blurb: "A short loop bundled with the app. Playing right now, behind this window.",
-                permission: nil)
-        ]
-        #if MUSIC_APP_SOURCE
-        items.append(
-            SourceOption(
-                kind: .musicApp,
-                blurb:
-                    "Visualize the Music app and control playback, with the track name and artwork on screen.",
-                permission: .screenAndSystemAudio,
-                extraPermission: .automation))
-        #endif
-        items.append(
-            SourceOption(
-                kind: .systemAudio,
-                blurb: "Visualize anything your Mac is playing — a browser tab, a streaming app, a game.",
-                permission: .screenAndSystemAudio))
-        items.append(
-            SourceOption(
-                kind: .inputDevice,
-                blurb: "Visualize a microphone, line-in, or an instrument interface.",
-                permission: .microphone))
-        items.append(
-            SourceOption(
-                kind: .audioFile,
-                blurb: "Open any audio file from your Mac. No permission needed — you pick the file.",
-                permission: nil))
-        return items
-    }
-
     var body: some View {
         VStack(spacing: 0) {
-            header
-            Divider()
             ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    ForEach(options) { option in
-                        SourceRow(option: option)
-                    }
-                    permissionFootnote
+                VStack(alignment: .leading, spacing: 0) {
+                    header
+                    sourceRows
+                        .padding(.top, 24)
+                    privacyNote
+                        .padding(.top, 20)
                 }
-                .padding(20)
+                .padding(.horizontal, 44)
+                .padding(.top, 32)
+                .padding(.bottom, 12)
             }
-            Divider()
+            .scrollBounceBehavior(.basedOnSize)
             footer
         }
-        .frame(width: 560, height: 580)
+        .frame(width: 560, height: 680)
+        .onAppear { appState.refreshPermissions() }
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 0) {
+            Image(nsImage: NSApp.applicationIconImage ?? NSImage())
+                .resizable()
+                .frame(width: 68, height: 68)
+                .accessibilityHidden(true)
             Text("Welcome to Synesthia")
-                .font(.title2.weight(.semibold))
+                .font(.largeTitle.weight(.bold))
+                .padding(.top, 14)
             Text(
-                "The demo track is already playing — the visuals you can see behind this window need no permissions at all. When you're ready to visualize your own audio, here's what each source needs."
+                "Live, GPU-rendered visuals for whatever you're listening to. Choose where the sound comes from:"
             )
-            .font(.callout)
+            .font(.title3)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.top, 6)
+        }
+    }
+
+    /// The rows carry their own horizontal inset so the hover wash extends
+    /// past the text column; the negative padding keeps the text itself on
+    /// the page margin.
+    private var sourceRows: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(AudioSourceKind.selectable) { kind in
+                SourceRow(kind: kind, blurb: Self.blurb(for: kind), footnote: footnote(for: kind))
+            }
+        }
+        .padding(.horizontal, -14)
+    }
+
+    private var privacyNote: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "hand.raised.fill")
+                .font(.title3)
+                .foregroundStyle(.tint)
+                .accessibilityHidden(true)
+            Text(
+                "Synesthia analyzes audio in the moment and keeps nothing — no recordings, no uploads. System audio arrives through macOS's screen-recording engine, so that one permission covers it; the video frames are discarded. [Privacy Policy…](https://synesthia.app/privacy)"
+            )
+            .font(.caption)
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(20)
-    }
-
-    private var permissionFootnote: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Label("Why screen recording?", systemImage: "questionmark.circle")
-                .font(.callout.weight(.semibold))
-            Text(PrivacyPermission.screenAndSystemAudio.explanation)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.quaternary.opacity(0.4), in: .rect(cornerRadius: 10))
     }
 
     private var footer: some View {
-        HStack {
-            Text("You can reopen this from the Help menu.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Spacer()
-            Button("Continue with the demo") {
+        VStack(spacing: 10) {
+            Button {
                 appState.completeWelcome()
+            } label: {
+                Text("Continue")
+                    .frame(minWidth: 240)
             }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
             .keyboardShortcut(.defaultAction)
+
+            if appState.sourceKind == .demo, appState.isDemoPlaying {
+                Text("The demo track is playing behind this window. Reopen this guide from the Help menu.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            } else {
+                Button("Play the Demo Track") {
+                    appState.playDemo()
+                    appState.completeWelcome()
+                }
+                .buttonStyle(.link)
+            }
         }
-        .padding(16)
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 44)
+        .padding(.top, 8)
+        .padding(.bottom, 20)
+    }
+
+    private static func blurb(for kind: AudioSourceKind) -> String {
+        switch kind {
+        case .demo:
+            ""
+        #if MUSIC_APP_SOURCE
+        case .musicApp:
+            "Playback control, track titles, and album artwork, straight from Music."
+        #endif
+        case .systemAudio:
+            "Anything your Mac is playing — a browser, a streaming app, a game."
+        case .inputDevice:
+            "Live sound from a microphone, an instrument, or an audio interface."
+        case .audioFile:
+            "Pick an audio file from your Mac and let it loop."
+        }
+    }
+
+    private func footnote(for kind: AudioSourceKind) -> PermissionFootnote? {
+        switch kind {
+        case .demo:
+            nil
+        #if MUSIC_APP_SOURCE
+        case .musicApp:
+            appState.screenAudioGranted
+                ? PermissionFootnote(
+                    text: "Ready — Music may ask once before it can be controlled",
+                    symbol: "checkmark.seal.fill", ready: true)
+                : PermissionFootnote(
+                    text: "Asks for Screen & System Audio Recording, and to control Music",
+                    symbol: "lock.fill", ready: false)
+        #endif
+        case .systemAudio:
+            appState.screenAudioGranted
+                ? PermissionFootnote(
+                    text: "Ready — access granted", symbol: "checkmark.seal.fill", ready: true)
+                : PermissionFootnote(
+                    text: "Asks for Screen & System Audio Recording",
+                    symbol: "lock.fill", ready: false)
+        case .inputDevice:
+            switch appState.microphoneStatus {
+            case .authorized:
+                PermissionFootnote(text: "Ready — access granted", symbol: "checkmark.seal.fill", ready: true)
+            case .denied, .restricted:
+                PermissionFootnote(
+                    text: "Microphone access is turned off in System Settings",
+                    symbol: "lock.fill", ready: false)
+            default:
+                PermissionFootnote(text: "Asks for Microphone access", symbol: "lock.fill", ready: false)
+            }
+        case .audioFile:
+            PermissionFootnote(
+                text: "No permission needed — you choose the file", symbol: "checkmark.seal.fill", ready: true
+            )
+        }
     }
 }
 
-/// One row of the welcome sheet: a source, what it does, and the permission
-/// (if any) standing between the user and it.
-private struct SourceOption: Identifiable {
-    let kind: AudioSourceKind
-    let blurb: String
-    let permission: PrivacyPermission?
-    var extraPermission: PrivacyPermission?
-
-    var id: String { kind.rawValue }
-
-    var permissions: [PrivacyPermission] {
-        [permission, extraPermission].compactMap { $0 }
-    }
+/// The permission line under a source row: the cost before it's paid, the
+/// green seal after.
+private struct PermissionFootnote {
+    let text: String
+    let symbol: String
+    let ready: Bool
 }
 
+/// One clickable source row: symbol, name, what it buys, and what it asks
+/// for. Clicking selects the source and dismisses the sheet — for permission
+/// sources that is what fires the system prompt, right after the pitch.
 private struct SourceRow: View {
     @Environment(AppState.self) private var appState
-    let option: SourceOption
+    let kind: AudioSourceKind
+    let blurb: String
+    let footnote: PermissionFootnote?
+    @State private var hovering = false
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: option.kind.symbol)
-                .font(.title3)
-                .frame(width: 26)
-                .foregroundStyle(.tint)
-                .accessibilityHidden(true)
-
-            VStack(alignment: .leading, spacing: 5) {
-                HStack(spacing: 8) {
-                    Text(option.kind.label)
+        Button {
+            appState.completeWelcome()
+            appState.selectSource(kind)
+            if kind == .audioFile, appState.fileURL == nil {
+                // Give the sheet a beat to start dismissing before the modal
+                // open panel takes over the run loop.
+                Task { appState.openFilePanel() }
+            }
+        } label: {
+            HStack(spacing: 14) {
+                Image(systemName: kind.symbol)
+                    .font(.system(size: 21, weight: .medium))
+                    .foregroundStyle(.tint)
+                    .frame(width: 34)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(kind.label)
                         .font(.headline)
-                    if option.permissions.isEmpty {
-                        Text("No permission needed")
-                            .font(.caption2.weight(.medium))
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 2)
-                            .background(.green.opacity(0.22), in: .capsule)
-                    }
-                }
-                Text(option.blurb)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                if !option.permissions.isEmpty {
-                    ForEach(option.permissions) { permission in
-                        Button {
-                            appState.openPermissionSettings(permission)
-                        } label: {
-                            Label("Allow “\(permission.title)”…", systemImage: permission.symbol)
-                                .font(.caption)
+                    Text(blurb)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let footnote {
+                        Label {
+                            Text(footnote.text)
+                        } icon: {
+                            Image(systemName: footnote.symbol)
+                                .foregroundStyle(
+                                    footnote.ready ? AnyShapeStyle(.green) : AnyShapeStyle(.tertiary))
                         }
-                        .buttonStyle(.link)
-                        .accessibilityHint("Opens System Settings at the \(permission.title) pane")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 1)
                     }
                 }
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+                    .opacity(hovering ? 1 : 0.45)
+                    .accessibilityHidden(true)
             }
-
-            Spacer(minLength: 8)
-
-            Button("Use") {
-                appState.selectSource(option.kind)
-                appState.completeWelcome()
-            }
-            .accessibilityLabel("Use \(option.kind.label)")
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
+            .contentShape(.rect(cornerRadius: 12))
         }
-        .padding(.vertical, 2)
+        .buttonStyle(.plain)
+        .background(.quaternary.opacity(hovering ? 0.55 : 0), in: .rect(cornerRadius: 12))
+        .onHover { hovering = $0 }
+        .accessibilityHint("Switches to this source and closes the welcome window")
     }
 }

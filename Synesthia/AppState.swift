@@ -1,3 +1,4 @@
+import AVFoundation
 import AppKit
 import CoreAudio
 import Observation
@@ -90,6 +91,16 @@ final class AppState {
     var statusMessage: String?
     /// Drives the first-run explainer sheet.
     var showsWelcome = false
+    /// Cached privacy-permission state, driving which sources the picker
+    /// offers and the welcome rows' footnotes. Refreshed on app activation
+    /// and around every capture attempt — macOS has no TCC change
+    /// notification to subscribe to.
+    private(set) var screenAudioGranted = CGPreflightScreenCaptureAccess()
+    private(set) var microphoneStatus = AVCaptureDevice.authorizationStatus(for: .audio)
+    /// The permission the active source is stuck behind after a failed
+    /// capture start. Rendered as a centered explainer card over the canvas
+    /// rather than a status banner.
+    private(set) var blockedPermission: PrivacyPermission?
 
     #if MUSIC_APP_SOURCE
     /// Auto-latching onto an already-playing Music.app is attempted once per
@@ -137,7 +148,12 @@ final class AppState {
     private func handleSystemCaptureStopped() {
         guard isCapturing else { return }
         isCapturing = false
-        setStatus("System audio capture stopped. Press play to reconnect.")
+        refreshPermissions()
+        if screenAudioGranted {
+            setStatus("System audio capture stopped. Press play to reconnect.")
+        } else {
+            blockedPermission = .screenAndSystemAudio
+        }
     }
 
     func onAppear() {
@@ -282,8 +298,14 @@ final class AppState {
                 do {
                     try await inputCapture.start(deviceID: selectedInputDeviceID)
                     isCapturing = true
+                    blockedPermission = nil
                 } catch {
-                    setStatus(error.localizedDescription)
+                    refreshPermissions()
+                    if case AudioSourceError.microphoneDenied = error {
+                        blockedPermission = .microphone
+                    } else {
+                        setStatus(error.localizedDescription)
+                    }
                 }
             }
         case .audioFile:
@@ -367,6 +389,66 @@ final class AppState {
     func openPermissionSettings(_ permission: PrivacyPermission) {
         guard let url = permission.settingsURL else { return }
         NSWorkspace.shared.open(url)
+    }
+
+    // MARK: - Permissions
+
+    func refreshPermissions() {
+        screenAudioGranted = CGPreflightScreenCaptureAccess()
+        microphoneStatus = AVCaptureDevice.authorizationStatus(for: .audio)
+    }
+
+    /// Whether a source could produce audio right now, permission-wise.
+    /// Locked sources appear disabled in the source picker; the welcome
+    /// sheet — which explains what each permission buys *before* macOS asks —
+    /// is the granting path.
+    func isSourceAvailable(_ kind: AudioSourceKind) -> Bool {
+        switch kind {
+        case .demo, .audioFile:
+            true
+        #if MUSIC_APP_SOURCE
+        case .musicApp:
+            screenAudioGranted
+        #endif
+        case .systemAudio:
+            screenAudioGranted
+        case .inputDevice:
+            // .notDetermined stays available: selecting the source is what
+            // triggers the system prompt.
+            microphoneStatus != .denied && microphoneStatus != .restricted
+        }
+    }
+
+    /// The app came back to the foreground — which is the moment a user
+    /// returns from System Settings. Re-read TCC state and, if the active
+    /// source was blocked and is now allowed, retry capture unprompted.
+    func handleAppActivation() {
+        refreshPermissions()
+        guard let blocked = blockedPermission,
+            sourceKind.requiredPermission == blocked,
+            isSourceAvailable(sourceKind),
+            !isCaptureActive
+        else { return }
+        toggleCapture()
+    }
+
+    /// "Try Again" on the permission card.
+    func retryBlockedSource() {
+        refreshPermissions()
+        guard blockedPermission != nil, !isCaptureActive else { return }
+        toggleCapture()
+    }
+
+    // MARK: - Demo
+
+    /// Switches to (or resumes) the bundled demo. The source picker doesn't
+    /// list the demo; the welcome sheet and the Help menu call this instead.
+    func playDemo() {
+        if sourceKind == .demo {
+            if !isDemoPlaying { startDemo() }
+        } else {
+            sourceKind = .demo
+        }
     }
 
     // MARK: - Demo playback
@@ -479,6 +561,7 @@ final class AppState {
             isCapturing = false
             analyzer.reset()
             statusMessage = nil
+            blockedPermission = nil
 
             switch sourceKind {
             case .demo:
@@ -532,16 +615,28 @@ final class AppState {
     }
     #endif
 
-    private func startSystemCapture() async {
+    private func startSystemCapture(isRetry: Bool = false) async {
         guard !isCapturing else { return }
         do {
             try await systemCapture.start()
             isCapturing = true
             statusMessage = nil
+            blockedPermission = nil
+            refreshPermissions()
         } catch {
-            setStatus(
-                "System audio capture unavailable — allow it in System Settings › Privacy & Security › Screen & System Audio Recording, then try again."
-            )
+            refreshPermissions()
+            if !screenAudioGranted {
+                // Missing permission isn't a transient error: show the
+                // explainer card instead of a banner.
+                blockedPermission = .screenAndSystemAudio
+            } else if !isRetry {
+                // A freshly granted permission can fail its first attempt
+                // (see CLAUDE.md); retry once, quietly, before surfacing.
+                try? await Task.sleep(for: .milliseconds(350))
+                await startSystemCapture(isRetry: true)
+            } else {
+                setStatus("System audio capture couldn't start: \(error.localizedDescription)")
+            }
         }
     }
 

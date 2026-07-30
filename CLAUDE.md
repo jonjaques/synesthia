@@ -37,14 +37,18 @@ Synesthia/
 ├── Music/MusicController.swift   Apple Events to Music.app: transport, poll loop, artwork
 └── Visualizers/
     ├── VisualizerCore.swift      Visualizer protocol, VisualizerDescriptor/Option, registry,
-    │                             VizUniforms, palettes, persisted VisualizerSettings
-    ├── Shaders.metal             ALL shader functions, compiled at build time (see below)
+    │                             VizUniforms, palettes, persisted VisualizerSettings,
+    │                             makeRenderPipeline/makeComputePipeline
+    ├── ParticleSystem.swift      GPUParticleSystem: device-private ping-pong particle
+    │                             buffers, GPU seed/step kernels, instanced sprite draw
+    ├── Shaders.metal             ALL shader functions incl. compute kernels, compiled at
+    │                             build time (see below)
     ├── MetalVisualizerView.swift MetalRenderContext (optional), MTKView host, uniforms per
-    │                             frame, occlusion pausing, adaptive render scale, Reduce
-    │                             Motion damping
+    │                             frame incl. derived frame state, occlusion pausing,
+    │                             adaptive render scale, Reduce Motion damping
     └── {Nebula,Tunnel,Aurora,Bars}Visualizer.swift
 
-SynesthiaTests/                   Swift Testing bundle; AudioAnalyzer DSP coverage
+SynesthiaTests/                   Swift Testing bundle; AudioAnalyzer DSP + VizUniforms layout
 Makefile                          Single entry point for every command (see below)
 scripts/                          make_demo_loop.py, build-appstore.sh, build-direct.sh,
                                   make-appcast.sh, publish-release.sh, sparkle-keys.sh,
@@ -59,9 +63,18 @@ web/functions/                    Pages Functions: /appcast.xml, /download, /dow
 
 Data flow: audio threads → `AudioAnalyzer.appendMono` (NSLock) → render loop pulls `analyzer.latest()` each frame. Audio never publishes into SwiftUI; only `MusicController`/`AppState` are observable.
 
-**Plugin contract**: a visualizer = class conforming to `Visualizer` + static `VisualizerDescriptor` (≤8 options, surfaced automatically in the UI and delivered as `VizUniforms.p0…p7`) + shader functions in `Shaders.metal`. Register in `VisualizerRegistry`.
+**Plugin contract**: a visualizer = class conforming to `Visualizer` + static `VisualizerDescriptor` (≤16 options, surfaced automatically in the UI and delivered as the shader's `p` array in declaration order) + shader functions in `Shaders.metal`. Register in `VisualizerRegistry`. A visualizer may encode compute passes as well as render passes — `GPUParticleSystem` is the reusable scaffolding for GPU-resident simulations (Nebula runs ~100k particles on it).
 
-`VizUniforms` in VisualizerCore.swift and the struct in Shaders.metal must stay byte-identical (currently 28 floats / 112 bytes).
+`VizUniforms` in VisualizerCore.swift and the struct in Shaders.metal must stay
+byte-identical (currently 42 floats / 168 bytes). **Both sides now assert it** —
+`static_assert(sizeof(VizUniforms) == 168)` in Shaders.metal and
+`VizUniformsTests` on the Swift side — so a one-sided edit fails the build or the
+test suite instead of silently shifting every later field into the wrong shader
+variable. Append new fields at the end; the option block is the exception, and
+must stay contiguous because MSL declares it as `float p[16]` and indexes it.
+Options are capped at `VizUniforms.parameterCount` (16), and each visualizer
+names its slots with `constant int k…` in Shaders.metal rather than writing
+`u.p[6]` inline.
 
 ## Commands
 
@@ -98,7 +111,7 @@ make publish-release  # upload DMGs + appcast + latest.json to R2 (publish-dry-r
 
 `ARGS=` forwards flags to the wrapped script (`make screenshots ARGS="--only nebula --1x"`). `BUILT_PRODUCTS_DIR` is resolved from `xcodebuild -showBuildSettings`, not globbed out of DerivedData, so `run`/`app-path` are correct for any configuration.
 
-`SynesthiaTests` is a **Swift Testing** bundle (`import Testing`, `@Test`, `#expect`), hosted by the app target, covering `AudioAnalyzer`.
+`SynesthiaTests` is a **Swift Testing** bundle (`import Testing`, `@Test`, `#expect`), hosted by the app target, covering `AudioAnalyzer` and the `VizUniforms` byte layout / option-slot contract.
 
 ### Formatting
 

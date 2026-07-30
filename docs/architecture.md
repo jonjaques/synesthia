@@ -27,7 +27,7 @@ flowchart LR
 
     subgraph render["Render loop (main thread, 60 fps)"]
         MVV["MetalVisualizerView<br>(MTKView host)"]
-        VIZ["Active Visualizer<br>(Nebula / Tunnel / Aurora)"]
+        VIZ["Active Visualizer<br>(Nebula / Tunnel / Aurora / Bars)"]
         GPU[["GPU"]]
     end
 

@@ -60,6 +60,12 @@ struct SynesthiaApp: App {
                     appState.showWelcome()
                 }
 
+                // The demo left the source picker (it isn't a real source);
+                // this and the welcome sheet are how it comes back.
+                Button("Play Demo Track") {
+                    appState.playDemo()
+                }
+
                 Divider()
 
                 Button("Synesthia Website") {
