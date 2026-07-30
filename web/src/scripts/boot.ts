@@ -196,6 +196,18 @@ for (const el of document.querySelectorAll<HTMLElement>("[data-carousel]")) {
  * transform — so everything here is an upgrade over a navigation, and every
  * path that isn't a plain left click is left alone: ⌘-click, middle-click and
  * "Open image in new tab" should still do what the visitor expects.
+ *
+ * Opening is staged, because the full-resolution capture takes real time to
+ * arrive and a caption floating under an empty frame reads as a bug:
+ *
+ *   1. The copy the page has already decoded goes up immediately, taken from
+ *      the clicked link's own `<img>`. There is never an image-less moment.
+ *   2. The full-size file is fetched through a stream reader purely to count
+ *      bytes against `Content-Length`, so the bar reports the real download
+ *      rather than guessing at it.
+ *   3. Assigning that URL to the `<img>` then resolves out of the HTTP cache the
+ *      fetch just filled, which is why this counts bytes instead of building a
+ *      blob: no object URLs to revoke, and re-opening a shot is free.
  */
 function initLightbox() {
   const dialog = document.querySelector<HTMLDialogElement>(
@@ -210,7 +222,63 @@ function initLightbox() {
   const original = dialog.querySelector<HTMLAnchorElement>(
     "[data-lightbox-original]",
   );
+  const figure = dialog.querySelector<HTMLElement>(".lightbox-figure");
+  const progress = dialog.querySelector<HTMLElement>(
+    "[data-lightbox-progress]",
+  );
+  const fill = dialog.querySelector<HTMLElement>(
+    "[data-lightbox-progress-fill]",
+  );
   if (!image || !label || !original) return;
+
+  // One request at a time: clicking through several shots quickly, or closing
+  // mid-download, has to leave no reader running against a dead dialog.
+  let inflight: AbortController | undefined;
+  let unveil: number | undefined;
+
+  const setProgress = (ratio: number | null) => {
+    if (!progress || !fill) return;
+    if (ratio === null) {
+      progress.dataset.indeterminate = "";
+      progress.removeAttribute("aria-valuenow");
+      fill.style.removeProperty("width");
+      return;
+    }
+    delete progress.dataset.indeterminate;
+    const percent = Math.round(Math.min(Math.max(ratio, 0), 1) * 100);
+    progress.setAttribute("aria-valuenow", String(percent));
+    fill.style.width = `${percent}%`;
+  };
+
+  const startLoading = () => {
+    figure?.setAttribute("aria-busy", "true");
+    setProgress(null);
+    // A cached shot lands in a few milliseconds. Showing a bar for that reads
+    // as a stutter, so nothing appears unless the wait is a real one.
+    unveil = window.setTimeout(() => progress?.removeAttribute("hidden"), 180);
+  };
+
+  const stopLoading = () => {
+    window.clearTimeout(unveil);
+    progress?.setAttribute("hidden", "");
+    figure?.removeAttribute("aria-busy");
+  };
+
+  /** Pull the full-size file into the HTTP cache, counting bytes on the way. */
+  const download = async (href: string, signal: AbortSignal) => {
+    const response = await fetch(href, { signal });
+    if (!response.ok || !response.body)
+      throw new Error(String(response.status));
+    const total = Number(response.headers.get("content-length"));
+    const reader = response.body.getReader();
+    let received = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      received += value?.byteLength ?? 0;
+      if (total > 0) setProgress(received / total);
+    }
+  };
 
   document.addEventListener("click", (event) => {
     if (event.defaultPrevented || event.button !== 0) return;
@@ -224,16 +292,48 @@ function initLightbox() {
 
     event.preventDefault();
 
+    inflight?.abort();
+    const pending = new AbortController();
+    inflight = pending;
+
     // The caption names the shot; the image inside the link already carries the
     // long description, so reuse it rather than writing it twice.
     const source = link.querySelector("img");
-    image.src = link.href;
+    // Stage one: whatever the page has already painted. `currentSrc` is the
+    // candidate the browser actually chose out of the srcset, so this is a
+    // guaranteed cache hit and appears in the same frame as the dialog.
+    const placeholder = source?.currentSrc || source?.src || "";
+    image.src = placeholder || link.href;
     image.alt = source?.alt ?? "";
     label.textContent = link.dataset.label ?? "";
     original.href = link.href;
 
     dialog.showModal();
     document.dispatchEvent(new Event("lightboxchange"));
+
+    // Nothing to wait for if the placeholder *is* the full-size file.
+    if (placeholder === link.href) return;
+
+    startLoading();
+
+    const promote = () => {
+      if (pending.signal.aborted) return;
+      // The wait is over once the browser has the pixels — whether that is a
+      // load, a decode failure, or a src it already holds.
+      const settle = () => {
+        image.removeEventListener("load", settle);
+        image.removeEventListener("error", settle);
+        stopLoading();
+      };
+      image.addEventListener("load", settle);
+      image.addEventListener("error", settle);
+      image.src = link.href;
+      if (image.complete) settle();
+    };
+
+    // Either way the `<img>` gets the real URL: a failed count is a reason to
+    // stop drawing a bar, not a reason to withhold the image.
+    download(link.href, pending.signal).then(promote, promote);
   });
 
   // Clicking the padding around the figure closes it — the dialog element is
@@ -249,6 +349,8 @@ function initLightbox() {
   // Drop the decoded image when the viewer closes. Holding several megapixels
   // of AVIF for a dialog nobody is looking at is pure resident memory.
   dialog.addEventListener("close", () => {
+    inflight?.abort();
+    stopLoading();
     image.removeAttribute("src");
     image.alt = "";
     document.dispatchEvent(new Event("lightboxchange"));

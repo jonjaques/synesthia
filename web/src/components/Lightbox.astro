@@ -12,6 +12,11 @@
  * `showModal()` is doing the accessibility work here: it traps focus, makes the
  * rest of the page inert, closes on Escape, and returns focus to the link that
  * opened it. That is the entire reason this is a `<dialog>` and not a div.
+ *
+ * Loading is two-stage, because a full-resolution capture is not instant and an
+ * empty frame under a caption reads as a broken page rather than as a wait. The
+ * copy already decoded on the page goes up immediately, and the bar below it
+ * tracks the real download of the larger one — see initLightbox in boot.ts.
  */
 ---
 
@@ -35,6 +40,23 @@
 		     rather than absent: an `<img>` with no `alt` at all is announced by
 		     its filename. -->
 		<img data-lightbox-image alt="" />
+
+		<!-- Determinate whenever the response carries a Content-Length, which a
+		     static asset always does; `data-indeterminate` is the fallback for
+		     when it doesn't. Hidden until 180 ms have passed, so a cache hit
+		     doesn't flash a bar nobody needed. -->
+		<div
+			class="lightbox-progress"
+			data-lightbox-progress
+			role="progressbar"
+			aria-label="Loading the full-size screenshot"
+			aria-valuemin="0"
+			aria-valuemax="100"
+			hidden
+		>
+			<span class="lightbox-progress-fill" data-lightbox-progress-fill></span>
+		</div>
+
 		<figcaption class="lightbox-caption">
 			<span data-lightbox-label></span>
 			<a data-lightbox-original href="#" target="_blank" rel="noopener">Open the file</a>

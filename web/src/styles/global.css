@@ -291,6 +291,59 @@
     border-radius: 0.5rem;
   }
 
+  /* The wait, while the full-resolution file comes down behind the copy the
+	   page had already painted. Two pixels of accent under the image: enough to
+	   say "still working", not enough to become the subject. */
+  .lightbox-progress {
+    width: min(14rem, 60%);
+    height: 2px;
+    border-radius: 999px;
+    background: var(--color-line);
+    overflow: hidden;
+  }
+
+  .lightbox-progress[hidden] {
+    display: none;
+  }
+
+  .lightbox-progress-fill {
+    display: block;
+    width: 0;
+    height: 100%;
+    border-radius: inherit;
+    background: var(--color-accent);
+    transition: width 0.2s var(--ease-out-quart);
+  }
+
+  /* No Content-Length to divide by, so the bar paces instead of reporting. */
+  .lightbox-progress[data-indeterminate] .lightbox-progress-fill {
+    width: 40%;
+    animation: lightbox-pace 1.1s ease-in-out infinite;
+  }
+
+  @keyframes lightbox-pace {
+    from {
+      transform: translateX(-105%);
+    }
+    to {
+      transform: translateX(255%);
+    }
+  }
+
+  /* A bar that slides forever is exactly the kind of motion the preference is
+	   asking about, so it becomes a plain filled track instead. */
+  @media (prefers-reduced-motion: reduce) {
+    .lightbox-progress-fill {
+      transition: none;
+    }
+
+    .lightbox-progress[data-indeterminate] .lightbox-progress-fill {
+      width: 100%;
+      opacity: 0.45;
+      animation: none;
+    }
+  }
+
   .lightbox-caption {
     display: flex;
     flex-wrap: wrap;
