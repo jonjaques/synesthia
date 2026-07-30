@@ -211,15 +211,47 @@
     opacity: 1;
   }
 
-  /* The tabs do nothing without JS, so they only exist with it. */
-  .carousel-tabs {
+  /* The controls do nothing without JS, so they only exist with it. */
+  .carousel-controls {
     display: none;
-    gap: 0.25rem;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
     margin-top: 1.25rem;
   }
 
-  .js .carousel-tabs {
+  .js .carousel-controls {
     display: flex;
+  }
+
+  .carousel-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+  }
+
+  /* Stop/play. Quieter than the tabs — it is a control, not a choice — but it
+     still has to be findable, which is why it carries a word. */
+  .carousel-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-shrink: 0;
+  }
+
+  .carousel-toggle svg {
+    width: 0.625rem;
+    height: 0.625rem;
+    fill: currentColor;
+  }
+
+  .carousel-toggle .icon-play,
+  .carousel[data-paused] .carousel-toggle .icon-pause {
+    display: none;
+  }
+
+  .carousel[data-paused] .carousel-toggle .icon-play {
+    display: block;
   }
 
   .tab {

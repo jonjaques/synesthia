@@ -8,7 +8,13 @@
  * stage can hold a fixed 4:3 box and nothing reflows between slides.
  *
  * Without JavaScript the first slide stays visible (it carries `data-active`
- * from the server) and the tabs are hidden, so the hero is still a screenshot.
+ * from the server) and the controls are hidden, so the hero is still a
+ * screenshot.
+ *
+ * The stop/play button is not decoration: this thing moves by itself for longer
+ * than five seconds, which WCAG 2.2.2 (Pause, Stop, Hide) requires a mechanism
+ * to halt. Hovering and focusing already pause it, but neither is available to
+ * someone on a touch screen, and neither is discoverable.
  */
 import { Picture } from 'astro:assets';
 
@@ -39,14 +45,15 @@ const shots = [
 ---
 
 <div class="carousel" data-carousel data-interval="4600">
-	<div class="carousel-stage">
+	<div class="carousel-stage" aria-live="off">
 		{
 			shots.map((shot, i) => (
 				<div
 					class="carousel-slide"
 					id={`shot-${shot.id}`}
 					role="tabpanel"
-					aria-label={shot.name}
+					aria-labelledby={`tab-${shot.id}`}
+					data-slide={shot.id}
 					data-active={i === 0 ? '' : undefined}
 					aria-hidden={i === 0 ? undefined : 'true'}
 				>
@@ -66,21 +73,39 @@ const shots = [
 		}
 	</div>
 
-	<div class="carousel-tabs" role="tablist" aria-label="Visualizer">
-		{
-			shots.map((shot, i) => (
-				<button
-					type="button"
-					class="tab"
-					role="tab"
-					data-tab
-					aria-controls={`shot-${shot.id}`}
-					aria-selected={i === 0 ? 'true' : 'false'}
-					tabindex={i === 0 ? 0 : -1}
-				>
-					{shot.name}
-				</button>
-			))
-		}
+	<div class="carousel-controls">
+		<div class="carousel-tabs" role="tablist" aria-label="Visualizer">
+			{
+				shots.map((shot, i) => (
+					<button
+						type="button"
+						class="tab"
+						role="tab"
+						id={`tab-${shot.id}`}
+						data-tab
+						data-slide={shot.id}
+						aria-controls={`shot-${shot.id}`}
+						aria-selected={i === 0 ? 'true' : 'false'}
+						tabindex={i === 0 ? 0 : -1}
+					>
+						{shot.name}
+					</button>
+				))
+			}
+		</div>
+
+		<!-- A label, not just an icon: the accessible name has to say what pressing
+		     it does. Both the glyph and the word follow `data-paused` on the
+		     carousel root, which boot.ts owns. -->
+		<button type="button" class="tab carousel-toggle" data-carousel-toggle>
+			<svg viewBox="0 0 12 12" aria-hidden="true" focusable="false" class="icon-pause">
+				<rect x="2" y="1.5" width="3" height="9" rx="0.6"></rect>
+				<rect x="7" y="1.5" width="3" height="9" rx="0.6"></rect>
+			</svg>
+			<svg viewBox="0 0 12 12" aria-hidden="true" focusable="false" class="icon-play">
+				<path d="M3 1.7 10 6l-7 4.3z"></path>
+			</svg>
+			<span data-carousel-toggle-label>Pause</span>
+		</button>
 	</div>
 </div>

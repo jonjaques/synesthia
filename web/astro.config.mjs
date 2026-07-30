@@ -5,10 +5,23 @@ import tailwindcss from "@tailwindcss/vite";
 
 // https://astro.build/config
 export default defineConfig({
-  // TODO: replace with the production domain before deploying — canonical URLs,
-  // Open Graph tags and the sitemap are all derived from this.
+  // The production domain. Canonical URLs, Open Graph tags, the JSON-LD graph
+  // and the sitemap are all derived from this, so it has to be right before a
+  // deploy — it is not inferred from where the build ends up.
   site: "https://synesthia.app",
-  integrations: [sitemap()],
+  integrations: [
+    sitemap({
+      // Three URLs, and the landing page is the one that matters. Left to
+      // itself the sitemap emits neither hint at all; this at least says which
+      // page is the site and which two are reference material behind it.
+      changefreq: "monthly",
+      priority: 0.5,
+      serialize(item) {
+        if (new URL(item.url).pathname === "/") item.priority = 1;
+        return item;
+      },
+    }),
+  ],
   vite: {
     plugins: [tailwindcss()],
   },
@@ -17,10 +30,13 @@ export default defineConfig({
       // Display face. A Swedish grotesque — warmer and less corporate than
       // the usual Inter/Archivo default, but sober enough at 600 to carry a
       // product page that is meant to stay out of the app's way.
+      // One weight, because the page only ever sets one: every `.display`,
+      // `.h3` and wordmark is 600. 500 and 700 were downloaded and preloaded on
+      // every visit without a single rule asking for them.
       provider: fontProviders.google(),
       name: "Familjen Grotesk",
       cssVariable: "--font-familjen",
-      weights: [500, 600, 700],
+      weights: [600],
       styles: ["normal"],
       subsets: ["latin"],
       fallbacks: ["Helvetica Neue", "Helvetica", "sans-serif"],

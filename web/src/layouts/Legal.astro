@@ -15,21 +15,47 @@ interface Props {
 	heading: string;
 	standfirst: string;
 	updated?: string;
+	/** Page-specific JSON-LD, forwarded to the base layout. */
+	schema?: Record<string, unknown>[];
 }
 
-const { title, description, heading, standfirst, updated } = Astro.props;
+const { title, description, heading, standfirst, updated, schema } = Astro.props;
+
+const here = Astro.url.pathname.replace(/\/$/, '') || '/';
+const pages = [
+	['/support', 'Support'],
+	['/privacy', 'Privacy'],
+] as const;
 ---
 
-<Base title={`${title} — ${SITE.name}`} description={description}>
+<Base
+	title={`${title} — ${SITE.name}`}
+	pageName={title}
+	description={description}
+	ogType="article"
+	schema={schema}
+>
 	<header class="border-b border-line">
 		<div class="rail flex items-center justify-between gap-4 py-6">
 			<a href="/" class="flex items-center gap-2.5" aria-label={`${SITE.name} home`}>
 				<Mark size={24} class="h-6 w-6" />
 				<span class="font-display font-semibold tracking-tight">Synesthia</span>
 			</a>
-			<nav class="flex items-center gap-6 text-sm text-dim">
-				<a href="/support" class="transition-colors hover:text-paper">Support</a>
-				<a href="/privacy" class="transition-colors hover:text-paper">Privacy</a>
+			<nav aria-label="Pages" class="flex items-center gap-6 text-sm text-dim">
+				{
+					pages.map(([href, label]) => (
+						<a
+							href={href}
+							aria-current={here === href ? 'page' : undefined}
+							class:list={[
+								'transition-colors hover:text-paper',
+								here === href && 'text-paper',
+							]}
+						>
+							{label}
+						</a>
+					))
+				}
 			</nav>
 		</div>
 	</header>
@@ -58,7 +84,8 @@ const { title, description, heading, standfirst, updated } = Astro.props;
 				<Mark size={20} class="h-5 w-5" />
 				<span class="font-display font-semibold tracking-tight text-dim">Synesthia</span>
 			</div>
-			<nav class="flex items-center gap-6">
+			<nav aria-label="Footer" class="flex items-center gap-6">
+				<a href="/" class="transition-colors hover:text-paper">Home</a>
 				<GitHubLink />
 			</nav>
 			<p>© 2026 {SITE.author}. {RELEASE.requires}.</p>

@@ -5,7 +5,7 @@
  * that it resolves and is relevant, so it must stay a real support page.
  */
 import Legal from '../layouts/Legal.astro';
-import { CONTACT, GITHUB_ISSUES_URL, GITHUB_URL, RELEASE, SITE } from '../consts';
+import { CONTACT, GA_ENABLED, GITHUB_ISSUES_URL, GITHUB_URL, RELEASE, SITE } from '../consts';
 
 const faqs = [
 	{
@@ -45,6 +45,21 @@ const faqs = [
 		a: 'Synesthia renders on the GPU and needs Metal. This message almost always means it is running in a virtual machine without graphics acceleration. It cannot be worked around in software.',
 	},
 ];
+
+// The same questions, in the form a machine can read them. Google restricted FAQ
+// *rich results* to health and government sites in 2023, so this buys no stars
+// in the SERP — but it is still what search engines and assistants parse to
+// answer "why does Synesthia need screen recording", which is the single
+// question this page exists to answer.
+const faqSchema = {
+	'@type': 'FAQPage',
+	'@id': `${new URL('/support', Astro.site).href}#faq`,
+	mainEntity: faqs.map((item) => ({
+		'@type': 'Question',
+		name: item.q,
+		acceptedAnswer: { '@type': 'Answer', text: item.a },
+	})),
+};
 ---
 
 <Legal
@@ -52,6 +67,7 @@ const faqs = [
 	description="Help with Synesthia for macOS — permissions, troubleshooting, requirements, and how to get in touch."
 	heading="Support"
 	standfirst="Most questions are about permissions, and most of those have the same answer. Start here; if none of it helps, write to me directly."
+	schema={[faqSchema]}
 >
 	<h2>Get in touch</h2>
 	<p>
@@ -99,8 +115,14 @@ const faqs = [
 
 	<h2>Privacy</h2>
 	<p>
-		Synesthia collects nothing, has no analytics, and does no networking. The full statement is on
-		the <a href="/privacy">privacy page</a>.
+		The app collects nothing and contains no analytics. Its only network traffic is the update
+		check in the version downloaded from this site, which asks this server whether a newer build
+		exists and sends nothing about you or your music; the Mac App Store version does not even do
+		that.{' '}
+		{
+			GA_ENABLED &&
+				'This website is separate, and does use analytics. '
+		}The full statement is on the <a href="/privacy">privacy page</a>.
 	</p>
 
 	<p>{SITE.name} is made by {SITE.author}.</p>

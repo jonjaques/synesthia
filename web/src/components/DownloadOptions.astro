@@ -16,10 +16,12 @@ import { APP_STORE_AVAILABLE, DIRECT_DOWNLOAD_AVAILABLE } from '../consts';
 interface Props {
 	/** `compact` is the header button; `full` is the download call to action. */
 	size?: 'compact' | 'full';
+	/** Passed straight through to each button for click attribution. */
+	placement?: string;
 	class?: string;
 }
 
-const { size = 'full', class: className = '' } = Astro.props;
+const { size = 'full', placement, class: className = '' } = Astro.props;
 
 // When both are offered the App Store is the filled button: it is the path most
 // people should take, and the one that updates without them thinking about it.
@@ -39,6 +41,7 @@ const shown = size === 'compact' ? channels.slice(0, 1) : channels;
 			variant={variant}
 			size={size}
 			emphasis={index === 0 ? 'primary' : 'secondary'}
+			placement={placement}
 			class={className}
 		/>
 	))

@@ -5,7 +5,14 @@ import Mark from '../components/Mark.astro';
 import GitHubLink from '../components/GitHubLink.astro';
 import ShotCarousel from '../components/ShotCarousel.astro';
 import DownloadOptions from '../components/DownloadOptions.astro';
-import { APP_STORE_AVAILABLE, DIRECT_DOWNLOAD_AVAILABLE, RELEASE, SITE } from '../consts';
+import {
+	APP_STORE_AVAILABLE,
+	APP_STORE_URL,
+	DIRECT_DOWNLOAD_AVAILABLE,
+	DIRECT_DOWNLOAD_URL,
+	RELEASE,
+	SITE,
+} from '../consts';
 
 // Copy that only makes sense when a given channel is on the page. The closing
 // heading named the App Store outright, and the Sources note drew a contrast
@@ -108,9 +115,53 @@ const navLinks = [
 	['Sources', '#sources'],
 	['How it works', '#pipeline'],
 ];
+
+// The product entity, emitted only here — this page *is* the app's page, and a
+// `SoftwareApplication` repeated on the privacy policy is a claim about the
+// privacy policy.
+//
+// `screenshot` is deliberately absent. It used to be og.png, which is a title
+// card with a wordmark on it and not a screenshot of anything. Pointing it at
+// the real captures instead is a trap: touching an imported `ImageMetadata`
+// anywhere outside a `<Picture>` — even to read `.width` — makes Astro emit the
+// untouched original alongside its transforms, which here is 9.6 MB of 3420 px
+// PNG added to every deploy. Google's software rich result does not read
+// `screenshot`, so the honest omission costs nothing.
+const abs = (path: string) => new URL(path, Astro.site).href;
+
+const softwareApplication = {
+	'@type': 'SoftwareApplication',
+	'@id': `${Astro.site?.href}#app`,
+	name: SITE.name,
+	applicationCategory: 'MultimediaApplication',
+	applicationSubCategory: 'Music visualizer',
+	operatingSystem: RELEASE.requires,
+	softwareVersion: RELEASE.version,
+	fileSize: RELEASE.size,
+	description: SITE.description,
+	url: Astro.site?.href,
+	image: abs('/img/og.png'),
+	author: { '@type': 'Person', name: SITE.author },
+	offers: {
+		'@type': 'Offer',
+		price: '0',
+		priceCurrency: 'USD',
+		availability: 'https://schema.org/InStock',
+	},
+	license: 'https://opensource.org/licenses/MIT',
+	// Only advertise a download that exists — see the availability flags.
+	...(DIRECT_DOWNLOAD_AVAILABLE ? { downloadUrl: abs(DIRECT_DOWNLOAD_URL) } : {}),
+	...(APP_STORE_AVAILABLE ? { installUrl: APP_STORE_URL } : {}),
+	featureList: [
+		'64-band log-spaced FFT analysis from 30 Hz to 16 kHz',
+		'Three Metal visualizers: Nebula, Spectrum Tunnel, Aurora',
+		'Captures system audio, microphone, line-in, or a local file',
+		'Apple Music transport control with now-playing artwork',
+	],
+};
 ---
 
-<Base>
+<Base schema={[softwareApplication]}>
 	<!-- ================================================================ nav -->
 	<header class="sticky top-0 z-40 border-b border-line bg-ink/70 backdrop-blur-xl">
 		<div class="rail flex h-14 items-center justify-between gap-6">
@@ -129,7 +180,7 @@ const navLinks = [
 				}
 			</nav>
 
-			<DownloadOptions size="compact" class="hidden sm:inline-flex" />
+			<DownloadOptions size="compact" placement="header" class="hidden sm:inline-flex" />
 		</div>
 	</header>
 
@@ -151,7 +202,7 @@ const navLinks = [
 					</p>
 
 					<div class="mt-8 flex flex-wrap items-center gap-3">
-						<DownloadOptions />
+						<DownloadOptions placement="hero" />
 						<a href="#visualizers" class="btn btn-secondary text-[0.9375rem]">See it running</a>
 					</div>
 
@@ -271,7 +322,7 @@ const navLinks = [
 		</section>
 
 		<!-- =========================================================== macOS -->
-		<section class="rail pb-24 md:pb-32">
+		<section id="native" class="rail scroll-mt-20 pb-24 md:pb-32">
 			<div class="grid gap-12 md:grid-cols-12 md:gap-12">
 				<div class="md:col-span-6" data-reveal>
 					<p class="eyebrow">Native</p>
@@ -291,16 +342,21 @@ const navLinks = [
 				<div class="md:col-span-5 md:col-start-8" data-reveal>
 					<div class="surface p-6">
 						<p class="eyebrow">Keyboard</p>
+						<!-- `dt` must precede its `dd` inside a `dl > div` — the reading order
+						     is the term then its description, and a screen reader announces
+						     them that way regardless of what CSS does. `flex-row-reverse`
+						     keeps the keys on the right where they read better, without
+						     putting the description first in the DOM. -->
 						<dl class="mt-5">
 							{
 								shortcuts.map((s) => (
-									<div class="flex items-center justify-between gap-6 border-b border-line-soft py-3 first:pt-0 last:border-0 last:pb-0">
-										<dd class="text-[0.95rem] text-dim">{s.does}</dd>
+									<div class="flex flex-row-reverse items-center justify-between gap-6 border-b border-line-soft py-3 first:pt-0 last:border-0 last:pb-0">
 										<dt class="flex shrink-0 gap-1">
 											{s.keys.map((k) => (
 												<kbd>{k}</kbd>
 											))}
 										</dt>
+										<dd class="text-[0.95rem] text-dim">{s.does}</dd>
 									</div>
 								))
 							}
@@ -311,7 +367,7 @@ const navLinks = [
 		</section>
 
 		<!-- ============================================================= cta -->
-		<section class="rail pb-24 md:pb-32">
+		<section id="download" class="rail scroll-mt-20 pb-24 md:pb-32">
 			<div class="surface flex flex-col items-center px-6 py-16 text-center sm:py-20" data-reveal>
 				<img
 					src="/img/icon-256.png"
@@ -329,7 +385,7 @@ const navLinks = [
 				<h2 class="display h2 mt-7 max-w-[18ch]">{ctaHeading}</h2>
 
 				<div class="mt-8 flex flex-wrap items-center justify-center gap-3">
-					<DownloadOptions />
+					<DownloadOptions placement="cta" />
 				</div>
 
 				<p class="spec mt-6">
@@ -356,7 +412,7 @@ const navLinks = [
 				<Mark size={20} class="h-5 w-5" />
 				<span class="font-display font-semibold tracking-tight text-dim">Synesthia</span>
 			</div>
-			<nav class="flex items-center gap-6">
+			<nav aria-label="Footer" class="flex items-center gap-6">
 				<a href="/support" class="transition-colors hover:text-paper">Support</a>
 				<a href="/privacy" class="transition-colors hover:text-paper">Privacy</a>
 				<GitHubLink />

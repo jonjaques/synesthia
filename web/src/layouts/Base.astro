@@ -1,50 +1,92 @@
 ---
 import { Font } from 'astro:assets';
-import { GA_ENABLED, GA_MEASUREMENT_ID, RELEASE, SITE } from '../consts';
+import Analytics from '../components/Analytics.astro';
+import { SITE } from '../consts';
 import '../styles/global.css';
 
 interface Props {
 	title?: string;
 	description?: string;
+	/**
+	 * The page's short name, for the breadcrumb. Defaults to `title`, which is
+	 * usually right for the landing page and never right for the others — a
+	 * breadcrumb reading "Support — Synesthia" under "Synesthia" says the suffix
+	 * twice.
+	 */
+	pageName?: string;
+	/** `article` for the legal pages; the landing page is the site itself. */
+	ogType?: 'website' | 'article';
+	/**
+	 * Page-specific JSON-LD, merged after this layout's own nodes. The product
+	 * entity lives on the landing page and the FAQ entity on the support page —
+	 * emitting either from here would claim, on every URL, that the page is a
+	 * `SoftwareApplication`, which is the sort of thing Google quietly discounts
+	 * the whole graph for.
+	 */
+	schema?: Record<string, unknown>[];
+	/** Keep a page out of the index without removing it from the site. */
+	noindex?: boolean;
 }
 
-const { title = SITE.title, description = SITE.description } = Astro.props;
+const {
+	title = SITE.title,
+	description = SITE.description,
+	pageName,
+	ogType = 'website',
+	schema: pageSchema = [],
+	noindex = false,
+} = Astro.props;
 
 const canonical = new URL(Astro.url.pathname, Astro.site).href;
 const ogImage = new URL('/img/og.png', Astro.site).href;
+const isHome = Astro.url.pathname === '/';
 
-// Structured data. SoftwareApplication is what Google reads for app listings;
-// WebSite gives the sitelinks search box its name.
-const schema = [
-	{
-		'@context': 'https://schema.org',
-		'@type': 'SoftwareApplication',
-		name: SITE.name,
-		applicationCategory: 'MultimediaApplication',
-		applicationSubCategory: 'Music visualizer',
-		operatingSystem: RELEASE.requires,
-		softwareVersion: RELEASE.version,
-		description: SITE.description,
-		url: canonical,
-		image: ogImage,
-		screenshot: ogImage,
-		author: { '@type': 'Person', name: SITE.author },
-		offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
-		featureList: [
-			'64-band log-spaced FFT analysis from 30 Hz to 16 kHz',
-			'Three Metal visualizers: Nebula, Spectrum Tunnel, Aurora',
-			'Captures system audio, microphone, line-in, or a local file',
-			'Apple Music transport control with now-playing artwork',
-		],
-	},
-	{
-		'@context': 'https://schema.org',
-		'@type': 'WebSite',
-		name: SITE.name,
-		url: Astro.site?.href,
-		description: SITE.description,
-	},
-];
+// The card is the wordmark over the app's own spectrum artwork — not a
+// screenshot. It used to be described as one, which is exactly the kind of alt
+// text that reads fine right up until someone relies on it.
+const ogImageAlt =
+	'The Synesthia app icon and wordmark over layered rainbow spectrum ribbons on black, captioned “Music visualizer for macOS”.';
+
+// The placeholder handle in consts.ts is not a real account, and a card that
+// attributes itself to a handle that 404s is worse than one that doesn't.
+const twitterHandle = SITE.social === '@synesthia_app' ? null : SITE.social;
+
+// One WebSite node for the site, on the page that represents it; every other
+// page describes itself and its position instead. Both are what Google reads to
+// name the site and to draw a breadcrumb in place of a bare URL.
+const website = {
+	'@type': 'WebSite',
+	'@id': `${Astro.site?.href}#website`,
+	name: SITE.name,
+	url: Astro.site?.href,
+	description: SITE.description,
+	publisher: { '@type': 'Person', name: SITE.author },
+};
+
+const baseSchema: Record<string, unknown>[] = isHome
+	? [website]
+	: [
+			{
+				'@type': 'WebPage',
+				'@id': `${canonical}#webpage`,
+				name: title,
+				description,
+				url: canonical,
+				isPartOf: { '@id': `${Astro.site?.href}#website` },
+				breadcrumb: {
+					'@type': 'BreadcrumbList',
+					itemListElement: [
+						{ '@type': 'ListItem', position: 1, name: SITE.name, item: Astro.site?.href },
+						{ '@type': 'ListItem', position: 2, name: pageName ?? title, item: canonical },
+					],
+				},
+			},
+		];
+
+const graph = {
+	'@context': 'https://schema.org',
+	'@graph': [...baseSchema, ...pageSchema],
+};
 ---
 
 <!doctype html>
@@ -56,9 +98,12 @@ const schema = [
 		<meta name="description" content={description} />
 		<link rel="canonical" href={canonical} />
 		<meta name="generator" content={Astro.generator} />
-		<meta name="robots" content="index, follow, max-image-preview:large" />
+		<meta
+			name="robots"
+			content={noindex ? 'noindex, follow' : 'index, follow, max-image-preview:large'}
+		/>
 		<meta name="author" content={SITE.author} />
-		<meta name="theme-color" content="#0B0B0F" />
+		<meta name="theme-color" content="#0A0912" />
 		<meta name="color-scheme" content="dark" />
 
 		<!-- Icons. Every one of these is derived from the Icon Composer export by
@@ -71,27 +116,32 @@ const schema = [
 		<link rel="sitemap" href="/sitemap-index.xml" />
 
 		<!-- Open Graph -->
-		<meta property="og:type" content="website" />
+		<meta property="og:type" content={ogType} />
 		<meta property="og:site_name" content={SITE.name} />
 		<meta property="og:title" content={title} />
 		<meta property="og:description" content={description} />
 		<meta property="og:url" content={canonical} />
 		<meta property="og:locale" content={SITE.locale} />
 		<meta property="og:image" content={ogImage} />
+		<meta property="og:image:type" content="image/png" />
 		<meta property="og:image:width" content="1200" />
 		<meta property="og:image:height" content="630" />
-		<meta
-			property="og:image:alt"
-			content="Synesthia running the Aurora visualizer — layered bands of colour rippling across a black screen."
-		/>
+		<meta property="og:image:alt" content={ogImageAlt} />
 
 		<!-- Twitter -->
 		<meta name="twitter:card" content="summary_large_image" />
 		<meta name="twitter:title" content={title} />
 		<meta name="twitter:description" content={description} />
 		<meta name="twitter:image" content={ogImage} />
-		<meta name="twitter:site" content={SITE.social} />
-		<meta name="twitter:creator" content={SITE.social} />
+		<meta name="twitter:image:alt" content={ogImageAlt} />
+		{
+			twitterHandle && (
+				<Fragment>
+					<meta name="twitter:site" content={twitterHandle} />
+					<meta name="twitter:creator" content={twitterHandle} />
+				</Fragment>
+			)
+		}
 
 		<!-- Apple -->
 		<meta name="apple-mobile-web-app-title" content={SITE.name} />
@@ -100,31 +150,9 @@ const schema = [
 		<Font cssVariable="--font-plex" preload />
 		<Font cssVariable="--font-plex-mono" />
 
-		<script type="application/ld+json" set:html={JSON.stringify(schema)} is:inline />
+		<script type="application/ld+json" set:html={JSON.stringify(graph)} is:inline />
 
-		{
-			/* Google Analytics 4. Override PUBLIC_GA_ID with a non-`G-` value to
-			   build without it — nothing is loaded and no cookie is written. */
-		}
-		{
-			GA_ENABLED && (
-				<Fragment>
-					<script
-						is:inline
-						async
-						src={`https://www.googletagmanager.com/gtag/js?id=${GA_MEASUREMENT_ID}`}
-					/>
-					<script is:inline define:vars={{ GA_MEASUREMENT_ID }}>
-						window.dataLayer = window.dataLayer || [];
-						function gtag() {
-							dataLayer.push(arguments);
-						}
-						gtag('js', new Date());
-						gtag('config', GA_MEASUREMENT_ID, { anonymize_ip: true });
-					</script>
-				</Fragment>
-			)
-		}
+		<Analytics />
 	</head>
 	<body>
 		<a
@@ -134,5 +162,12 @@ const schema = [
 			Skip to content
 		</a>
 		<slot />
+
+		<!-- Loaded on every page, including the legal ones, which have no other
+		     JavaScript: outbound and mailto clicks happen there too. Attaches
+		     nothing unless <Analytics /> above actually loaded the tag. -->
+		<script>
+			import '../scripts/analytics';
+		</script>
 	</body>
 </html>

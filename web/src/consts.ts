@@ -98,15 +98,25 @@ export const CONTACT = {
   privacy: "privacy@synesthia.app",
 } as const;
 
-/** Last substantive revision of the privacy policy, shown on that page. */
+/**
+ * Last substantive revision of the privacy policy, shown on that page.
+ *
+ * Bump it whenever what the app or the site does with data changes — the page
+ * promises that this date moves when the behaviour does.
+ */
 export const LEGAL = {
-  effective: "25 July 2026",
+  effective: "29 July 2026",
 } as const;
 
 /**
- * Google Analytics 4 measurement ID. PUBLIC_GA_ID overrides the literal below,
- * which is the production property. Set PUBLIC_GA_ID to 'G-XXXXXXXXXX' (or any
- * non-`G-` value) to build without emitting the analytics script at all.
+ * Google Analytics 4 measurement ID. The literal below is the production
+ * property; the PUBLIC_GA_ID environment variable overrides it.
+ *
+ * To build with no analytics at all — no script, no cookie, no listeners — set
+ * PUBLIC_GA_ID to anything that is not a real measurement ID. The literal
+ * placeholder `G-XXXXXXXXXX` and any value not starting with `G-` both count:
+ *
+ *     PUBLIC_GA_ID=off npm run build
  */
 export const GA_MEASUREMENT_ID = import.meta.env.PUBLIC_GA_ID ?? "G-MEDVX83G9P";
 

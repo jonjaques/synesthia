@@ -15,6 +15,12 @@ interface Props {
 	size?: 'compact' | 'full';
 	/** Filled or outlined. Only one channel is ever filled — see DownloadOptions. */
 	emphasis?: 'primary' | 'secondary';
+	/**
+	 * Which of the page's download buttons this is. Read by
+	 * `scripts/analytics.ts`, so a click can be attributed to the header, the
+	 * hero, or the closing call to action rather than to "the page".
+	 */
+	placement?: string;
 	class?: string;
 }
 
@@ -22,6 +28,7 @@ const {
 	variant,
 	size = 'full',
 	emphasis = 'primary',
+	placement,
 	class: className = '',
 } = Astro.props;
 
@@ -45,6 +52,7 @@ const label = size === 'compact'
 		className,
 	]}
 	data-download-link={variant}
+	data-placement={placement}
 >
 	{
 		isAppStore ? (
