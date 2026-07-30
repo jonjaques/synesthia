@@ -89,11 +89,11 @@ enum PrivacyPermission: String, Identifiable, CaseIterable {
     var explanation: String {
         switch self {
         case .screenAndSystemAudio:
-            "macOS has no dedicated “record system audio” API — the only sanctioned route is ScreenCaptureKit, the screen-recording framework, so hearing what your Mac plays is gated behind Screen & System Audio Recording. Synesthia uses the audio alone; the video leg is captured at 2×2 pixels and every frame is discarded."
+            "macOS gives an app no way to hear another app's sound on its own. The only route it provides is screen recording, which can carry the sound alongside the picture — so that is the permission it asks for. Synesthia keeps the sound and throws the picture away: it is captured at 2×2 pixels and every frame is discarded."
         case .automation:
             "Optional. Synesthia already knows what's playing without this. Granting it adds play, pause, and skip buttons for your music player, and pulls in real album artwork. Nothing is written back to your library."
         case .microphone:
-            "Lets Synesthia listen to a microphone, line-in, or instrument interface. The audio is analyzed in real time and never recorded."
+            "Lets Synesthia listen to a microphone, line-in, or instrument interface. The sound drives the visuals as it arrives and is never recorded."
         }
     }
 
@@ -139,11 +139,12 @@ enum AudioSourceError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .noDisplay: "No display available for system audio capture."
-        case .noInputDevice: "No audio input device found."
+        case .noDisplay:
+            "No display to listen through. macOS carries system audio alongside a screen capture, so it needs at least one display available."
+        case .noInputDevice: "No audio input device found. Connect a microphone or interface and try again."
         case .microphoneDenied:
             "Microphone access was denied. Enable it in System Settings › Privacy & Security › Microphone."
-        case .noFileLoaded: "No audio file loaded."
+        case .noFileLoaded: "No audio file chosen yet. Pick one with Open Audio File… (⌘O)."
         }
     }
 }

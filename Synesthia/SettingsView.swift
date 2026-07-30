@@ -13,7 +13,7 @@ struct SettingsView: View {
                 Toggle(isOn: $appState.loudnessNormalizationEnabled) {
                     Text("Normalize Loudness")
                     Text(
-                        "Slowly adapts to the source's overall loudness, so a quiet microphone and loud music read the same without retuning Sensitivity."
+                        "Slowly adapts to how loud the source actually is, so a quiet microphone and loud music both fill the picture without retuning Sensitivity."
                     )
                 }
                 .toggleStyle(.switch)

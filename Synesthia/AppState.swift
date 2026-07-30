@@ -187,7 +187,7 @@ final class AppState {
         isCapturing = false
         refreshPermissions()
         if screenAudioGranted {
-            setStatus("System audio capture stopped. Press play to reconnect.")
+            setStatus("Stopped listening to system audio. Press ⌘L to start again.")
         } else {
             blockedPermission = .screenAndSystemAudio
         }
@@ -759,7 +759,7 @@ final class AppState {
                 try? await Task.sleep(for: .milliseconds(350))
                 await startSystemCapture(isRetry: true)
             } else {
-                setStatus("System audio capture couldn't start: \(error.localizedDescription)")
+                setStatus("Couldn't start listening to system audio: \(error.localizedDescription)")
             }
         }
     }

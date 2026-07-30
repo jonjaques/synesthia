@@ -17,7 +17,7 @@ final class AuroraVisualizer: Visualizer {
     static let descriptor = VisualizerDescriptor(
         id: "aurora",
         name: "Aurora",
-        tagline: "One aurora ribbon per instrument under a percussive sky",
+        tagline: "One ribbon per instrument, under a sky that flashes with the drums",
         options: [
             VisualizerOption(id: "layers", name: "Ribbons", range: 2...8, defaultValue: 8),
             VisualizerOption(id: "height", name: "Wave height", range: 0.05...0.6, defaultValue: 0.28),

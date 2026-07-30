@@ -29,7 +29,7 @@ final class BarsVisualizer: Visualizer {
     static let descriptor = VisualizerDescriptor(
         id: "bars",
         name: "Bars",
-        tagline: "A producer's console: LED spectrum wall, VU meters, and moving faders",
+        tagline: "A producer's console: a wall of LED meters, VU needles, and moving faders",
         options: [
             VisualizerOption(id: "columns", name: "Columns", range: 8...64, defaultValue: 40),
             VisualizerOption(id: "segments", name: "LED segments", range: 0...40, defaultValue: 22),

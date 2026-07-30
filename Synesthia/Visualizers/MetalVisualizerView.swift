@@ -439,7 +439,7 @@ struct MetalUnavailableView: View {
             Text("Metal is unavailable on this Mac")
                 .font(.title3.weight(.semibold))
             Text(
-                "Synesthia renders its visualizers on the GPU and needs Metal, which this system doesn’t provide. This usually means the app is running in a virtual machine without graphics acceleration."
+                "Synesthia draws on the graphics card, and this system offers no Metal device to draw with. That usually means it is running in a virtual machine without graphics acceleration."
             )
             .font(.callout)
             .foregroundStyle(.secondary)

@@ -52,7 +52,7 @@ struct WelcomeView: View {
                 .font(.largeTitle.weight(.bold))
                 .padding(.top, 14)
             Text(
-                "Live, GPU-rendered visuals for whatever you're listening to. Choose where the sound comes from:"
+                "Live visuals for whatever you're listening to. Choose where the sound should come from:"
             )
             .font(.title3)
             .foregroundStyle(.secondary)
@@ -80,7 +80,7 @@ struct WelcomeView: View {
                 .foregroundStyle(.tint)
                 .accessibilityHidden(true)
             Text(
-                "Synesthia analyzes audio in the moment and keeps nothing — no recordings, no uploads. System audio arrives through macOS's screen-recording engine, so that one permission covers it; the video frames are discarded. [Privacy Policy…](https://synesthia.app/privacy)"
+                "Synesthia draws with the sound as it arrives and keeps nothing — no recordings, no uploads. System audio comes in through macOS's screen recording, which is why that one permission covers it; the picture it captures is thrown away. [Privacy Policy…](https://synesthia.app/privacy)"
             )
             .font(.caption)
             .foregroundStyle(.secondary)

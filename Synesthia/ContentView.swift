@@ -449,7 +449,7 @@ struct PermissionCard: View {
 
     private var title: Text {
         switch permission {
-        case .screenAndSystemAudio: Text("Allow System Audio Capture")
+        case .screenAndSystemAudio: Text("Allow System Audio Recording")
         case .automation: Text("Allow Control of Music")
         case .microphone: Text("Allow Microphone Access")
         }
