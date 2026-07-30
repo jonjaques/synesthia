@@ -69,7 +69,7 @@ export const APP_STORE_AVAILABLE = false;
 
 /** Shown next to the download button. */
 export const RELEASE = {
-  version: "1.2",
+  version: "1.2.1",
   // The deployment target is 15.0. The only macOS 26 API in the app is
   // `glassEffect`, and it is behind an `#available` check with a material
   // fallback, so Sequoia and Tahoe both run the same binary.
