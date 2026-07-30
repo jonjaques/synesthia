@@ -111,6 +111,13 @@ final class AppState {
     var statusMessage: String?
     /// Drives the first-run explainer sheet.
     var showsWelcome = false
+    /// True while the *first-run* welcome sheet is up and the user hasn't
+    /// picked a source yet — i.e. while Continue still means "just show me
+    /// something". Nothing plays on first launch until that is answered, so
+    /// this is also what tells `completeWelcome` to start the demo. Cleared by
+    /// the first explicit choice, and never set when the sheet is reopened
+    /// later from the Help menu.
+    private(set) var firstRunDemoPending = false
     /// Cached privacy-permission state, driving which sources the picker
     /// offers and the welcome rows' footnotes. Refreshed on app activation
     /// and around every capture attempt — macOS has no TCC change
@@ -161,6 +168,8 @@ final class AppState {
         #if MUSIC_APP_SOURCE
         playerControlEnabled = UserDefaults.standard.bool(forKey: Self.playerControlKey)
         #endif
+        // Reads two stored properties, so it can only run once they all are.
+        firstRunDemoPending = showsWelcome && sourceKind == .demo
         fileURL = resolveBookmarkedFile()
         systemCapture.onExternalStop = { [weak self] in self?.handleSystemCaptureStopped() }
         // didSet doesn't fire during init, so push the stored values once.
@@ -202,6 +211,13 @@ final class AppState {
         }
         nowPlayingObserver.start()
         seedConnectedPlayers()
+        // First run: the canvas stays quiet until the welcome sheet is
+        // answered. Starting the demo underneath it means the app makes noise
+        // before the user has been told anything, and a source that needs a
+        // permission would raise the system prompt before its pitch has been
+        // read — which is the whole reason the sheet exists. `completeWelcome`
+        // and `selectSource` pick this up again.
+        guard !showsWelcome else { return }
         switch sourceKind {
         case .demo:
             startDemo()
@@ -526,14 +542,31 @@ final class AppState {
 
     // MARK: - First run
 
-    /// Switches to a source from the welcome sheet.
+    /// Switches to a source from the welcome sheet. Call this *before*
+    /// `completeWelcome` — an explicit choice is what retires the demo that
+    /// Continue would otherwise start.
     func selectSource(_ kind: AudioSourceKind) {
-        sourceKind = kind
+        firstRunDemoPending = false
+        guard kind == sourceKind else {
+            sourceKind = kind
+            return
+        }
+        // Same source as the one already selected. On first run nothing was
+        // ever started (see `onAppear`), so `didSet` won't fire and the sheet
+        // would dismiss onto a dead canvas; bring the source up by hand.
+        if !isCaptureActive { handleSourceChange() }
     }
 
+    /// Dismisses the welcome sheet for good. On first run, reaching here with
+    /// no source chosen means the user clicked Continue without granting
+    /// anything — the demo is the answer to that, and the only thing that
+    /// starts audio on a fresh install.
     func completeWelcome() {
         UserDefaults.standard.set(true, forKey: Self.welcomeKey)
         showsWelcome = false
+        guard firstRunDemoPending else { return }
+        firstRunDemoPending = false
+        startDemo()
     }
 
     /// Reopens the explainer from the Help menu.
@@ -595,6 +628,7 @@ final class AppState {
     /// Switches to (or resumes) the bundled demo. The source picker doesn't
     /// list the demo; the welcome sheet and the Help menu call this instead.
     func playDemo() {
+        firstRunDemoPending = false
         if sourceKind == .demo {
             if !isDemoPlaying { startDemo() }
         } else {
