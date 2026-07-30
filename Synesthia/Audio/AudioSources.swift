@@ -12,35 +12,38 @@ import ScreenCaptureKit
 ///   The only source that needs **no** permission at all, which is why it is
 ///   the first-launch default — the visuals are provably alive before any TCC
 ///   prompt fires (see docs/app-store-launch-plan.md §B4).
-/// - `musicApp`: control Music.app over Apple Events for transport/metadata,
-///   while *hearing* it through the same system-audio tap as `systemAudio`
-///   (Music doesn't expose its audio stream directly). Compiled in only when
-///   `MUSIC_APP_SOURCE` is defined — the Mac App Store configuration ships
-///   without it so the build needs no Apple Events entitlements at all (§B5).
 /// - `systemAudio`: everything the Mac plays, captured with ScreenCaptureKit.
+///   This is also where now-playing lives: `NowPlayingObserver` recognizes
+///   whatever media player is producing that audio and the badge names the
+///   track. There is deliberately no separate "Music app" source any more —
+///   it was never a distinct *audio* path (Music exposes no stream, so it went
+///   through this same tap), and making it a source meant a user had to know
+///   which one to pick. See docs/macos-integration.md.
 /// - `inputDevice`: a microphone/line-in, tapped with AVAudioEngine.
 /// - `audioFile`: a local file played by this app itself.
 enum AudioSourceKind: String, CaseIterable, Identifiable, Codable {
     case demo
-    #if MUSIC_APP_SOURCE
-    case musicApp
-    #endif
     case systemAudio
     case inputDevice
     case audioFile
 
     var id: String { rawValue }
 
+    /// The sources offered in the source picker. The demo track is
+    /// deliberately not one of them — it lives in the welcome window and the
+    /// Help menu, so the picker only lists things a user would genuinely
+    /// listen to.
+    static var selectable: [AudioSourceKind] {
+        allCases.filter { $0 != .demo }
+    }
+
     /// User-facing name in the source menu.
     var label: String {
         switch self {
-        case .demo: "Demo track"
-        #if MUSIC_APP_SOURCE
-        case .musicApp: "Music app"
-        #endif
-        case .systemAudio: "System audio"
-        case .inputDevice: "Audio input"
-        case .audioFile: "Audio file"
+        case .demo: "Demo Track"
+        case .systemAudio: "System Audio"
+        case .inputDevice: "Audio Input"
+        case .audioFile: "Audio File"
         }
     }
 
@@ -48,9 +51,6 @@ enum AudioSourceKind: String, CaseIterable, Identifiable, Codable {
     var symbol: String {
         switch self {
         case .demo: "music.quarternote.3"
-        #if MUSIC_APP_SOURCE
-        case .musicApp: "music.note"
-        #endif
         case .systemAudio: "speaker.wave.3"
         case .inputDevice: "mic"
         case .audioFile: "waveform"
@@ -62,9 +62,6 @@ enum AudioSourceKind: String, CaseIterable, Identifiable, Codable {
     var requiredPermission: PrivacyPermission? {
         switch self {
         case .demo, .audioFile: nil
-        #if MUSIC_APP_SOURCE
-        case .musicApp: .screenAndSystemAudio
-        #endif
         case .systemAudio: .screenAndSystemAudio
         case .inputDevice: .microphone
         }
@@ -92,11 +89,11 @@ enum PrivacyPermission: String, Identifiable, CaseIterable {
     var explanation: String {
         switch self {
         case .screenAndSystemAudio:
-            "macOS has no dedicated “record system audio” API. The only sanctioned route is ScreenCaptureKit, the screen-recording framework, so capturing what your Mac is playing is gated behind this permission. Synesthia captures the video leg at 2×2 pixels and throws every frame away — it only wants the audio."
+            "macOS gives an app no way to hear another app's sound on its own. The only route it provides is screen recording, which can carry the sound alongside the picture — so that is the permission it asks for. Synesthia keeps the sound and throws the picture away: it is captured at 2×2 pixels and every frame is discarded."
         case .automation:
-            "Lets Synesthia ask the Music app what is playing and drive play, pause, and skip. Nothing is written back to your library."
+            "Optional. Synesthia already knows what's playing without this. Granting it adds play, pause, and skip buttons for your music player, and pulls in real album artwork. Nothing is written back to your library."
         case .microphone:
-            "Lets Synesthia listen to a microphone or line-in input."
+            "Lets Synesthia listen to a microphone, line-in, or instrument interface. The sound drives the visuals as it arrives and is never recorded."
         }
     }
 
@@ -142,11 +139,12 @@ enum AudioSourceError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .noDisplay: "No display available for system audio capture."
-        case .noInputDevice: "No audio input device found."
+        case .noDisplay:
+            "No display to listen through. macOS carries system audio alongside a screen capture, so it needs at least one display available."
+        case .noInputDevice: "No audio input device found. Connect a microphone or interface and try again."
         case .microphoneDenied:
             "Microphone access was denied. Enable it in System Settings › Privacy & Security › Microphone."
-        case .noFileLoaded: "No audio file loaded."
+        case .noFileLoaded: "No audio file chosen yet. Pick one with Open Audio File… (⌘O)."
         }
     }
 }

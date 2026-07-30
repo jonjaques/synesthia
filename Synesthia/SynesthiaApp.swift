@@ -33,6 +33,12 @@ struct SynesthiaApp: App {
     }
 
     var body: some Scene {
+        // Registers the app-menu "Settings…" item and ⌘, automatically.
+        Settings {
+            SettingsView()
+                .environment(appState)
+        }
+
         WindowGroup {
             ContentView()
                 .environment(appState)
@@ -52,6 +58,12 @@ struct SynesthiaApp: App {
 
                 Button("Audio Sources & Permissions…") {
                     appState.showWelcome()
+                }
+
+                // The demo left the source picker (it isn't a real source);
+                // this and the welcome sheet are how it comes back.
+                Button("Play Demo Track") {
+                    appState.playDemo()
                 }
 
                 Divider()
@@ -94,6 +106,16 @@ struct SynesthiaApp: App {
                     appState.previousTrack()
                 }
                 .keyboardShortcut(.leftArrow, modifiers: [.command])
+
+                // Same opt-in as the control pod's menu; the transport items
+                // above only reach the detected player once this is granted.
+                if let offer = appState.playerControlOffer {
+                    Divider()
+
+                    Button("Control \(offer.name)…") {
+                        appState.connectPlayerControl()
+                    }
+                }
 
                 Divider()
 

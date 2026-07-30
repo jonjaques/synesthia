@@ -54,6 +54,43 @@ shopt -u nullglob
 [[ -n "$(find "$RELEASES_DIR" -maxdepth 1 -name '*.dmg' -print -quit)" ]] \
 	|| fail "no DMGs found; run build-direct.sh first"
 
+step "Staging release notes"
+# generate_appcast reads release notes from a file sitting next to the archive
+# whose basename matches it — Synesthia-1.2.dmg -> Synesthia-1.2.html — and
+# inlines it into that item's <description> as CDATA, provided it is an HTML
+# fragment with no DOCTYPE or body tags.
+#
+# HTML, not the .md that generate_appcast also accepts: a markdown file is NOT
+# embedded, it becomes a <sparkle:releaseNotesLink>, which means a second
+# artifact to upload per release and a Pages Function that serves something
+# other than a .dmg (isSafeDmgName rejects everything else). The notes are
+# authored as markdown in docs/releases/<version>.md and rendered here; see
+# scripts/release-notes.py.
+#
+# Only *new* items get notes — generate_appcast never rewrites an item already
+# in the feed — so a missing file for an older DMG is expected and silent. A
+# missing file for the version being published is not, and says so.
+# Newest by mtime, without `ls -t | head -1`: `head` closing the pipe SIGPIPEs
+# the producer, and `set -o pipefail` turns that into a failed run. `sed -n
+# '1s///p'` reads its input to the end, so there is nothing to SIGPIPE.
+NEWEST_DMG=$(find "$RELEASES_DIR" -maxdepth 1 -name '*.dmg' -exec stat -f '%m %N' {} + \
+	| sort -rn | sed -n '1s/^[0-9]* //p')
+for dmg in "$RELEASES_DIR"/*.dmg; do
+	base=$(basename "$dmg" .dmg)          # Synesthia-1.2
+	version="${base#Synesthia-}"
+	if [[ -f "docs/releases/$version.md" ]]; then
+		python3 scripts/release-notes.py render "$version" --out "$RELEASES_DIR/$base.html" >/dev/null \
+			|| fail "docs/releases/$version.md failed to render"
+		echo "  $base.html  <- docs/releases/$version.md"
+	else
+		rm -f "$RELEASES_DIR/$base.html"
+		if [[ "$dmg" == "$NEWEST_DMG" ]]; then
+			echo "  no docs/releases/$version.md — $base will ship with NO release notes."
+			echo "  (write them, or run ./scripts/bump-version.sh which drafts them)"
+		fi
+	fi
+done
+
 # generate_appcast re-uses an appcast.xml already sitting in the archives
 # directory and only *adds* entries to it. That is the whole reason we pull the
 # published feed down first: without it, a regeneration from a directory holding
@@ -104,6 +141,44 @@ step "Generating the appcast"
 
 APPCAST="$RELEASES_DIR/appcast.xml"
 [[ -f "$APPCAST" ]] || fail "generate_appcast produced no appcast.xml"
+
+# Did the notes actually make it in? generate_appcast only writes a description
+# for items it *adds*; an item already present in the fetched feed is left
+# exactly as it was. So a note file that arrived late — or one written after the
+# first `make appcast` of a version — is silently ignored, and the first anyone
+# notices is an empty update window. Report it here instead.
+step "Checking the newest item's release notes"
+python3 - "$APPCAST" <<'PY'
+import sys, xml.etree.ElementTree as ET
+
+SPARKLE = 'http://www.andymatuschak.org/xml-namespaces/sparkle'
+items = []
+for item in ET.parse(sys.argv[1]).getroot().iterfind('./channel/item'):
+    enclosure = item.find('enclosure')
+    version = (item.findtext('{%s}version' % SPARKLE) or '').strip()
+    if not version and enclosure is not None:
+        version = (enclosure.get('{%s}version' % SPARKLE) or '').strip()
+    items.append((int(version) if version.isdigit() else -1, item))
+
+if not items:
+    sys.exit('the appcast has no items')
+
+_, newest = max(items, key=lambda pair: pair[0])
+short = (newest.findtext('{%s}shortVersionString' % SPARKLE) or '?').strip()
+description = (newest.findtext('description') or '').strip()
+link = newest.find('{%s}releaseNotesLink' % SPARKLE)
+
+if description:
+    print(f'  {short}: {len(description)} characters of embedded release notes')
+elif link is not None:
+    print(f'  {short}: release notes linked at {(link.text or "").strip()}')
+    print('     Linked notes are a separate upload; this project embeds instead.')
+else:
+    print(f'  {short}: NO release notes — the update window will be empty.')
+    print('     If docs/releases/<version>.md exists, this version was already in')
+    print('     the feed and generate_appcast left it alone. Delete that <item>')
+    print('     from build/releases/appcast.xml and re-run to regenerate it.')
+PY
 
 step "Done"
 echo "  Appcast: $APPCAST"

@@ -17,10 +17,15 @@ import { CONTACT, GA_ENABLED, LEGAL, SITE } from '../consts';
 >
 	<h2>The short version</h2>
 	<p>
-		The Synesthia app has <strong>no analytics, no accounts, no networking, and no third-party
-		SDKs</strong>. It does not phone home. Sound reaching the app is turned into numbers — loudness
-		per frequency band — used to draw the next frame, and then discarded. Nothing is written to
-		disk, and nothing leaves your Mac.
+		The Synesthia app has <strong>no analytics, no accounts, and no tracking SDKs</strong>. Sound
+		reaching the app is turned into numbers — loudness per frequency band — used to draw the next
+		frame, and then discarded. Nothing is written to disk, and no audio, and nothing derived from
+		it, ever leaves your Mac.
+	</p>
+	<p>
+		There is exactly one exception to “no networking”, and it is described in full below: the
+		version downloaded directly from this site checks this site for a newer version. The Mac App
+		Store version makes no network requests at all.
 	</p>
 
 	<h2>What the app does with audio</h2>
@@ -60,11 +65,12 @@ import { CONTACT, GA_ENABLED, LEGAL, SITE } from '../consts';
 
 		<dt>Automation (Music)</dt>
 		<dd>
-			Used only by the version of Synesthia downloaded directly from this site, and only for the
-			“Music app” source: reading the current track’s title, artist, album, and artwork so they can
-			be shown on screen, and sending play, pause, and skip commands. Nothing is written to your
-			library. <strong>The Mac App Store version does not include this feature and never sends
-			Apple Events at all.</strong>
+			Optional, and only in the version of Synesthia downloaded directly from this site. Granting it
+			adds play, pause, and skip buttons for your music player and pulls in real album artwork;
+			nothing is written to your library. The track title, artist, and album are shown without this
+			permission in both versions, because the players broadcast them system-wide already.
+			<strong>The Mac App Store version does not include this feature and never sends Apple Events
+			at all.</strong>
 		</dd>
 	</dl>
 
@@ -84,26 +90,79 @@ import { CONTACT, GA_ENABLED, LEGAL, SITE } from '../consts';
 	</ul>
 	<p>Deleting the app removes your access to this data; it is never held anywhere else.</p>
 
+	<h2>Software updates</h2>
+	<p>
+		The version of Synesthia downloaded <strong>directly from this site</strong> keeps itself up to
+		date using <a href="https://sparkle-project.org" rel="nofollow noopener">Sparkle</a>, the
+		standard open-source updater for Mac apps. Periodically, and whenever you choose <em
+			>Check for Updates…</em
+		>, it fetches one file from this site — <a href="/appcast.xml">the appcast</a> — and compares
+		the version in it to the one you are running.
+	</p>
+	<ul>
+		<li>
+			The request carries nothing but what any HTTP request carries: your IP address and a user
+			agent naming the app and macOS version. It contains no identifier, no usage data, and
+			nothing about your audio, your music, or your Mac's hardware.
+		</li>
+		<li>
+			Sparkle's optional system-profiling feature, which would append anonymous hardware details
+			to that request, is <strong>switched off</strong>.
+		</li>
+		<li>
+			Every update is verified against a signature made with a key that never leaves the
+			developer's machine, so a compromised server still cannot ship you code.
+		</li>
+		<li>
+			You can turn automatic checking off in the update dialog, after which the app makes no
+			network requests unless you ask it to check.
+		</li>
+	</ul>
+	<p>
+		<strong>The Mac App Store version contains no updater</strong> — Apple's rules forbid it — and
+		therefore performs no network requests whatsoever. Updates arrive through the App Store like
+		any other app's.
+	</p>
+
 	<h2>This website</h2>
 	{
 		GA_ENABLED ? (
 			<Fragment>
 				<p>
 					The app and the website are separate. This site uses <strong>Google Analytics 4</strong>{' '}
-					to count visits and understand which pages people read. It is configured with IP
-					anonymisation enabled, and it sets cookies in your browser.
+					to count visits and to see which parts of the page people read and which download
+					button they press. It sets cookies in your browser. Google Analytics 4 truncates
+					visitors’ IP addresses before storing them, and does not make the full address
+					available to us.
+				</p>
+				<p>What is recorded is the page, and these interactions with it:</p>
+				<ul>
+					<li>Which download button was pressed, and where on the page it was.</li>
+					<li>Clicks on links leaving the site, and on the support email address.</li>
+					<li>How far down the page you scrolled, and which sections came into view.</li>
+					<li>Which of the screenshots in the header you chose to look at.</li>
+					<li>
+						Anonymous page-speed measurements — how quickly the page drew and responded — so a
+						performance regression is visible without asking anyone.
+					</li>
+				</ul>
+				<p>
+					None of it identifies you, none of it is combined with anything from the app, and no
+					text you type anywhere is collected — there is nothing on this site to type into.
 				</p>
 				<p>
-					Analytics data is processed by Google; see{' '}
+					<strong>To opt out:</strong> enable <em>Do Not Track</em> or Global Privacy Control in
+					your browser and this site loads no analytics at all — the check runs before the script
+					is requested, so nothing is fetched and no cookie is written. A content blocker or
+					Google’s{' '}
+					<a href="https://tools.google.com/dlpage/gaoptout" rel="nofollow noopener">
+						opt-out add-on
+					</a>{' '}
+					works too. Analytics data is processed by Google; see{' '}
 					<a href="https://policies.google.com/privacy" rel="nofollow noopener">
 						Google’s privacy policy
 					</a>
-					. You can opt out with Google’s{' '}
-					<a href="https://tools.google.com/dlpage/gaoptout" rel="nofollow noopener">
-						opt-out browser add-on
-					</a>
-					, by blocking the script in your browser, or by enabling Do Not Track / a content
-					blocker. Nothing on this site is linked to anything in the app.
+					.
 				</p>
 			</Fragment>
 		) : (
@@ -127,10 +186,25 @@ import { CONTACT, GA_ENABLED, LEGAL, SITE } from '../consts';
 		the same time as, the release that introduces it.
 	</p>
 
+	<h2>No purchases, no accounts, nothing to bill</h2>
+	<p>
+		Synesthia is <strong>free</strong>. There is no price, no subscription, no in-app purchase, and
+		no trial — so there is no account to create, no payment details to hand over, and no billing
+		data for anyone to hold. Nothing on this page is a paid tier: what the app does with your audio
+		is the same for everyone who runs it.
+	</p>
+	<p>
+		It is a side project rather than a business, which is the honest framing for the support that
+		comes with it: <strong>I read every message and I will do my best</strong> to fix what is broken
+		or explain what is happening, but I cannot promise a response time.
+	</p>
+
 	<h2>Contact</h2>
 	<p>
-		Questions about privacy: <a href={`mailto:${CONTACT.privacy}`}>{CONTACT.privacy}</a>. For
-		anything else, see the <a href="/support">support page</a>.
+		Questions about privacy — or anything else at all — go straight to me at <a
+			href={`mailto:${CONTACT.privacy}`}>{CONTACT.privacy}</a
+		>. It is my own address, not a queue. The <a href="/support">support page</a> answers the common
+		questions first, and the code is public if you would rather read it than ask.
 	</p>
 	<p>{SITE.name} is made by {SITE.author}.</p>
 </Legal>

@@ -53,13 +53,13 @@ by construction — the store build does not contain the feature at all.
 
 ### Blockers closed earlier
 
-| Blocker                   | Resolution                                                                                                                                 |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| **B1** bundle ID          | `jonjaques.Synesthia` → `com.jonjaques.Synesthia`, every configuration                                                                     |
-| **B3** Metal `fatalError` | Optional `MetalRenderContext.shared` + `MetalUnavailableView`; no launch path can crash without a GPU                                      |
-| **B4** dead on arrival    | `.demo` source, default on first launch, 32 s bundled loop, zero permissions; plus first-run `WelcomeView` with System Settings deep links |
-| **B5** Apple Events       | Feature-flagged behind `MUSIC_APP_SOURCE`; the store build contains no `MusicController`, no AppleScript, neither entitlement              |
-| **B6** unused entitlement | `com.apple.security.assets.music.read-only` removed                                                                                        |
+| Blocker                   | Resolution                                                                                                                                                                                                                                         |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **B1** bundle ID          | `jonjaques.Synesthia` → `com.jonjaques.Synesthia`, every configuration                                                                                                                                                                             |
+| **B3** Metal `fatalError` | Optional `MetalRenderContext.shared` + `MetalUnavailableView`; no launch path can crash without a GPU                                                                                                                                              |
+| **B4** dead on arrival    | `.demo` source, default on first launch, 32 s bundled loop, zero permissions; plus first-run `WelcomeView` with System Settings deep links                                                                                                         |
+| **B5** Apple Events       | Feature-flagged behind `MUSIC_APP_SOURCE`; the store build contains no `PlayerRemote`, no AppleScript, neither entitlement — and, since now-playing moved to distributed notifications, no longer loses the feature that motivated the entitlement |
+| **B6** unused entitlement | `com.apple.security.assets.music.read-only` removed                                                                                                                                                                                                |
 
 ### App hardening and quality
 
@@ -107,7 +107,7 @@ rather than a sine, because a sine is not a cymbal. One test was found vacuous
 
 | Question          | Decision                         | Consequence                                                                                                                   |
 | ----------------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| B5 — Apple Events | **Feature-flag it**              | `Direct` configuration; store build has no Music.app integration at all                                                       |
+| B5 — Apple Events | **Feature-flag it**              | `Direct` configuration; store build sends no Apple Events at all — but keeps the now-playing badge, which needs no permission |
 | B4 — demo audio   | **Synthesize and bundle a clip** | `scripts/make_demo_loop.py`; no licensing question                                                                            |
 | Distribution      | **Both channels, direct first**  | Full notarization pipeline; direct shipped first                                                                              |
 | Sparkle isolation | **Duplicate the app target**     | SPM attaches packages per-target, not per-configuration; one extra target to keep in sync                                     |
@@ -115,8 +115,26 @@ rather than a sine, because a sine is not a cymbal. One test was found vacuous
 
 **MusicKit cannot replace Apple Events on macOS.** `SystemMusicPlayer` is
 unavailable on the platform and `ApplicationMusicPlayer` reports only what your
-own app plays. B5 was a straight choice between shipping the entitlement and
-cutting the feature.
+own app plays. B5 looked like a straight choice between shipping the entitlement
+and cutting the feature.
+
+**It wasn't, and the third option was better than either.** Media players
+broadcast title, artist, album and play state as **distributed notifications**,
+which cost no entitlement, no TCC prompt and no private API — and, contrary to
+a widely repeated claim, the App Sandbox does not strip the `userInfo` payload
+from notifications an app _receives_ (the rule constrains sandboxed _senders_;
+verified on macOS 26.5 against an ad-hoc-signed sandboxed binary). So the store
+build now shows the now-playing badge for both Music and Spotify while still
+sending zero Apple Events. `MUSIC_APP_SOURCE` gates only transport control and
+cover art, which is a much smaller thing to give up.
+
+The lesson worth keeping: B5 was framed as a permissions problem for months
+because the search stopped at the two mechanisms already known (MediaRemote,
+dead since 15.4; Apple Events, entitlement-bound). Neither was the one the
+players themselves volunteer. Whether to go back and ask review for the
+exception anyway — to add transport to the store build — is assessed in
+[the roadmap](roadmap.md#apple-events-in-the-mac-app-store-build); the current
+answer is no, and later is a better time to ask than now.
 
 ---
 
@@ -161,7 +179,8 @@ certificate is in place.
 - [x] Icon — correct in the binary
 - [x] Screenshot tooling — `make screenshots`, driving the real shipping UI
 - [x] Screenshots captured for the website (3 visualizers × windowed/fullscreen)
-- [ ] **Screenshots at an App Store size.** The captures on disk are 3420×2146 and 2048×1536; Apple accepts only 1280×800, 1440×900, 2560×1600 or 2880×1800. Recapture or resize.
+- [x] **Screenshots at an App Store size.** `make screenshots` now writes an `app-store/` copy of every shot beside the raw one: exactly 2880×1800 (`--appstore-size` picks any of Apple's four), no alpha channel — the window capture has one, from the rounded corners, and it is a rejection — and asserted as such per file. The window defaults to 1440×900 points so the windowed shot is 2880×1800 natively, with no rescaling. Music.app is advanced a track per visualizer so the set isn't one song eight times.
+- [ ] **Choose and upload the set.** 4 visualizers × windowed/fullscreen is 8 files against a limit of 10, so it fits as-is — but pick deliberately, and prefer a run taken from the `Release` build so the badge shown is the one store users get.
 - [ ] **App preview video — the high-leverage asset.** A static frame of a visualizer sells nothing. Up to 3, 15–30 s, 16:9 at 1080p or 4K.
 
 ### Metadata — drafted, length-checked
@@ -181,7 +200,9 @@ Ordered by what blocks the most.
 
 1. **Mac Installer Distribution certificate** (§3 B2), then the ASC record and a
    throwaway upload. The only thing between here and a submission.
-2. **App Store screenshots at a supported size, and the preview video** (§4).
+2. **Pick the screenshot set and shoot the preview video** (§4). `make screenshots
+--configuration Release` produces conforming files; choosing which 8 to upload,
+   and the video, are judgement calls.
 3. **Look at and listen to the app.** Verified structurally, never by eye or ear:
    - the first-run welcome sheet's layout and wording
    - whether the demo track _sounds_ good, as opposed to measuring well

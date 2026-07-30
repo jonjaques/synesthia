@@ -31,7 +31,10 @@ nonisolated struct AudioSnapshot: Sendable {
     /// cone, downsampled to 256 points. Good for drawing oscilloscope-style
     /// shapes; useless for "how loud is the bass" questions (use `bands`).
     var waveform = [Float](repeating: 0, count: AudioSnapshot.waveformCount)
-    /// Overall loudness (RMS mapped through dB), 0...1.
+    /// Overall loudness (RMS mapped through dB), 0...1. When loudness
+    /// normalization is on (the default) the mapping slowly adapts to the
+    /// source's program level, so "how loud the music feels" rather than
+    /// "how hot the signal is".
     var level: Float = 0
     /// Average energy of the low / middle / high thirds of the spectrum.
     var bass: Float = 0
@@ -67,8 +70,8 @@ nonisolated struct AudioSnapshot: Sendable {
 ///    buffers as they arrive.
 /// 2. The analyzer keeps a sliding window of the most recent 2048 samples
 ///    (~43 ms at 48 kHz). Every 1024 new samples (the "hop") it runs one
-///    analysis pass: Hann window → FFT → 64 log-spaced bands → smoothing →
-///    derived features (beat, flux, centroid, …).
+///    analysis pass: Hann window → FFT → 64 log-spaced bands → auto-gain
+///    dB mapping → smoothing → derived features (beat, flux, centroid, …).
 /// 3. The render loop (display thread, 60 fps) calls `latest()` each frame
 ///    and gets a value-type copy of the newest snapshot.
 ///
@@ -143,6 +146,38 @@ nonisolated final class AudioAnalyzer: @unchecked Sendable {
     private var trebleLatched = false
     private var fluxEnvelope: Float = 0
     private var centroidSmoothed: Float = 0.4
+
+    // Loudness normalization (a slow AGC). The fixed dB mappings below
+    // assume mastered-music levels; when enabled, these adapt them to the
+    // actual program level so a quiet mic and a loud master both land in
+    // the useful visual range without retuning Sensitivity.
+    /// Whether the auto-gain stage runs; see `setAutoGainEnabled`.
+    private var agcEnabled = true
+    /// Slow-moving estimate of the program's peak short-term level, in dB.
+    private var agcPeakDB: Float = AudioAnalyzer.agcReferenceDB
+    /// Set on the tracker's first audible pass; until then the peak *snaps*
+    /// to the observed level instead of decaying toward it, so a freshly
+    /// reset analyzer adapts to a new source in about a second, not ten.
+    private var agcPrimed = false
+    /// The gain currently added to both dB mappings, in dB. Smoothed toward
+    /// its target every pass so the visuals drift rather than pump.
+    private var agcGainDB: Float = 0
+
+    /// Where the tracker steers program peaks: with the tracked peak at
+    /// −8 dB the applied gain is zero and the mappings match the fixed
+    /// historical ones, so loud mastered music looks the same as ever.
+    private static let agcReferenceDB: Float = -8
+    /// The tracker only updates above this; silence must *hold* the gain,
+    /// not wind it up to maximum and then blast the next loud thing.
+    private static let agcGateDB: Float = -55
+    /// Gain clamp. The boost cap keeps a whisper-quiet source from having
+    /// its noise floor amplified into the visible range.
+    private static let agcMaxBoostDB: Float = 24
+    private static let agcMaxCutDB: Float = 12
+    /// Peak decay per analysis pass (~47/s), ≈ 2.5 dB/s: quiet passages
+    /// within a song brighten over seconds, so musical dynamics survive.
+    private static let agcPeakDecayDB: Float = 0.053
+
     /// When samples last arrived; lets `latest()` fade the visuals out
     /// instead of freezing when the source stops.
     private var lastAppendTime: CFAbsoluteTime = 0
@@ -192,6 +227,15 @@ nonisolated final class AudioAnalyzer: @unchecked Sendable {
         return snapshot
     }
 
+    /// Turns loudness normalization on/off (the "Normalize Loudness"
+    /// setting). Callable from any thread; takes effect on the next analysis
+    /// pass, and the applied gain ramps back rather than jumping.
+    func setAutoGainEnabled(_ enabled: Bool) {
+        lock.lock()
+        defer { lock.unlock() }
+        agcEnabled = enabled
+    }
+
     /// Clears all analysis state; called when the user switches audio sources
     /// so the old source's tail doesn't bleed into the new one.
     func reset() {
@@ -209,6 +253,9 @@ nonisolated final class AudioAnalyzer: @unchecked Sendable {
         trebleLatched = false
         fluxEnvelope = 0
         centroidSmoothed = 0.4
+        agcPeakDB = Self.agcReferenceDB
+        agcPrimed = false
+        agcGainDB = 0
     }
 
     /// Mixes an arbitrary PCM buffer down to mono and appends it. Callable from any thread.
@@ -330,10 +377,20 @@ nonisolated final class AudioAnalyzer: @unchecked Sendable {
             }
         }
 
-        // 3. Reduce 1024 bins to 64 bands, then map through decibels.
+        // 3. Overall loudness: RMS (root-mean-square, the standard "average
+        //    level" measure) in dB, and the auto-gain update it feeds —
+        //    computed before the bands because they apply this pass's gain.
+        var rms: Float = 0
+        vDSP_rmsqv(recent, 1, &rms, vDSP_Length(fftSize))
+        let levelDB = 20 * log10(max(rms, 1e-9))
+        updateAutoGain(levelDB: levelDB)
+        let level = max(0, min(1, (levelDB + agcGainDB + 60) / 60))
+
+        // 4. Reduce 1024 bins to 64 bands, then map through decibels.
         //    Loudness perception is logarithmic, so raw magnitudes would make
         //    everything but the loudest peak invisible; converting to dB and
         //    normalizing -72 dB → 0, -6 dB → 1 spreads the useful range out.
+        //    The auto-gain shifts that mapping to follow the source's level.
         let norm = 1.0 / Float(fftSize)
         for b in 0..<AudioSnapshot.bandCount {
             let lo = bandEdges[b], hi = max(bandEdges[b + 1], lo + 1)
@@ -341,9 +398,9 @@ nonisolated final class AudioAnalyzer: @unchecked Sendable {
             for bin in lo..<hi { sum += magnitudes[bin] }
             let mag = sqrt(sum / Float(hi - lo)) * norm
             let db = 20 * log10(max(mag, 1e-9))
-            raw[b] = max(0, min(1, (db + 72) / 66))
+            raw[b] = max(0, min(1, (db + agcGainDB + 72) / 66))
         }
-        // 4. Asymmetric smoothing (an "attack/release" envelope, borrowed
+        // 5. Asymmetric smoothing (an "attack/release" envelope, borrowed
         //    from audio compressors): rise fast when a band jumps (65% of the
         //    way per pass) but fall slowly (12%). Fast attack keeps hits
         //    punchy; slow release stops the visuals flickering.
@@ -409,13 +466,6 @@ nonisolated final class AudioAnalyzer: @unchecked Sendable {
             trebleEnvelope *= 0.80
         }
 
-        // Overall loudness: RMS (root-mean-square, the standard "average
-        // level" measure) mapped through dB into 0...1, like the bands.
-        var rms: Float = 0
-        vDSP_rmsqv(recent, 1, &rms, vDSP_Length(fftSize))
-        let levelDB = 20 * log10(max(rms, 1e-9))
-        let level = max(0, min(1, (levelDB + 60) / 60))
-
         // Beat detection: compare the instantaneous bass energy to its own
         // slow-moving average; a value 30% above average (and above an
         // absolute floor, so silence can't trigger) means a bass transient —
@@ -459,5 +509,30 @@ nonisolated final class AudioAnalyzer: @unchecked Sendable {
         snapshot.trebleBeat = trebleEnvelope
         snapshot.flux = min(fluxEnvelope, 1)
         snapshot.centroid = centroidSmoothed
+    }
+
+    /// Advances the loudness-normalization tracker by one analysis pass.
+    ///
+    /// A deliberately slow AGC: track the program's recent peak short-term
+    /// level, aim the gain at `reference − peak`, and smooth the applied
+    /// value asymmetrically — down fast when a loud passage arrives (so the
+    /// visuals don't pin at 1), up over ~1 s (so a kick drum's gaps aren't
+    /// pumped). Below the gate nothing updates: silence holds the gain.
+    /// When disabled the target is simply 0, so toggling ramps the mapping
+    /// back to the fixed one instead of jump-cutting.
+    private func updateAutoGain(levelDB: Float) {
+        if agcEnabled, levelDB > Self.agcGateDB {
+            if agcPrimed {
+                agcPeakDB = max(levelDB, agcPeakDB - Self.agcPeakDecayDB)
+            } else {
+                agcPeakDB = levelDB
+                agcPrimed = true
+            }
+        }
+        let target =
+            agcEnabled
+            ? max(-Self.agcMaxCutDB, min(Self.agcMaxBoostDB, Self.agcReferenceDB - agcPeakDB))
+            : 0
+        agcGainDB += (target - agcGainDB) * (target < agcGainDB ? 0.15 : 0.02)
     }
 }

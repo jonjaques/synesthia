@@ -10,7 +10,7 @@ export const SITE = {
   title: "Synesthia — Music you can see",
   tagline: "Music visualizer for macOS",
   description:
-    "Synesthia turns whatever your Mac is playing into light. A 64-band FFT drives three Metal visualizers in real time, from Apple Music, any app’s audio, a mic, or a file.",
+    "Synesthia turns whatever your Mac is playing into light. A 64-band FFT spectrum analyzer drives its GPU visualizers in real time, from Apple Music, any app’s audio, a mic, or a file.",
   author: "Jon Jaques",
   locale: "en_US",
   /** Twitter/X handle for the summary card. PLACEHOLDER. */
@@ -69,7 +69,7 @@ export const APP_STORE_AVAILABLE = false;
 
 /** Shown next to the download button. */
 export const RELEASE = {
-  version: "1.1",
+  version: "1.2",
   // The deployment target is 15.0. The only macOS 26 API in the app is
   // `glassEffect`, and it is behind an `#available` check with a material
   // fallback, so Sequoia and Tahoe both run the same binary.
@@ -91,22 +91,37 @@ export const RELEASE = {
 /**
  * Contact addresses published on the support and privacy pages. Apple requires
  * a reachable support URL, and a dead address there is a review risk.
- * PLACEHOLDER — these need real mail routing on the synesthia.app domain.
+ *
+ * Both are the same personally-monitored mailbox: nothing routes on the
+ * synesthia.app domain, and a role address that bounces is worse than a
+ * personal one that doesn't. They stay two keys so support can move to
+ * support@synesthia.app on its own once that domain has mail, without touching
+ * the privacy policy.
  */
 export const CONTACT = {
-  support: "support@synesthia.app",
-  privacy: "privacy@synesthia.app",
-} as const;
-
-/** Last substantive revision of the privacy policy, shown on that page. */
-export const LEGAL = {
-  effective: "25 July 2026",
+  support: "me@jonjaques.com",
+  privacy: "me@jonjaques.com",
 } as const;
 
 /**
- * Google Analytics 4 measurement ID. PUBLIC_GA_ID overrides the literal below,
- * which is the production property. Set PUBLIC_GA_ID to 'G-XXXXXXXXXX' (or any
- * non-`G-` value) to build without emitting the analytics script at all.
+ * Last substantive revision of the privacy policy, shown on that page.
+ *
+ * Bump it whenever what the app or the site does with data changes — the page
+ * promises that this date moves when the behaviour does.
+ */
+export const LEGAL = {
+  effective: "29 July 2026",
+} as const;
+
+/**
+ * Google Analytics 4 measurement ID. The literal below is the production
+ * property; the PUBLIC_GA_ID environment variable overrides it.
+ *
+ * To build with no analytics at all — no script, no cookie, no listeners — set
+ * PUBLIC_GA_ID to anything that is not a real measurement ID. The literal
+ * placeholder `G-XXXXXXXXXX` and any value not starting with `G-` both count:
+ *
+ *     PUBLIC_GA_ID=off npm run build
  */
 export const GA_MEASUREMENT_ID = import.meta.env.PUBLIC_GA_ID ?? "G-MEDVX83G9P";
 

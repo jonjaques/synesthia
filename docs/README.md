@@ -1,6 +1,6 @@
 # Synesthia developer documentation
 
-Synesthia is a macOS music visualizer: it listens to audio (the Music app,
+Synesthia is a macOS music visualizer: it listens to audio (anything your Mac plays,
 anything the Mac is playing, a microphone, or a local file), analyzes it in
 real time, and renders GPU visuals that react to what it hears.
 
@@ -17,10 +17,10 @@ shaders, Apple Events, sandboxing…) are introduced where they're used.
    raw samples become the `AudioSnapshot` that drives every visual.
 3. **[Rendering](rendering.md)** — how frames get drawn: Metal in a nutshell,
    the 60 fps render loop, and the CPU→GPU data contract.
-4. **[Visualizers](visualizers.md)** — the plugin system, how the three
+4. **[Visualizers](visualizers.md)** — the plugin system, how the four
    built-in visualizers work, and a step-by-step guide to writing a new one.
 5. **[macOS integration](macos-integration.md)** — permissions, sandboxing,
-   controlling the Music app, window chrome, and the Xcode project's
+   reading and driving other apps' playback, window chrome, and the Xcode project's
    non-obvious configuration choices.
 
 ## Source map
@@ -38,24 +38,36 @@ Synesthia/
 │   ├── AudioAnalyzer.swift       FFT analysis; produces AudioSnapshot
 │   └── AudioSources.swift        The audio capture/playback engines
 ├── Music/
-│   └── MusicController.swift     Remote-controls Music.app via Apple Events
+│   ├── NowPlayingObserver.swift  Reads what Music/Spotify are playing from their
+│   │                             distributed notifications — no permission at all
+│   └── PlayerRemote.swift        Transport + cover art via Apple Events, opt-in
 │                                 (compiled out of the App Store build)
 └── Visualizers/
     ├── VisualizerCore.swift      Plugin protocol, registry, palettes, settings
+    ├── ParticleSystem.swift      GPU-resident particle simulation scaffolding
     ├── Shaders.metal             All GPU shader code (build-time compiled)
     ├── MetalVisualizerView.swift The render loop host
-    ├── NebulaVisualizer.swift    Particle-cloud visualizer
+    ├── NebulaVisualizer.swift    GPU-compute particle-cloud visualizer
     ├── TunnelVisualizer.swift    Spectrum-tunnel visualizer
-    └── AuroraVisualizer.swift    Waveform-ribbon visualizer
+    ├── AuroraVisualizer.swift    Waveform-ribbon visualizer
+    └── BarsVisualizer.swift      Studio-console visualizer
 
-SynesthiaTests/                   Swift Testing bundle; AudioAnalyzer coverage
+SynesthiaTests/                   Swift Testing bundle; AudioAnalyzer + uniforms-layout coverage
 Makefile                          Every build/asset/release command in one place
+VERSION                           Current marketing version and build number, at a glance
 scripts/                          Demo-track generator, screenshot capture, release pipelines
+docs/releases/                    Release notes, one file per version — what Sparkle shows
 web/                              Astro marketing site
 ```
 
 Run `make` for the list of tasks; `CLAUDE.md` at the repo root documents each
 one and the constraints behind them.
+
+## What's next
+
+**[Roadmap assessment](roadmap.md)** — every idea on the README's roadmap
+list, assessed: feasibility in the current code, rough cost, and the
+platform research (dated) behind the ones that depend on Apple's rules.
 
 ## Shipping
 
@@ -65,7 +77,7 @@ one and the constraints behind them.
    if you're picking the release back up.** The direct download is live; the
    App Store submission is not.
 2. **[Distribution](distribution.md)** — how two targets produce two different
-   binaries, why the Music.app feature and Sparkle exist in only one of them,
+   binaries, why player control and Sparkle exist in only one of them,
    versioning, and the build/notarize/publish pipelines.
 3. **[App Store metadata](app-store-metadata.md)** — drafts of every listing
    field plus the review notes. Length-checked by `scripts/check-metadata.py`.

@@ -114,6 +114,15 @@ struct AudioAnalyzerTests {
         return best
     }
 
+    /// An analyzer with loudness normalization pinned explicitly. Auto-gain
+    /// is on by default (matching the shipped configuration), so tests that
+    /// assert the *fixed* dB mapping must opt out.
+    private func makeAnalyzer(autoGain: Bool) -> AudioAnalyzer {
+        let analyzer = AudioAnalyzer()
+        analyzer.setAutoGainEnabled(autoGain)
+        return analyzer
+    }
+
     // MARK: - Band mapping
 
     /// The core claim of the log-spaced mapping: above the bin-resolution
@@ -198,6 +207,9 @@ struct AudioAnalyzerTests {
 
     // MARK: - Level
 
+    /// Silence maps to exactly zero — and must *stay* zero with auto-gain on
+    /// (the default): the tracker gates below −55 dB, so silence holds the
+    /// gain instead of winding it up and amplifying the noise floor.
     @Test func silenceProducesNoLevel() {
         let analyzer = AudioAnalyzer()
         let snapshot = feedSilence(into: analyzer)
@@ -205,9 +217,12 @@ struct AudioAnalyzerTests {
         #expect(snapshot.bass == 0)
     }
 
+    /// With auto-gain off, the fixed dB mapping is monotone in input level.
+    /// (With it on, this difference deliberately *shrinks* as the tracker
+    /// converges — that contract lives in the auto-gain section below.)
     @Test func louderInputProducesHigherLevel() {
-        let quiet = feedSine(frequency: 440, amplitude: 0.05)
-        let loud = feedSine(frequency: 440, amplitude: 0.9)
+        let quiet = feedSine(frequency: 440, amplitude: 0.05, into: makeAnalyzer(autoGain: false))
+        let loud = feedSine(frequency: 440, amplitude: 0.9, into: makeAnalyzer(autoGain: false))
         #expect(loud.level > quiet.level)
         #expect(loud.level <= 1)
         #expect(quiet.level >= 0)
@@ -215,8 +230,11 @@ struct AudioAnalyzerTests {
 
     /// Every published value is documented as roughly 0...1; visualizers use
     /// them directly as intensities, so an out-of-range value is a real bug.
-    @Test func featuresStayNormalized() {
-        let snapshot = feedSine(frequency: 440, amplitude: 1.0)
+    /// Runs at both extremes of the auto-gain range: full scale (the gain
+    /// cuts) and near-silence (the gain boosts to its cap).
+    @Test(arguments: [Float(1.0), Float(0.02)])
+    func featuresStayNormalized(amplitude: Float) {
+        let snapshot = feedSine(frequency: 440, amplitude: amplitude, passes: 300)
         for (index, value) in snapshot.bands.enumerated() {
             #expect(value >= 0 && value <= 1, "band \(index) = \(value)")
         }
@@ -232,6 +250,62 @@ struct AudioAnalyzerTests {
         for value in snapshot.waveform {
             #expect(value >= -1 && value <= 1)
         }
+    }
+
+    // MARK: - Loudness normalization (auto-gain)
+
+    /// The headline property: once the tracker converges, a quiet source and
+    /// a loud one settle at similar overall levels, so one Sensitivity value
+    /// works for both. (0.05 vs 0.9 amplitude is ~25 dB apart — roughly "mic
+    /// across the room" vs "mastered music at full volume".)
+    @Test func autoGainConvergesQuietAndLoudSources() {
+        let quiet = feedSine(frequency: 440, amplitude: 0.05, passes: 300)
+        let loud = feedSine(frequency: 440, amplitude: 0.9, passes: 300)
+        #expect(
+            abs(quiet.level - loud.level) < 0.1,
+            "quiet level \(quiet.level) and loud level \(loud.level) should converge")
+    }
+
+    /// The gain applies to the spectrum too, not just `level` — bands drive
+    /// most visuals, so normalizing only the scalar would miss the point.
+    @Test func autoGainBoostsQuietSource() {
+        let fixed = feedSine(
+            frequency: 440, amplitude: 0.05, passes: 300, into: makeAnalyzer(autoGain: false))
+        let adapted = feedSine(frequency: 440, amplitude: 0.05, passes: 300)
+        #expect(
+            adapted.level > fixed.level + 0.2,
+            "adapted level \(adapted.level) should sit well above fixed \(fixed.level)")
+        let fixedPeak = fixed.bands[peakBand(fixed)]
+        let adaptedPeak = adapted.bands[peakBand(adapted)]
+        #expect(
+            adaptedPeak > fixedPeak + 0.1,
+            "adapted peak band \(adaptedPeak) should sit above fixed \(fixedPeak)")
+    }
+
+    /// Silence between songs must not disturb the adaptation: the gate holds
+    /// the gain, so the next loud passage comes back at the same level
+    /// instead of overshooting off a wound-up boost.
+    @Test func autoGainHoldsThroughSilence() {
+        let analyzer = AudioAnalyzer()
+        let before = feedSine(frequency: 440, amplitude: 0.9, passes: 60, into: analyzer)
+        _ = feedSilence(passes: 120, into: analyzer)
+        let after = feedSine(frequency: 440, amplitude: 0.9, passes: 60, into: analyzer)
+        #expect(
+            abs(after.level - before.level) < 0.05,
+            "level \(before.level) → \(after.level) across silence")
+    }
+
+    /// Disabling mid-flight ramps the gain back to zero, restoring the fixed
+    /// mapping rather than freezing whatever gain was applied.
+    @Test func disablingAutoGainRestoresFixedMapping() {
+        let analyzer = AudioAnalyzer()
+        _ = feedSine(frequency: 440, amplitude: 0.05, passes: 300, into: analyzer)
+        analyzer.setAutoGainEnabled(false)
+        let restored = feedSine(frequency: 440, amplitude: 0.05, passes: 300, into: analyzer)
+        let fixed = feedSine(frequency: 440, amplitude: 0.05, into: makeAnalyzer(autoGain: false))
+        #expect(
+            abs(restored.level - fixed.level) < 0.05,
+            "after disabling, level \(restored.level) should match fixed \(fixed.level)")
     }
 
     // MARK: - Centroid

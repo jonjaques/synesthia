@@ -2,10 +2,18 @@
 import { Picture } from 'astro:assets';
 import Base from '../layouts/Base.astro';
 import Mark from '../components/Mark.astro';
-import GitHubLink from '../components/GitHubLink.astro';
+import Footer from '../components/Footer.astro';
 import ShotCarousel from '../components/ShotCarousel.astro';
 import DownloadOptions from '../components/DownloadOptions.astro';
-import { APP_STORE_AVAILABLE, DIRECT_DOWNLOAD_AVAILABLE, RELEASE, SITE } from '../consts';
+import Lightbox from '../components/Lightbox.astro';
+import {
+	APP_STORE_AVAILABLE,
+	APP_STORE_URL,
+	DIRECT_DOWNLOAD_AVAILABLE,
+	DIRECT_DOWNLOAD_URL,
+	RELEASE,
+	SITE,
+} from '../consts';
 
 // Copy that only makes sense when a given channel is on the page. The closing
 // heading named the App Store outright, and the Sources note drew a contrast
@@ -15,36 +23,56 @@ const BOTH_CHANNELS = APP_STORE_AVAILABLE && DIRECT_DOWNLOAD_AVAILABLE;
 const ctaHeading = APP_STORE_AVAILABLE ? 'Free on the Mac App Store.' : 'Free for your Mac.';
 
 import auroraFull from '../assets/screenshots/aurora-fullscreen.png';
+import barsFull from '../assets/screenshots/bars-fullscreen.png';
 import nebulaFull from '../assets/screenshots/nebula-fullscreen.png';
 import tunnelFull from '../assets/screenshots/tunnel-fullscreen.png';
+import { fullSize } from '../lib/shots';
 
 // This page is a business card, not a manual: one screen of pitch, one screen
 // of proof, and the parts of the README a buyer actually needs. Every plate is
 // a real capture taken by `make screenshots` off the shipping build — nothing
 // here is a re-creation of the app.
-const visualizers = [
+//
+// The order matches `VisualizerRegistry.all`, which is the order ⌘1, ⌘2, … select.
+//
+// This array is the page's only count of visualizers: the keyboard shortcut and
+// the schema's feature list are derived from it below, and every heading around
+// it is written to hold at any length. Adding a fifth plate should be adding a
+// plate, not a hunt through the copy for the word "four".
+const shots = [
 	{
 		name: 'Nebula',
 		image: nebulaFull,
-		alt: 'The Nebula visualizer: a dense sphere of violet, blue and green particles suspended on black.',
-		options: 'Density · Glow · Swirl',
-		line: 'A particle cloud in orbit. Each particle is bound to one frequency band and flares when its band hits.',
+		alt: 'The Nebula visualizer: a cloud of blue, green and gold particles hanging on black inside a faint ring.',
+		options: 'Density · Turbulence · Swirl',
+		line: 'A hundred thousand particles, all simulated on the GPU. Bass holds the core, mids shear into a disc, hi-hats throw comets.',
 	},
 	{
 		name: 'Spectrum Tunnel',
 		image: tunnelFull,
-		alt: 'The Spectrum Tunnel visualizer: concentric rings of magenta, cyan and gold receding toward a vanishing point.',
-		options: 'Twist · Glow',
-		line: 'Flight through a tube whose angular slices are the live spectrum. Loud frequencies push the walls out.',
+		alt: 'The Spectrum Tunnel visualizer: the inside of a cave of glowing blue and gold rock and steam, lit from within, curving away out of sight.',
+		options: 'Twist · Bend · Fog',
+		line: 'A cave raymarched out of the spectrum itself. Loud bands push the rock in, and the bends really do hide what is behind them.',
 	},
 	{
 		name: 'Aurora',
 		image: auroraFull,
-		alt: 'The Aurora visualizer: stacked ribbons of magenta, gold, green and blue rippling horizontally like northern lights.',
-		options: 'Ribbons · Wave height',
-		line: 'Layered ribbons riding the waveform, each one glowing with its own slice of the spectrum.',
+		alt: 'The Aurora visualizer: stacked ribbons of violet, blue, green, gold and red rippling across a starfield like northern lights.',
+		options: 'Ribbons · Wave height · Stars',
+		line: 'Eight ribbons, one per register — sub-bass on the horizon, air at the top. Kicks and hi-hats light the constellations.',
+	},
+	{
+		name: 'Bars',
+		image: barsFull,
+		alt: 'The Bars visualizer: a mixing console drawn in perspective, with a wall of green-to-red LED meter columns, two lamp-lit VU needles either side of a waveform scope, and a row of lit faders receding below.',
+		options: 'Columns · Peak hold · Meters',
+		line: 'A mixing desk that plays the track. LED columns with hanging peak caps, VU needles with real ballistics, faders riding the mix.',
 	},
 ];
+
+const visualizers = await Promise.all(
+	shots.map(async (v) => ({ ...v, full: await fullSize(v.image) })),
+);
 
 const palettes = [
 	{ name: 'Prism', colors: ['#2E9BFF', '#3FE39B', '#F2D544', '#FF7A18', '#FF2D2D'] },
@@ -55,38 +83,40 @@ const palettes = [
 ];
 
 const sources = [
-	{ name: 'Music app', does: 'Drives Music.app and shows the title, artist and artwork while it plays.' },
-	{ name: 'System audio', does: 'Whatever the Mac is playing — Spotify, a browser tab, a game.' },
-	{ name: 'Audio input', does: 'A microphone, line-in, or any other input device.' },
-	{ name: 'Audio file', does: 'Plays a file from disk inside the app, on loop.' },
+	{
+		name: 'System audio',
+		does: 'Music, Spotify, a browser tab, a game — whatever is coming out of the speakers. Names the track, too.',
+	},
+	{ name: 'Audio input', does: 'A microphone, an interface, line-in — any input device.' },
+	{ name: 'Audio file', does: 'Plays a file from disk, on loop, inside the app.' },
 ];
 
 const chain = [
 	{
-		stage: 'Capture',
-		spec: 'ScreenCaptureKit · AVAudioEngine',
-		line: 'System audio, a mic or a file — all of them arrive as one mono stream.',
+		stage: 'Hear it',
+		spec: 'System audio · mic · file',
+		line: 'Point it at an app, an input, or a file. The audio is read and dropped — nothing is recorded.',
 	},
 	{
-		stage: 'Analyse',
-		spec: '2048-point FFT · vDSP',
-		line: 'A Hann-windowed FFT on Accelerate, off the main thread, allocating nothing on the audio thread.',
+		stage: 'Split it',
+		spec: '64 bands · 30 Hz–16 kHz',
+		line: 'A Fourier transform splits each slice into log-spaced bands, so the low end gets the detail it needs.',
 	},
 	{
-		stage: 'Snapshot',
-		spec: '64 bands · 30 Hz – 16 kHz',
-		line: 'Log-spaced bands, a waveform, bass, mid, treble and level, plus a beat envelope.',
+		stage: 'Read it',
+		spec: 'Kick, snare, hi-hat',
+		line: 'Bass, mids and treble drive different parts of the picture. A bassline and a cymbal never move the same thing.',
 	},
 	{
-		stage: 'Render',
-		spec: '60 fps · Metal',
-		line: 'The newest snapshot goes straight to a Metal shader. Audio never publishes into the UI.',
+		stage: 'Draw it',
+		spec: 'Straight to the GPU',
+		line: 'Metal shaders draw the newest reading, at whatever refresh rate your display runs — 120 Hz included.',
 	},
 ];
 
 const shortcuts = [
 	{ keys: ['Space'], does: 'Play or pause' },
-	{ keys: ['⌘', '1'], does: 'Switch visualizer' },
+	{ keys: ['⌘', `1–${visualizers.length}`], does: 'Switch visualizer' },
 	{ keys: ['⌘', '→'], does: 'Next track' },
 	{ keys: ['⌘', 'O'], does: 'Open an audio file' },
 	{ keys: ['⌃', '⌘', 'F'], does: 'Fullscreen' },
@@ -95,11 +125,11 @@ const shortcuts = [
 const native = [
 	{
 		title: 'Controls that get out of the way',
-		body: 'The bottom bar fades after a few seconds of stillness, and real fullscreen leaves nothing but the visualizer.',
+		body: 'The bottom bar fades after a few seconds of stillness. Real fullscreen leaves nothing but the visualizer.',
 	},
 	{
 		title: 'Open to new visualizers',
-		body: 'A visualizer is a class, a descriptor and a shader. Add one and its sliders appear in the options panel on their own.',
+		body: 'Every visualizer is a plug-in: declare your sliders, write a Metal shader, and the app builds the UI. MIT licensed, on GitHub.',
 	},
 ];
 
@@ -108,9 +138,53 @@ const navLinks = [
 	['Sources', '#sources'],
 	['How it works', '#pipeline'],
 ];
+
+// The product entity, emitted only here — this page *is* the app's page, and a
+// `SoftwareApplication` repeated on the privacy policy is a claim about the
+// privacy policy.
+//
+// `screenshot` is deliberately absent. It used to be og.png, which is a title
+// card with a wordmark on it and not a screenshot of anything. Pointing it at
+// the real captures instead is a trap: touching an imported `ImageMetadata`
+// anywhere outside a `<Picture>` — even to read `.width` — makes Astro emit the
+// untouched original alongside its transforms, which here is 9.6 MB of 3420 px
+// PNG added to every deploy. Google's software rich result does not read
+// `screenshot`, so the honest omission costs nothing.
+const abs = (path: string) => new URL(path, Astro.site).href;
+
+const softwareApplication = {
+	'@type': 'SoftwareApplication',
+	'@id': `${Astro.site?.href}#app`,
+	name: SITE.name,
+	applicationCategory: 'MultimediaApplication',
+	applicationSubCategory: 'Music visualizer',
+	operatingSystem: RELEASE.requires,
+	softwareVersion: RELEASE.version,
+	fileSize: RELEASE.size,
+	description: SITE.description,
+	url: Astro.site?.href,
+	image: abs('/img/og.png'),
+	author: { '@type': 'Person', name: SITE.author },
+	offers: {
+		'@type': 'Offer',
+		price: '0',
+		priceCurrency: 'USD',
+		availability: 'https://schema.org/InStock',
+	},
+	license: 'https://opensource.org/licenses/MIT',
+	// Only advertise a download that exists — see the availability flags.
+	...(DIRECT_DOWNLOAD_AVAILABLE ? { downloadUrl: abs(DIRECT_DOWNLOAD_URL) } : {}),
+	...(APP_STORE_AVAILABLE ? { installUrl: APP_STORE_URL } : {}),
+	featureList: [
+		'64-band log-spaced FFT spectrum analysis from 30 Hz to 16 kHz',
+		`${visualizers.length} GPU visualizers: ${visualizers.map((v) => v.name).join(', ')}`,
+		'Captures system audio, microphone, line-in, or a local file',
+		'Now-playing track info for Music and Spotify, with no permission required',
+	],
+};
 ---
 
-<Base>
+<Base schema={[softwareApplication]}>
 	<!-- ================================================================ nav -->
 	<header class="sticky top-0 z-40 border-b border-line bg-ink/70 backdrop-blur-xl">
 		<div class="rail flex h-14 items-center justify-between gap-6">
@@ -129,15 +203,15 @@ const navLinks = [
 				}
 			</nav>
 
-			<DownloadOptions size="compact" class="hidden sm:inline-flex" />
+			<DownloadOptions size="compact" placement="header" class="hidden sm:inline-flex" />
 		</div>
 	</header>
 
 	<main id="main">
 		<!-- ============================================================ hero -->
-		<!-- The pitch and the proof on one screen: the carousel cycles the three
-		     visualizers in the same window, which is why the section below can be
-		     three small plates instead of three full-width ones. -->
+		<!-- The pitch and the proof on one screen: the carousel cycles every
+		     visualizer in the same window, which is why the section below can be a
+		     grid of small plates instead of a stack of full-width ones. -->
 		<section class="rail pt-14 pb-24 sm:pt-20 md:pt-24 md:pb-32">
 			<div class="grid items-center gap-12 lg:grid-cols-2 lg:gap-14">
 				<div>
@@ -146,12 +220,12 @@ const navLinks = [
 					<h1 class="display h1 mt-5">Music you can see.</h1>
 
 					<p class="mt-6 max-w-[42ch] text-lg text-dim">
-						Synesthia turns whatever your Mac is playing into light. A 64-band FFT reads the signal
-						sixty times a second, so bass, mids and treble each shape the picture differently.
+						Synesthia turns whatever your Mac is playing into light. It splits the sound into 64 bands,
+						sixty times a second, so a kick, a snare and a cymbal each move something different.
 					</p>
 
 					<div class="mt-8 flex flex-wrap items-center gap-3">
-						<DownloadOptions />
+						<DownloadOptions placement="hero" />
 						<a href="#visualizers" class="btn btn-secondary text-[0.9375rem]">See it running</a>
 					</div>
 
@@ -170,30 +244,48 @@ const navLinks = [
 		<section id="visualizers" class="rail scroll-mt-20 pb-24 md:pb-32">
 			<div class="max-w-[42rem]" data-reveal>
 				<p class="eyebrow">Visualizers</p>
-				<h2 class="display h2 mt-4">Three ways to draw the same 64 bands.</h2>
+				<h2 class="display h2 mt-4">Same song, different eyes.</h2>
 				<p class="mt-5 text-dim">
-					Each reads the same analysis and interprets it differently. Switch with <kbd>⌘1</kbd>
-					<kbd>⌘2</kbd> <kbd>⌘3</kbd> without stopping the music. All three share{' '}
-					<span class="text-paper">Sensitivity</span>, <span class="text-paper">Speed</span> and five
-					palettes, and the app remembers whatever you set.
+					Every visualizer reads the same 64 bands and arrives somewhere different. Switch with
+					<kbd>⌘</kbd> and a number, without stopping the music — each one remembers its own{' '}
+					<span class="text-paper">Sensitivity</span>, <span class="text-paper">Speed</span>, palette
+					and sliders, so switching back restores the look you set.
 				</p>
 			</div>
 
-			<div class="mt-12 grid gap-8 md:grid-cols-3 md:gap-6">
+			<div class="mt-12 grid gap-8 sm:grid-cols-2 sm:gap-6">
 				{
 					visualizers.map((v, i) => (
 						<figure data-reveal>
-							<div class="plate">
-								<Picture
-									src={v.image}
-									formats={['avif']}
-									fallbackFormat="webp"
-									widths={[480, 720, 1000, 1400]}
-									sizes="(min-width: 768px) 32vw, 100vw"
-									alt={v.alt}
-									loading={i === 0 ? 'eager' : 'lazy'}
-								/>
-							</div>
+								<a
+									class="plate shot-zoom"
+									href={v.full}
+									data-lightbox
+									data-label={`${v.name}, fullscreen`}
+									aria-label={`View the ${v.name} screenshot full size`}
+								>
+									<Picture
+										src={v.image}
+										formats={['avif']}
+										fallbackFormat="webp"
+										widths={[480, 720, 1000, 1400]}
+										sizes="(min-width: 640px) 47vw, 100vw"
+										alt={v.alt}
+										loading={i === 0 ? 'eager' : 'lazy'}
+									/>
+									<span class="zoom-badge" aria-hidden="true">
+										<svg viewBox="0 0 16 16" focusable="false">
+											<path
+												d="M6 2.75H2.75V6M10 13.25h3.25V10"
+												stroke="currentColor"
+												stroke-width="1.5"
+												stroke-linecap="round"
+												stroke-linejoin="round"
+												fill="none"
+											/>
+										</svg>
+									</span>
+								</a>
 							<figcaption class="mt-4">
 								<h3 class="h3">{v.name}</h3>
 								<p class="spec mt-1.5">{v.options}</p>
@@ -227,12 +319,12 @@ const navLinks = [
 					<p class="eyebrow">Sources</p>
 					<h2 class="display h2 mt-4">It listens to anything your Mac plays.</h2>
 					<p class="mt-5 text-sm text-mute">
-						macOS asks once for Screen &amp; System Audio Recording so the app can hear other apps,
-						and once for Automation so it can drive Music. The video half of the screen recording
-						API is never read.{' '}
+						macOS asks once for Screen &amp; System Audio Recording — it is the only way it lets one app
+						hear another. Synesthia keeps the sound and throws the picture away. Naming the track needs
+						no permission at all: Music and Spotify already announce it, and Synesthia listens.{' '}
 						{
 							BOTH_CHANNELS &&
-								'Music control ships in the build downloaded from this site; in the App Store build, System audio hears Music.app just as well.'
+								'Play, pause and skip buttons ship in the build downloaded from this site; both builds show what is playing.'
 						}
 					</p>
 				</div>
@@ -271,7 +363,7 @@ const navLinks = [
 		</section>
 
 		<!-- =========================================================== macOS -->
-		<section class="rail pb-24 md:pb-32">
+		<section id="native" class="rail scroll-mt-20 pb-24 md:pb-32">
 			<div class="grid gap-12 md:grid-cols-12 md:gap-12">
 				<div class="md:col-span-6" data-reveal>
 					<p class="eyebrow">Native</p>
@@ -291,16 +383,21 @@ const navLinks = [
 				<div class="md:col-span-5 md:col-start-8" data-reveal>
 					<div class="surface p-6">
 						<p class="eyebrow">Keyboard</p>
+						<!-- `dt` must precede its `dd` inside a `dl > div` — the reading order
+						     is the term then its description, and a screen reader announces
+						     them that way regardless of what CSS does. `flex-row-reverse`
+						     keeps the keys on the right where they read better, without
+						     putting the description first in the DOM. -->
 						<dl class="mt-5">
 							{
 								shortcuts.map((s) => (
-									<div class="flex items-center justify-between gap-6 border-b border-line-soft py-3 first:pt-0 last:border-0 last:pb-0">
-										<dd class="text-[0.95rem] text-dim">{s.does}</dd>
+									<div class="flex flex-row-reverse items-center justify-between gap-6 border-b border-line-soft py-3 first:pt-0 last:border-0 last:pb-0">
 										<dt class="flex shrink-0 gap-1">
 											{s.keys.map((k) => (
 												<kbd>{k}</kbd>
 											))}
 										</dt>
+										<dd class="text-[0.95rem] text-dim">{s.does}</dd>
 									</div>
 								))
 							}
@@ -311,7 +408,7 @@ const navLinks = [
 		</section>
 
 		<!-- ============================================================= cta -->
-		<section class="rail pb-24 md:pb-32">
+		<section id="download" class="rail scroll-mt-20 pb-24 md:pb-32">
 			<div class="surface flex flex-col items-center px-6 py-16 text-center sm:py-20" data-reveal>
 				<img
 					src="/img/icon-256.png"
@@ -329,7 +426,7 @@ const navLinks = [
 				<h2 class="display h2 mt-7 max-w-[18ch]">{ctaHeading}</h2>
 
 				<div class="mt-8 flex flex-wrap items-center justify-center gap-3">
-					<DownloadOptions />
+					<DownloadOptions placement="cta" />
 				</div>
 
 				<p class="spec mt-6">
@@ -340,7 +437,7 @@ const navLinks = [
 				{
 					BOTH_CHANNELS && (
 						<p class="mt-4 text-sm text-mute">
-							The direct download adds Music.app controls and updates itself.
+							The direct download adds playback controls for Music and Spotify, and updates itself.
 						</p>
 					)
 				}
@@ -348,22 +445,9 @@ const navLinks = [
 		</section>
 	</main>
 
-	<footer class="border-t border-line">
-		<div
-			class="rail flex flex-col items-center justify-between gap-4 py-8 text-sm text-mute sm:flex-row"
-		>
-			<div class="flex items-center gap-2.5">
-				<Mark size={20} class="h-5 w-5" />
-				<span class="font-display font-semibold tracking-tight text-dim">Synesthia</span>
-			</div>
-			<nav class="flex items-center gap-6">
-				<a href="/support" class="transition-colors hover:text-paper">Support</a>
-				<a href="/privacy" class="transition-colors hover:text-paper">Privacy</a>
-				<GitHubLink />
-			</nav>
-			<p>© 2026 {SITE.author}</p>
-		</div>
-	</footer>
+	<Footer />
+
+	<Lightbox />
 </Base>
 
 <script>

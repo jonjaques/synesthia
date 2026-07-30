@@ -184,10 +184,20 @@ Requested only if you select the "Audio input" source, so a mic or line-in can
 drive the visuals. Input is analyzed in memory and never recorded or played
 back.
 
-THIS BUILD DOES NOT CONTROL THE MUSIC APP
+NOW PLAYING NEEDS NO PERMISSION
 
-Synesthia sends no Apple Events. It has no automation entitlement, and the
-Music.app integration is compiled out of this build entirely.
+Synesthia names the track you are listening to in Music or Spotify. It does this
+by observing the distributed notifications those apps already broadcast
+system-wide — a public API, no entitlement, no prompt, and no request for your
+music library. No private frameworks are used; MediaRemote is not linked.
+
+THIS BUILD DOES NOT CONTROL ANY MUSIC PLAYER
+
+Synesthia sends no Apple Events. It has no automation entitlement and no
+temporary exception; every line of AppleScript is compiled out of this build,
+which the release script verifies against the built archive. Playback control
+and album artwork are absent here by design, and nothing in the app asks for
+them.
 
 PRIVACY
 

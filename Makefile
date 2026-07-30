@@ -47,7 +47,7 @@ endif
 .PHONY: help build bump build-direct run test clean app-path \
         install healthcheck lint format \
         demo-track screenshots check-metadata \
-        appstore appstore-upload direct direct-fast bump \
+        appstore appstore-upload direct direct-fast bump version \
         sparkle-keys appcast publish-release publish-dry-run
 
 help: ## List the available targets
@@ -103,7 +103,7 @@ format: ## Reformat in place: Prettier, then swift-format (.swift-format)
 demo-track: ## Regenerate Synesthia/Resources/DemoLoop.m4a (deterministic)
 	python3 scripts/make_demo_loop.py
 
-screenshots: ## Capture every visualizer into web/src/assets/screenshots (see script header)
+screenshots: ## Capture every visualizer into web/src/assets/screenshots/<run>, incl. App Store sizes
 	./scripts/take-screenshots.sh $(ARGS)
 
 # ==== Release  (docs/distribution.md)
@@ -120,8 +120,11 @@ direct: ## Archive, sign, notarize, staple and package the direct build (Direct 
 direct-fast: ## Same, but skip notarization (local smoke test)
 	./scripts/build-direct.sh --skip-notarize
 
-bump: ## Bump the version everywhere: BUMP=patch|minor|major|<version> (default patch)
+bump: ## Cut a release: bump BUMP=patch|minor|major|<version>, draft notes, commit, tag
 	./scripts/bump-version.sh $(BUMP) $(ARGS)
+
+version: ## Print the current marketing version and build number
+	@cat VERSION
 
 sparkle-keys: ## One-time: create the Sparkle EdDSA signing key and print the public half
 	./scripts/sparkle-keys.sh $(ARGS)

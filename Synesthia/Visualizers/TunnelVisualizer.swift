@@ -24,7 +24,7 @@ final class TunnelVisualizer: Visualizer {
     static let descriptor = VisualizerDescriptor(
         id: "tunnel",
         name: "Spectrum Tunnel",
-        tagline: "Fly through a winding cave carved by the frequency spectrum",
+        tagline: "Fly through a winding cave the music carves as you go",
         options: [
             VisualizerOption(id: "twist", name: "Twist", range: 0.0...3.0, defaultValue: 1.0),
             VisualizerOption(id: "glow", name: "Glow", range: 0.3...2.5, defaultValue: 1.0),

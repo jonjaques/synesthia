@@ -1,0 +1,61 @@
+---
+/**
+ * Google Analytics 4, and the one decision that has to be made before it loads.
+ *
+ * Two things are deliberate here:
+ *
+ * 1. **The tag is injected, not written as a `<script src>`.** That is what
+ *    makes the opt-out below meaningful: a static tag would have started
+ *    fetching before any check could run, and blocking it afterwards is not the
+ *    same as never requesting it.
+ * 2. **Do Not Track and Global Privacy Control are honoured.** The privacy page
+ *    tells visitors that enabling either one opts them out, so it has to
+ *    actually be true. When it fires, nothing is loaded, no cookie is written,
+ *    and `data-analytics` is never set — so `scripts/analytics.ts` attaches no
+ *    listeners either.
+ *
+ * `anonymize_ip` used to be passed here. It is a Universal Analytics parameter
+ * that GA4 ignores: GA4 truncates the address before it is written to a
+ * property, with no setting to change. Passing it implied a choice we had made,
+ * which was misleading in both directions.
+ *
+ * Emits nothing when PUBLIC_GA_ID is unset or a placeholder — see consts.ts.
+ */
+import { GA_ENABLED, GA_MEASUREMENT_ID } from '../consts';
+---
+
+{
+	GA_ENABLED && (
+		<script is:inline define:vars={{ measurementId: GA_MEASUREMENT_ID }}>
+			(function () {
+				var nav = window.navigator;
+				if (
+					nav.globalPrivacyControl === true ||
+					nav.doNotTrack === '1' ||
+					nav.msDoNotTrack === '1' ||
+					window.doNotTrack === '1'
+				) {
+					return;
+				}
+
+				window.dataLayer = window.dataLayer || [];
+				window.gtag = function () {
+					window.dataLayer.push(arguments);
+				};
+
+				window.gtag('js', new Date());
+				window.gtag('config', measurementId);
+
+				var tag = document.createElement('script');
+				tag.async = true;
+				tag.src =
+					'https://www.googletagmanager.com/gtag/js?id=' + encodeURIComponent(measurementId);
+				document.head.appendChild(tag);
+
+				/* The signal scripts/analytics.ts waits for. Set last, so it only
+				   ever means "the tag really is on this page". */
+				document.documentElement.dataset.analytics = 'on';
+			})();
+		</script>
+	)
+}

@@ -16,9 +16,14 @@
 #include <metal_stdlib>
 using namespace metal;
 
-// Layout must match VizUniforms in VisualizerCore.swift exactly (28 floats / 112 bytes).
-// The CPU fills that Swift struct each frame and copies its raw bytes here;
-// see VisualizerCore.swift for what each field means.
+// Layout must match VizUniforms in VisualizerCore.swift exactly (42 floats /
+// 168 bytes). The CPU fills that Swift struct each frame and copies its raw
+// bytes here; see VisualizerCore.swift for what each field means.
+//
+// `p` is the visualizer's own options in descriptor order — an array rather
+// than p0…p15 fields so it can be indexed: each visualizer names its slots
+// with `constant int k…` below, and a future generic host for data-only
+// plugins can map declared options onto slots it knows nothing about.
 struct VizUniforms {
     float2 resolution;
     float time;
@@ -31,14 +36,7 @@ struct VizUniforms {
     float sensitivity;
     float speed;
     float palette;
-    float p0;
-    float p1;
-    float p2;
-    float p3;
-    float p4;
-    float p5;
-    float p6;
-    float p7;
+    float p[16];
     float subBass;
     float lowMid;
     float highMid;
@@ -47,7 +45,20 @@ struct VizUniforms {
     float trebleBeat;
     float flux;
     float centroid;
+    float beatHit;        // 1 on the frame a kick was detected, else 0
+    float trebleHit;      // 1 on the frame a hi-hat/snare transient landed
+    float beatCount;      // kicks counted since launch
+    float frame;          // frames rendered since launch
+    float reduceMotion;   // 1 when the system Reduce Motion setting is on
+    float intro;          // 0 → 1 ramp after this visualizer was built
 };
+
+// The one invariant that used to be uncheckable: both structs are 42 floats,
+// and the Swift side is pinned by VizUniformsTests. Editing one without the
+// other now fails the build here or the test suite there, instead of silently
+// reading every field one slot over.
+static_assert(sizeof(VizUniforms) == 168,
+              "VizUniforms must stay byte-identical to the Swift struct in VisualizerCore.swift");
 
 struct FSQuadOut {
     float4 position [[position]];
@@ -177,6 +188,15 @@ static float starLayer(float2 uv, float scale, float t, float twinkleSpeed) {
 // onsets pump the steam; and the scene's exposure breathes with the track's
 // overall loudness.
 
+// The tunnel's option slots, in the order TunnelVisualizer.descriptor
+// declares them (`u.p[kTunnelGlow]` reads the Glow slider).
+constant int kTunnelTwist = 0;
+constant int kTunnelGlow = 1;
+constant int kTunnelBend = 2;
+constant int kTunnelPulse = 3;
+constant int kTunnelRipple = 4;
+constant int kTunnelFog = 5;
+
 // 3D value-noise stack standing in for Shadertoy's RGBA-noise texture.
 static float hash31(float3 p) {
     p = fract(p * float3(443.897, 441.423, 437.195));
@@ -246,12 +266,12 @@ static float tunnelFold(float angle) {
 // the wall. Everything audible deforms it — see the section comment.
 static float tunnelMap(float3 pos, constant VizUniforms& u,
                        constant float* bands, constant float* wave) {
-    float2 xy = pos.xy - tunnelCenter(pos.z, u.p2);
+    float2 xy = pos.xy - tunnelCenter(pos.z, u.p[kTunnelBend]);
     float angle = atan2(xy.y, xy.x);
     float e = clamp(bandAt(bands, tunnelFold(angle)) * u.sensitivity, 0.0, 1.2);
     // spiral ridges spinning past: rate from the Twist slider, depth from
     // the low-mids
-    float arms = sin(angle * 3.0 - pos.z * 0.4 + u.time * u.speed * (0.5 + 1.0 * u.p0))
+    float arms = sin(angle * 3.0 - pos.z * 0.4 + u.time * u.speed * (0.5 + 1.0 * u.p[kTunnelTwist]))
                * (0.05 + 0.25 * clamp(u.lowMid * u.sensitivity, 0.0, 1.0));
     // power-shaped noise carves terraced crags into the rock
     float crags = pow(fbmSharp(pos * 0.55) * 3.3, 1.3);
@@ -261,7 +281,7 @@ static float tunnelMap(float3 pos, constant VizUniforms& u,
     float r = 1.1
         + 0.5 * cavern
         + 0.35 * u.bass * u.sensitivity                     // bass blows the tunnel wide
-        + u.p4 * (0.42 * crags - 0.30                       // crags (Ripple slider)
+        + u.p[kTunnelRipple] * (0.42 * crags - 0.30                       // crags (Ripple slider)
                   + 0.06 * waveAt(wave, fract(pos.z * 0.10)))
         + arms
         - 0.30 * e * e;                                     // loud bands bulge the wall inward
@@ -275,9 +295,9 @@ fragment float4 tunnelFragment(FSQuadOut in [[stage_in]],
                                constant VizUniforms& u [[buffer(0)]],
                                constant float* bands [[buffer(1)]],
                                constant float* wave [[buffer(2)]]) {
-    float glow = u.p1;
-    float pulse = u.p3;
-    float fogAmt = u.p5;
+    float glow = u.p[kTunnelGlow];
+    float pulse = u.p[kTunnelPulse];
+    float fogAmt = u.p[kTunnelFog];
 
     // Square-space pixel coordinates (y half-height = 1).
     float2 suv = in.uv * 2.0 - 1.0;
@@ -288,8 +308,8 @@ fragment float4 tunnelFragment(FSQuadOut in [[stage_in]],
     // swings). The kick surges it forward; a slow continuous roll keeps the
     // flight alive.
     float camZ = u.time * u.speed * 2.2 + 0.4 * u.beat;
-    float3 ro = float3(tunnelCenter(camZ, u.p2), camZ);
-    float3 ta = float3(tunnelCenter(camZ + 2.0, u.p2), camZ + 2.0);
+    float3 ro = float3(tunnelCenter(camZ, u.p[kTunnelBend]), camZ);
+    float3 ta = float3(tunnelCenter(camZ + 2.0, u.p[kTunnelBend]), camZ + 2.0);
     float rollA = u.time * 0.1 + 0.6 * sin(u.time * 0.3);
     float3 fw = normalize(ta - ro);
     float3 right = normalize(cross(fw, float3(sin(rollA), cos(rollA), 0.0)));
@@ -312,7 +332,7 @@ fragment float4 tunnelFragment(FSQuadOut in [[stage_in]],
     }
 
     // Recover the wall's slice of the spectrum.
-    float2 xy = p.xy - tunnelCenter(p.z, u.p2);
+    float2 xy = p.xy - tunnelCenter(p.z, u.p[kTunnelBend]);
     float fold = tunnelFold(atan2(xy.y, xy.x));
     float e = clamp(bandAt(bands, fold) * u.sensitivity, 0.0, 1.5);
 
@@ -393,6 +413,11 @@ fragment float4 tunnelFragment(FSQuadOut in [[stage_in]],
 // sky through air at the top, each with its own motion personality and each
 // shaded along its length by the fine spectrum inside its own range.
 
+// The aurora's option slots, in descriptor order.
+constant int kAuroraRibbons = 0;
+constant int kAuroraHeight = 1;
+constant int kAuroraStars = 2;
+
 // One layer of the aurora's star field: a jittered grid where ~10% of cells
 // hold a star, each with its own size, tint, twinkle phase, and flash
 // gates. The air band sets the ambient twinkle level; every hi-hat lights a
@@ -433,7 +458,7 @@ fragment float4 auroraFragment(FSQuadOut in [[stage_in]],
     float2 uv = in.uv;
     float aspect = u.resolution.x / max(u.resolution.y, 1.0);
     float2 suv = float2(uv.x * aspect, uv.y);
-    float starsAmt = u.p2;
+    float starsAmt = u.p[kAuroraStars];
 
     // Night-sky gradient, tinted faintly by the palette and the spectral
     // centroid so the sky's mood follows the music's brightness.
@@ -456,8 +481,8 @@ fragment float4 auroraFragment(FSQuadOut in [[stage_in]],
     col += cosPalette(0.05, u.palette) * fog * smoothstep(0.30, 0.0, uv.y)
          * (0.04 + 0.30 * u.subBass * u.sensitivity);
 
-    int layers = clamp(int(u.p0 + 0.5), 2, 8);
-    float height = u.p1;
+    int layers = clamp(int(u.p[kAuroraRibbons] + 0.5), 2, 8);
+    float height = u.p[kAuroraHeight];
 
     // One ribbon per instrument group, low to high: sub-bass at the bottom
     // of the sky through air at the top. Each has its own motion
@@ -527,22 +552,85 @@ fragment float4 auroraFragment(FSQuadOut in [[stage_in]],
 
 // ---------------------------------------------------------------- Nebula
 //
-// Nebula is the one hybrid visualizer: this fragment shader paints the smoky
-// background, then a CPU-simulated particle cloud (NebulaVisualizer.swift)
-// is drawn on top with the point-sprite pipeline below, using additive
-// blending so overlapping particles glow brighter.
+// The compute visualizer. Up to 131,072 particles live in device-private
+// memory and are advanced entirely on the GPU; the CPU encodes a dispatch and
+// otherwise never touches them (see NebulaVisualizer.swift and
+// ParticleSystem.swift for the buffers, and docs/rendering.md for why). Four
+// stages per frame:
+//
+//   1. nebulaStep                one thread per particle: forces, integration,
+//                                and the particle's own size and color
+//   2. nebulaBackgroundFragment  the smoky sky, into a float16 HDR target
+//   3. nebulaSpriteVertex/Fragment  one additively blended quad per particle,
+//                                stretched along its own velocity
+//   4. nebulaTonemapFragment     bloom off the HDR mip chain, then display
+//
+// The simulation is *force-based*, not kinematic. The three bodies (bass core,
+// mid disc, treble halo) define a target position for every particle, and the
+// particle is pulled toward it by a spring while turbulence, comet impulses
+// and the kick shockwave push it off — so it overshoots, lags, and streams,
+// instead of tracking a formula exactly. That difference is the whole reason
+// to move to the GPU: the shapes stay legible while the motion between them
+// becomes weather.
+
+// Nebula's option slots, in the order NebulaVisualizer.descriptor declares
+// them.
+constant int kNebulaDensity = 0;
+constant int kNebulaGlow = 1;
+constant int kNebulaTrails = 2;
+constant int kNebulaTurbulence = 3;
+constant int kNebulaSwirl = 4;
+constant int kNebulaOrbits = 5;
+constant int kNebulaSpread = 6;
+constant int kNebulaHalos = 7;
+constant int kNebulaImpact = 8;
+constant int kNebulaForm = 9;
+
+// Which body a band belongs to: 0 = bass core (bands 0–11), 1 = mid disc
+// (12–46), 2 = treble halo (47–63).
+static int nebulaBody(int band) {
+    return band < 12 ? 0 : (band >= 47 ? 2 : 1);
+}
+
+// One particle's simulation state, 96 bytes, living in device-private memory
+// for the whole life of the visualizer. `posSize` and `color` are outputs the
+// vertex shader reads; the rest is state only the kernels care about.
+// Mirrored by NebulaVisualizer.GPUParticle — not because the CPU reads one
+// (it never does), but so the Swift side derives the buffer stride from a
+// layout instead of a hand-written byte count.
+struct NebulaParticle {
+    float4 posSize;    // xyz world position, w sprite size
+    float4 color;      // rgb, w intensity
+    float4 velHeat;    // xyz velocity, w heat (0…1, decays)
+    float4 dirSpin;    // xyz orbit direction (unit), w spin rate
+    float4 axisBand;   // xyz orbit axis, w band index 0…63
+    float4 traits;     // x phase, y radius bias, z per-particle seed, w spare
+};
+
+static_assert(sizeof(NebulaParticle) == 96,
+              "NebulaParticle must stay byte-identical to NebulaVisualizer.GPUParticle");
+
+// The axis the mid disc orbits: tilted off vertical and slowly precessing, so
+// the disc leans and wanders over the course of a song. Shared by the kernel
+// (which flattens the disc onto this plane) and the background (whose dust
+// lane runs along it).
+static float3 nebulaGalacticAxis(constant VizUniforms& u) {
+    float precession = u.time * 0.02;
+    return normalize(float3(0.30 * cos(precession), 1.0, 0.30 * sin(precession)));
+}
 
 // The nebula's three bodies: 0 = bass core, 1 = mid disc, 2 = treble halo.
 // Each drifts on its own slow orbit — the heavy core lurches on kicks, the
 // disc and halo counter-orbit around it, swinging wider as their register
-// gets louder. The Orbit speed slider (p3) scales how fast they travel,
-// Spread (p4) how far they roam — 0 collapses them back into one centered
-// cloud. Mirrored on the CPU in NebulaVisualizer.orbCenter (keep the two in
-// sync): the simulation places the particles here and this shader paints
-// each body's background halo at the same spot.
+// gets louder. The Orbit speed slider scales how fast they travel, Spread how
+// far they roam — 0 collapses them back into one centered cloud.
+//
+// This used to be mirrored in Swift (`NebulaVisualizer.orbCenter`) because the
+// CPU placed the particles; now the kernel and this shader both call it and
+// the mirror is gone, along with the risk of the two drifting apart.
 static float3 nebulaOrbCenter(int body, constant VizUniforms& u) {
-    float t = u.time * u.speed * u.p3;
-    float spread = u.p4;
+    float t = u.time * u.speed * u.p[kNebulaOrbits];
+    float spread = u.p[kNebulaSpread];
     if (body == 0) {
         float3 c = float3(0.20 * sin(t * 0.42), 0.10 * sin(t * 0.31 + 1.7), 0.16 * cos(t * 0.36));
         float3 lurch = float3(sin(t * 0.5), 0.3 * cos(t * 0.37), cos(t * 0.5));
@@ -560,9 +648,9 @@ static float3 nebulaOrbCenter(int body, constant VizUniforms& u) {
 
 // The shared nebula camera: yaw/pitch orbit, centroid lean, kick dolly,
 // perspective divide, slow roll. Returns square-space coordinates (y
-// half-height 1, x before aspect correction) in xy and the perspective
-// factor in z. Both the particle pass and the background pass project
-// through this, so the background's halos sit exactly behind the 3D bodies.
+// half-height 1, x before aspect correction) in xy and the perspective factor
+// in z. The particle pass, the background halos and the dust lane all project
+// through this, so everything sits in the same space.
 static float3 nebulaProject(float3 world, constant VizUniforms& u) {
     float t = u.time * u.speed;
     // A non-uniform orbit around the whole cluster: the yaw speeds up and
@@ -588,6 +676,274 @@ static float3 nebulaProject(float3 world, constant VizUniforms& u) {
     return float3(clip, persp);
 }
 
+// Rodrigues' rotation: turn v around a unit axis by `angle`. The CPU
+// simulation used a quaternion for this; in a kernel the closed form is
+// cheaper and there is no quaternion type to reach for.
+static float3 rotateAround(float3 v, float3 axis, float angle) {
+    float c = cos(angle), s = sin(angle);
+    return v * c + cross(axis, v) * s + axis * dot(axis, v) * (1.0 - c);
+}
+
+// The turbulence field the particles are stirred by, evaluated per particle
+// per frame.
+//
+// Every component depends only on the *other* two axes, which makes the
+// divergence ∂x/∂x + ∂y/∂y + ∂z/∂z exactly zero — this is the
+// Arnold–Beltrami–Childress family of flows, and being divergence-free is the
+// point. A field with sinks would vacuum the whole cloud into a few knots
+// within seconds; an incompressible one shears it into filaments and sheets
+// and keeps them moving. Two octaves, each incompressible, so their sum is
+// too, for a dozen sin/cos — where the usual curl-of-noise field costs two
+// dozen noise fetches per particle.
+static float3 nebulaFlow(float3 p, float t) {
+    float3 v = float3(sin(p.y * 1.7 + t) - cos(p.z * 1.3 - t * 0.7),
+                      sin(p.z * 1.9 - t * 0.8) - cos(p.x * 1.5 + t * 0.6),
+                      sin(p.x * 1.3 + t * 0.9) - cos(p.y * 1.7 - t * 0.5));
+    float3 q = p * 2.7;
+    v += 0.45 * float3(sin(q.y - t * 1.3) - cos(q.z + t * 1.1),
+                       sin(q.z + t * 1.5) - cos(q.x - t * 1.2),
+                       sin(q.x - t * 1.1) - cos(q.y + t * 1.4));
+    return v;
+}
+
+// Seeds one particle. Runs once over the whole buffer (both halves of the
+// ping-pong), so raising Density later switches on slots that already hold a
+// plausible particle.
+kernel void nebulaSeed(device NebulaParticle* out [[buffer(1)]],
+                       constant VizUniforms& u [[buffer(2)]],
+                       uint gid [[thread_position_in_grid]]) {
+    float fi = float(gid);
+    float h1 = hash31(float3(fi, 1.7, 9.2));
+    float h2 = hash31(float3(fi, 5.1, 2.3));
+    float h3 = hash31(float3(fi, 8.9, 4.4));
+    float h4 = hash31(float3(fi, 3.3, 7.7));
+    float h5 = hash31(float3(fi, 6.6, 1.1));
+    float h6 = hash31(float3(fi, 2.2, 5.5));
+
+    // A uniform direction on the sphere, analytically: z uniform in -1…1 and
+    // the azimuth uniform gives equal area per band of z. (The CPU version
+    // rejection-sampled the unit cube; a kernel wants no loops.)
+    float z = h1 * 2.0 - 1.0;
+    float a = h2 * 6.28318;
+    float ring = sqrt(max(1.0 - z * z, 0.0));
+    float3 dir = float3(ring * cos(a), z, ring * sin(a));
+
+    // Orbit axis: perpendicular to the direction, so the particle circles its
+    // body's center in its own plane.
+    float3 axis = cross(dir, normalize(float3(h3, h4, h5) - 0.5 + 1e-3));
+    axis = length(axis) > 0.01 ? normalize(axis) : float3(0.0, 1.0, 0.0);
+
+    float radius = mix(0.6, 1.4, h4);
+    NebulaParticle p;
+    p.posSize = float4(dir * radius, 0.0);
+    p.color = float4(0.0);
+    p.velHeat = float4(0.0);
+    p.dirSpin = float4(dir, mix(0.15, 0.9, h5) * (h6 < 0.5 ? -1.0 : 1.0));
+    // Bands are dealt round-robin by index, so *any* prefix of the buffer
+    // still covers the whole spectrum evenly — which is what makes the
+    // Density control safe to move at will.
+    p.axisBand = float4(axis, float(gid % 64u));
+    p.traits = float4(h3 * 6.28318, mix(0.7, 1.35, h6), h2, 0.0);
+    out[gid] = p;
+}
+
+// Advances one particle. This is the whole simulation; there is no CPU side.
+kernel void nebulaStep(const device NebulaParticle* inState [[buffer(0)]],
+                       device NebulaParticle* out [[buffer(1)]],
+                       constant VizUniforms& u [[buffer(2)]],
+                       constant float* bands [[buffer(3)]],
+                       uint gid [[thread_position_in_grid]]) {
+    NebulaParticle p = inState[gid];
+    // One hitch (a window drag, a debugger pause) must not fling the cloud
+    // apart; the host already clamps dt to 100 ms, this clamps it to a step
+    // the spring below is unconditionally stable at.
+    float dt = min(u.dt, 1.0 / 20.0);
+
+    // Clamped rather than trusted: the band index is the one field that
+    // indexes another buffer, and the seed is the only thing that ever sets it.
+    int band = clamp(int(p.axisBand.w), 0, 63);
+    int body = nebulaBody(band);
+    float energy = min(bands[band] * u.sensitivity, 1.4);
+    float phase = p.traits.x;
+    float bias = p.traits.y;
+    float seed = p.traits.z;
+
+    float swirl = u.p[kNebulaSwirl];
+    float form = u.p[kNebulaForm];
+    float impact = u.p[kNebulaImpact];
+    float density = clamp(u.p[kNebulaDensity], 0.0, 1.0);
+    // Reduce Motion damps the transient features on the CPU, but turbulence
+    // and impulses are structural — they have to be told.
+    float calm = mix(1.0, 0.35, u.reduceMotion);
+
+    float3 pos = p.posSize.xyz;
+    float3 vel = p.velHeat.xyz;
+    float heat = p.velHeat.w;
+    float3 gAxis = nebulaGalacticAxis(u);
+    float3 coreCenter = nebulaOrbCenter(0, u);
+    float3 center = body == 0 ? coreCenter : nebulaOrbCenter(body, u);
+    float here = length(pos - center);
+
+    // ---- orbit: rotate the particle's direction around its own axis
+    float3 axis = p.axisBand.xyz;
+    float spin = p.dirSpin.w;
+    float rate = 0.25 + energy + 0.4 * u.flux;
+    if (body == 0) {
+        rate *= 0.55;
+    } else if (body == 2) {
+        rate *= 1.6;
+    } else {
+        // Mids share the galactic axis (blended with a little per-particle
+        // tilt for disc thickness) and all turn the same way; inner particles
+        // orbit faster than outer ones, shearing the disc into spiral streaks
+        // like a galaxy's differential rotation.
+        axis = normalize(gAxis + axis * 0.22);
+        spin = fabs(spin);
+        rate *= 1.5 / (0.45 + here);
+    }
+    float3 dir = normalize(rotateAround(p.dirSpin.xyz, axis, spin * rate * dt * swirl * u.speed));
+
+    // ---- where this particle would like to be: its band's energy sets a
+    // distance from its body's center, and the body's shape bends the offset.
+    float target;
+    if (body == 0) {
+        target = 0.40 + 0.9 * energy + 0.6 * u.beat;
+    } else if (body == 2) {
+        target = 0.80 + 1.3 * energy + 0.5 * u.trebleBeat;
+    } else {
+        target = 0.60 + 1.2 * energy + 0.35 * u.beat;
+    }
+    // Per-particle radius bias (Form): shells become ragged clouds instead of
+    // crisp spheres.
+    target *= 1.0 + (bias - 1.0) * form;
+
+    float3 offset = dir * target;
+    if (body == 1) {
+        // Flatten the mid shell into a disc by squashing the component along
+        // the galactic axis...
+        offset -= gAxis * dot(offset, gAxis) * 0.55;
+        // ...then warp it like a real galaxy: an m=2 corrugation that slowly
+        // precesses, lifting opposite edges out of the plane (Form).
+        float azimuth = atan2(offset.z, offset.x);
+        offset += gAxis * (0.14 * form * sin(2.0 * azimuth + u.time * 0.35) * target);
+    } else if (body == 0) {
+        // The core's stretch axis tumbles slowly; kicks elongate the core
+        // along it, so it reads as a pulsing ellipsoid, not a static ball.
+        float3 stretchAxis = normalize(float3(sin(u.time * 0.11), 0.35, cos(u.time * 0.13)));
+        offset += stretchAxis * dot(offset, stretchAxis) * (form * (0.30 + 0.35 * u.beat));
+    }
+    float3 goal = center + offset;
+
+    // ---- forces
+    // A spring toward the goal, so the body's shape is a destination rather
+    // than a position: heavier for the core, looser for the disc and halo.
+    float stiffness = body == 0 ? 26.0 : 16.0;
+    vel += (goal - pos) * stiffness * dt;
+
+    // Incompressible turbulence, opened up by the mids and any onset, its
+    // scroll rate set by the treble. This is what a CPU loop could never
+    // afford and what makes the cloud look alive between hits.
+    float flowTime = u.time * u.speed * (0.35 + 0.5 * min(u.treble * u.sensitivity, 1.5));
+    float flowAmp = u.p[kNebulaTurbulence] * calm
+                  * (0.30 + 1.1 * min(u.mid * u.sensitivity, 1.2) + 0.9 * u.flux);
+    vel += nebulaFlow(pos * (0.9 + 0.35 * seed) + float3(0.0, seed * 7.0, 0.0), flowTime)
+         * flowAmp * dt;
+
+    // Comets: every hi-hat/snare transient flings a hashed ~30% of the halo
+    // outward. An impulse, not a force — the drag below is what reels it in.
+    float3 outward = normalize(pos - center + 1e-4);
+    if (body == 2 && u.trebleHit > 0.5 && fract(phase) < 0.3) {
+        vel += outward * (2.2 + 2.8 * energy) * impact * calm;
+        heat = max(heat, 0.9);
+    }
+
+    // The kick shockwave. `beat` decays 1 → 0, so (1 - beat) is a front
+    // expanding out of the core and fading as it goes — stateless, and the
+    // same construction the background's ring uses, so for the first time the
+    // particles and the background ride literally the same wave.
+    float shockFront = (1.0 - u.beat) * 3.0;
+    float shockD = length(pos - coreCenter) - shockFront;
+    float shock = exp(-shockD * shockD * 3.0) * u.beat * u.beat * impact;
+    vel += normalize(pos - coreCenter + 1e-4) * shock * 12.0 * calm * dt;
+    heat = max(heat * exp(-dt * 3.0), shock);
+
+    // Drag: without it the spring rings forever and the turbulence keeps
+    // accumulating. Tuned with the stiffness above for a slightly
+    // underdamped, springy settle.
+    vel *= exp(-dt * (body == 0 ? 6.0 : 4.2));
+    pos += vel * dt;
+
+    // Nothing escapes: a particle blown far enough out is pulled back to the
+    // shell rather than left to fly off forever.
+    float3 rel = pos - center;
+    float far = length(rel);
+    if (far > 6.0) {
+        pos = center + rel * (6.0 / far);
+        vel *= 0.4;
+    }
+
+    // ---- appearance
+    // Sprites shrink as the count rises: 130k particles should read as fine
+    // dust and 10k as distinct motes, and the fill-rate cost of the additive
+    // quads stays roughly constant across the range either way. These numbers
+    // are a good deal smaller than the CPU simulation's — at twenty times the
+    // count, its sprite sizes turn the cloud into overlapping blobs.
+    float sizeScale = u.p[kNebulaGlow] * mix(1.5, 0.45, density);
+    float size;
+    if (body == 0) {
+        size = sizeScale * (1.4 + 4.5 * energy) * (1.0 + 0.4 * u.beat);
+    } else if (body == 2) {
+        float flicker = 0.55 + 0.45 * sin(phase + u.time * 30.0);
+        size = sizeScale * (0.9 + 2.6 * energy + 2.2 * u.trebleBeat * flicker);
+    } else {
+        float flicker = 0.75 + 0.25 * sin(phase + u.time * 18.0);
+        size = sizeScale * (1.1 + 3.6 * energy + 1.6 * u.presence * u.sensitivity * flicker);
+    }
+    size *= 1.0 + 0.9 * heat;
+
+    // Hue comes from three things rather than one. The particle's *band* lays
+    // the spectrum out across the cloud; its *body* gets its own arc of the
+    // palette, so core, disc and halo read as three materials instead of one
+    // gradient; and its own *speed* shifts it forward along the palette, which
+    // turns motion itself into visible iridescence.
+    float speedNow = length(vel);
+    float bodyHue = body == 0 ? -0.06 : (body == 1 ? 0.16 : 0.42);
+    float hue = float(band) / 64.0 * 0.55 + bodyHue
+              + u.time * 0.012 + u.centroid * 0.35
+              + min(speedNow, 6.0) * 0.045 + 0.04 * sin(phase);
+    float3 col = cosPalette(hue, u.palette);
+    // Saturate rather than wash out. The CPU version mixed toward white as a
+    // band got loud, which is backwards in an HDR pipeline: brightness belongs
+    // in the magnitude, and the tonemap turns a hot enough color white by
+    // itself. Here energy pushes vibrance *up* and exposure with it, so a loud
+    // cloud gets more colorful instead of less.
+    float luma = dot(col, float3(0.299, 0.587, 0.114));
+    col = max(mix(float3(luma), col, 1.15 + 0.35 * energy), 0.0);
+    col *= 0.45 + 1.5 * energy;
+    // Heat is the one thing that does go white-hot: comet flares and the
+    // shockwave front.
+    col = mix(col, float3(1.0, 0.94, 0.86), min(heat * 0.8, 0.8));
+
+    float alpha;
+    if (body == 0) {
+        alpha = 0.16 + 0.84 * energy;
+    } else if (body == 2) {
+        alpha = 0.06 + 0.94 * min(energy + u.trebleBeat * 0.6 + heat * 0.5, 1.2);
+    } else {
+        alpha = 0.10 + 0.90 * min(energy + 0.25 * u.flux, 1.1);
+    }
+    // The additive pile-up scales with the count, so per-particle intensity
+    // has to come down as Density goes up or a dense cloud is just a white
+    // disc with a rim.
+    alpha *= mix(0.90, 0.30, density);
+
+    p.posSize = float4(pos, size);
+    p.color = float4(col, alpha);
+    p.velHeat = float4(vel, heat);
+    p.dirSpin = float4(dir, p.dirSpin.w);
+    out[gid] = p;
+}
+
 fragment float4 nebulaBackgroundFragment(FSQuadOut in [[stage_in]],
                                          constant VizUniforms& u [[buffer(0)]],
                                          constant float* bands [[buffer(1)]],
@@ -595,6 +951,14 @@ fragment float4 nebulaBackgroundFragment(FSQuadOut in [[stage_in]],
     float2 uv = in.uv * 2.0 - 1.0;
     uv.x *= u.resolution.x / max(u.resolution.y, 1.0);
     float r = length(uv);
+    float halos = u.p[kNebulaHalos];
+
+    // Where the three bodies are on screen this frame, through the same camera
+    // the particles use, so every background feature sits behind the right orb.
+    float2 orbC[3];
+    for (int i = 0; i < 3; i++) {
+        orbC[i] = nebulaProject(nebulaOrbCenter(i, u), u).xy;
+    }
 
     // near-black base that slowly cycles hue instead of sitting on a fixed
     // navy, so even quiet passages drift through color
@@ -612,30 +976,51 @@ fragment float4 nebulaBackgroundFragment(FSQuadOut in [[stage_in]],
     col += cosPalette(0.15 + u.centroid * 0.3 + u.time * 0.008, u.palette) * smoke
          * (0.05 + 0.22 * u.bass * u.sensitivity + 0.08 * u.flux);
 
+    // A second cloud half a palette away from the first, riding the high-mids
+    // and drifting the other way. One hue is a tinted fog; two interleaved
+    // hues is a nebula — this is the cheapest big win in the whole frame.
+    float veil = fbm(rot2(uv, 2.1) * 2.4 - float2(u.time * 0.017 * u.speed, u.time * 0.011 * u.speed));
+    col += cosPalette(0.65 + u.centroid * 0.3 + u.time * 0.008, u.palette) * veil * veil
+         * (0.04 + 0.20 * clamp(u.highMid * u.sensitivity, 0.0, 1.2) + 0.07 * u.flux);
+
     // counter-drifting wisp layer riding the low-mids
     float wisp = fbm(rot2(uv, 0.7) * 2.2 + float2(-u.time * 0.025 * u.speed, u.time * 0.018 * u.speed));
     col += cosPalette(0.45 + u.centroid * 0.2, u.palette) * wisp * wisp
          * (0.03 + 0.18 * u.lowMid * u.sensitivity);
 
-    // one colored halo behind each body, projected through the shared camera
-    // so it tracks its orb across the screen: the bass halo strobes with the
-    // kick, the mid halo breathes with onsets, the treble halo flickers with
+    // one colored halo behind each body: the bass halo strobes with the kick,
+    // the mid halo breathes with onsets, the treble halo flickers with
     // hi-hats. The envelopes decay smoothly, so each strobe pulses and fades
     // rather than flashing hard, and each halo's hue drifts on its own.
-    float2 orbC[3];
-    for (int i = 0; i < 3; i++) {
-        orbC[i] = nebulaProject(nebulaOrbCenter(i, u), u).xy;
-    }
     float3 lobeGain = float3(0.30 * u.bass * u.sensitivity + 0.35 * u.beat,
                              0.25 * u.mid * u.sensitivity + 0.20 * u.flux,
                              0.20 * u.treble * u.sensitivity + 0.30 * u.trebleBeat);
     for (int i = 0; i < 3; i++) {
         float2 d = uv - orbC[i];
         float lobe = exp(-dot(d, d) * (i == 0 ? 2.2 : 3.0));
-        // the Halos slider (p5) fades the washes from off to double strength
-        col += cosPalette(0.08 + 0.38 * float(i) + u.time * 0.012 + u.centroid * 0.25, u.palette)
-             * lobe * (0.035 + lobeGain[i]) * 0.45 * u.p5;
+        // Saturated before it is added: a wash this broad is the frame's main
+        // source of color, and the palette's raw value is too pale to survive
+        // the tone curve.
+        float3 wash = cosPalette(0.08 + 0.38 * float(i) + u.time * 0.012 + u.centroid * 0.25, u.palette);
+        float washLuma = dot(wash, float3(0.299, 0.587, 0.114));
+        wash = max(mix(float3(washLuma), wash, 1.25), 0.0);
+        // the Halos slider fades the washes from off to double strength
+        col += wash * lobe * (0.035 + lobeGain[i]) * 0.45 * halos;
     }
+
+    // The disc's dust lane: a dark band lying in the disc's own plane, like
+    // the obscuring dust in an edge-on galaxy. It *removes* light instead of
+    // adding it, which is what gives the particle field somewhere to be dense
+    // — and it tracks the disc's tilt for free, because its direction is the
+    // projected galactic axis rather than a fixed screen angle.
+    float2 discC = orbC[1];
+    float2 tilt = nebulaProject(nebulaOrbCenter(1, u) + nebulaGalacticAxis(u) * 0.6, u).xy - discC;
+    float2 across = length(tilt) > 1e-4 ? normalize(tilt) : float2(0.0, 1.0);
+    float2 rel = uv - discC;
+    float lane = dot(rel, across);
+    float along = length(rel - across * lane);
+    col *= 1.0 - 0.45 * exp(-lane * lane * 30.0) * smoothstep(1.7, 0.15, along)
+         * (0.35 + 0.65 * halos);
 
     // soft core glow pulsing on the beat and flaring with onsets, riding
     // along with the bass orb
@@ -644,14 +1029,14 @@ fragment float4 nebulaBackgroundFragment(FSQuadOut in [[stage_in]],
          * (0.05 + 0.30 * u.beat + 0.15 * u.flux + 0.18 * u.bass * u.sensitivity)
          * smoothstep(0.9, 0.0, rb) * 0.35;
 
-    // kick shockwave: the beat envelope decays 1 → 0, so (1 - beat) is a
-    // ring radius that expands outward from the core after every kick and
-    // fades as it goes — a stateless shockwave, echoing the one the CPU
-    // simulation drives through the particles, erupting from the bass orb.
+    // kick shockwave: the beat envelope decays 1 → 0, so (1 - beat) is a ring
+    // radius that expands outward from the core after every kick and fades as
+    // it goes — the flat-screen half of the wave the kernel drives through the
+    // particles, erupting from the same bass orb.
     float shockR = (1.0 - u.beat) * 1.5;
     float shock = exp(-pow((rb - shockR) * 8.0, 2.0)) * u.beat * u.beat;
-    // the Impact slider (p6) scales the ring along with the particle wave
-    col += cosPalette(0.12 + u.centroid * 0.25, u.palette) * shock * 0.45 * u.p6;
+    // the Impact slider scales the ring along with the particle wave
+    col += cosPalette(0.12 + u.centroid * 0.25, u.palette) * shock * 0.45 * u.p[kNebulaImpact];
 
     // oscilloscope halo: the live waveform wrapped in a ring around the
     // cloud, mirrored left/right so the wrap point has no seam; overall
@@ -666,63 +1051,757 @@ fragment float4 nebulaBackgroundFragment(FSQuadOut in [[stage_in]],
     return float4(col, 1.0);
 }
 
-// Mirrors NebulaVisualizer.GPUParticle in Swift; the CPU simulation writes
-// this layout into a shared MTLBuffer each frame.
-struct Particle {
-    float4 posSize;   // xyz = position, w = point size hint
-    float4 color;     // rgb, a = intensity
-};
-
-struct ParticleOut {
+struct NebulaSpriteOut {
     float4 position [[position]];
-    float pointSize [[point_size]];
+    /// -1…1 across the sprite in its own (possibly stretched) frame, so the
+    /// fragment shader can shade a round profile whatever shape the quad is.
+    float2 local;
     float4 color;
 };
 
-// Projects one particle from its 3D simulation position to the screen via
-// the shared nebula camera (see nebulaProject above).
-vertex ParticleOut particleVertex(uint vid [[vertex_id]],
-                                  constant Particle* particles [[buffer(0)]],
-                                  constant VizUniforms& u [[buffer(1)]]) {
-    Particle p = particles[vid];
+// One instanced quad per particle: four vertices, corners generated from the
+// vertex index, no vertex buffer beyond the simulation state itself.
+//
+// The quad exists so the sprite can be *oriented*. A Metal point sprite is
+// always an axis-aligned square with a device-dependent size ceiling (90 px
+// here, and reachable), which rules out the streaking below.
+vertex NebulaSpriteOut nebulaSpriteVertex(uint vid [[vertex_id]],
+                                          uint iid [[instance_id]],
+                                          const device NebulaParticle* particles [[buffer(0)]],
+                                          constant VizUniforms& u [[buffer(1)]]) {
+    NebulaParticle p = particles[iid];
     float3 proj = nebulaProject(p.posSize.xyz, u);
-    float2 clip = proj.xy;
+    // Where this particle was a moment ago, through the same camera. The
+    // difference is its direction of travel *on screen*, which is what the
+    // sprite stretches along — projecting the offset rather than rotating the
+    // velocity by hand keeps the streak correct through the perspective divide
+    // and the camera roll for free.
+    float3 back = nebulaProject(p.posSize.xyz - p.velHeat.xyz * 0.035, u);
+    float2 travel = proj.xy - back.xy;
+
+    // Half-extent in square-space units (y half-height 1). Floored at about a
+    // pixel so distant dust doesn't flicker in and out between frames, and
+    // capped so a single near particle can't cost a full-screen fill.
+    //
+    // The perspective factor is *itself* clamped before it scales the sprite:
+    // it reaches 4 for a particle that swings right up to the camera, against
+    // ~0.3 for one out in the cloud, and letting that through unchecked turns
+    // every close pass into a solid disc over a third of the frame.
+    float persp = proj.z;
+    float halfSize = clamp(
+        p.posSize.w * min(persp, 1.0) * 0.012, 1.2 / max(u.resolution.y, 1.0), 0.11);
+
+    float travelLen = length(travel);
+    float2 along = travelLen > 1e-6 ? travel / travelLen : float2(1.0, 0.0);
+    float2 across = float2(-along.y, along.x);
+    // Trails: stretch the sprite along its own motion, which is what a camera
+    // does with a moving light in a long exposure. Capped at 8× so a comet
+    // stays a streak rather than a line across the frame.
+    float stretch = 1.0 + min(travelLen / halfSize, 16.0) * 0.45 * u.p[kNebulaTrails];
+
+    float2 corner = float2((vid & 1u) != 0u ? 1.0 : -1.0, (vid & 2u) != 0u ? 1.0 : -1.0);
+    float2 clip = proj.xy + along * (corner.x * halfSize * stretch) + across * (corner.y * halfSize);
     clip.x *= u.resolution.y / max(u.resolution.x, 1.0);
 
-    ParticleOut out;
+    NebulaSpriteOut out;
     out.position = float4(clip, 0.0, 1.0);
-    // point_size makes the GPU rasterize this vertex as a screen-aligned
-    // square of that many pixels (a "point sprite").
-    out.pointSize = clamp(p.posSize.w * proj.z * u.resolution.y * 0.012, 1.0, 90.0);
+    out.local = corner;
     out.color = p.color;
+    // A streak spreads the same light over more pixels rather than adding
+    // light, so its intensity comes down with the square root of its length.
+    out.color.a /= sqrt(stretch);
+    // Atmospheric perspective: the perspective factor stands in for how near
+    // the particle is, so near ones run warm and bright, far ones cool and dim
+    // — the cue that makes an additive cloud read as a volume with a front and
+    // a back instead of a flat spray. Kept deliberately gentle: push the far
+    // tint any bluer and the whole back half of the cloud goes one color,
+    // throwing away the band-by-band hue the kernel just computed.
+    float near = clamp((persp - 0.20) * 3.4, 0.0, 1.0);
+    out.color.rgb *= mix(float3(0.74, 0.82, 1.02), float3(1.08, 1.00, 0.92), near);
+    // …and then defocus takes over. A sprite this close is spreading a fixed
+    // amount of light over a much larger area, so it has to dim as it grows,
+    // the same argument as the streak above. Together these two make a close
+    // pass read as a soft out-of-focus bokeh ball rather than a spotlight.
+    out.color.a *= (0.40 + 0.60 * near) * min(1.0, 0.45 / max(persp, 0.02));
     return out;
 }
 
-// Shades each particle's square: point_coord is 0...1 across the sprite, and
-// a Gaussian falloff from its center turns the square into a soft glowing
-// dot. Rendered with additive blending, so overlaps brighten like real light.
-fragment float4 particleFragment(ParticleOut in [[stage_in]],
-                                 float2 pc [[point_coord]]) {
-    float d = length(pc - 0.5) * 2.0;
-    float a = exp(-d * d * 4.5) * smoothstep(1.0, 0.65, d);
-    float3 col = in.color.rgb * a * in.color.a;
-    return float4(col, a * in.color.a);
+// Shades one particle's quad. Rendered with additive blending, so overlaps
+// brighten like real light.
+fragment float4 nebulaSpriteFragment(NebulaSpriteOut in [[stage_in]]) {
+    float d = length(in.local);
+    // Two lobes rather than one Gaussian: a tight core inside a wide halo is
+    // what an out-of-focus point of light actually looks like, and it is what
+    // makes a hundred thousand of these read as stars rather than cotton wool.
+    float halo = exp(-d * d * 3.2);
+    float core = exp(-d * d * 14.0);
+    float a = (halo * 0.55 + core * 0.90) * smoothstep(1.15, 0.55, d);
+    return float4(in.color.rgb * a * in.color.a, a * in.color.a);
 }
 
-// Final pass for the nebula: the background and the additive particles are
-// rendered into a float16 HDR texture, and this maps it to the display —
-// exposure lift and vibrance while still HDR, Reinhard tone mapping, then a
-// gentle S-curve. Additive particle pile-ups roll into bloom-like highlights
-// instead of clipping hard at white.
+// Bloom, in three cheap steps: the scene's mip chain (generated by a blit) is
+// the downsample, this pass blurs a coarse level of it *in that coarse level's
+// own space* into a small target, and the tonemap samples that target
+// bilinearly.
+//
+// The blur is the whole point, and it is the part the first version of this
+// skipped. Sampling a coarse mip and stretching it back to full screen shows
+// the mip's own bilinear tent: 128-pixel blocks, hard diagonal seams, and — if
+// you try to hide them with a few offset taps — the taps themselves, as visible
+// crosses around every bright particle. Blurring in coarse space removes the
+// texel-to-texel contrast that makes any of that visible, and a smooth image
+// stays smooth at any magnification. 25 taps of a 40×25 mip is nothing.
+fragment float4 nebulaBloomFragment(FSQuadOut in [[stage_in]],
+                                    constant VizUniforms& u [[buffer(0)]],
+                                    texture2d<float> src [[texture(0)]]) {
+    constexpr sampler s(mag_filter::linear, min_filter::linear, mip_filter::linear);
+    // Same top-down flip as the tonemap below, so this target lines up with
+    // the scene it blurs.
+    float2 uv = float2(in.uv.x, 1.0 - in.uv.y);
+    const float lod = 4.0;
+    float2 step = exp2(lod) / max(u.resolution, float2(1.0));
+    // 5×5 separable Gaussian, σ ≈ 1.2 texels of this level — about 20 pixels
+    // of the full-resolution frame per texel, so a glow spanning ~100.
+    const float weights[5] = {0.0637, 0.1806, 0.2557, 0.1806, 0.0637};
+    float3 sum = float3(0.0);
+    for (int y = 0; y < 5; y++) {
+        for (int x = 0; x < 5; x++) {
+            float2 offset = float2(float(x - 2), float(y - 2)) * step;
+            sum += src.sample(s, uv + offset, level(lod)).rgb * (weights[x] * weights[y]);
+        }
+    }
+    // Only the highlights bloom; without the floor the whole frame hazes over.
+    return float4(max(sum - 0.08, 0.0), 1.0);
+}
+
+// Final pass: the background and the additive particles have been rendered
+// into a float16 HDR texture, and this maps it to the display — add the bloom,
+// then exposure, vibrance, Reinhard, S-curve.
 fragment float4 nebulaTonemapFragment(FSQuadOut in [[stage_in]],
-                                      texture2d<float> src [[texture(0)]]) {
+                                      constant VizUniforms& u [[buffer(0)]],
+                                      texture2d<float> src [[texture(0)]],
+                                      texture2d<float> bloom [[texture(1)]]) {
     constexpr sampler s(mag_filter::linear, min_filter::linear);
     // texture rows run top-down while uv runs bottom-up, hence the flip
-    float3 col = src.sample(s, float2(in.uv.x, 1.0 - in.uv.y)).rgb;
-    col *= 1.35;
+    float2 uv = float2(in.uv.x, 1.0 - in.uv.y);
+    float3 col = src.sample(s, uv).rgb;
+    col += bloom.sample(s, uv).rgb * 0.85 * u.p[kNebulaGlow];
+
+    // Exposure lift and vibrance while still HDR, Reinhard tone mapping, then
+    // a gentle S-curve. Additive pile-ups roll into bloom-like highlights
+    // instead of clipping hard at white.
+    col *= 1.15;
     float luma = dot(col, float3(0.299, 0.587, 0.114));
-    col = max(mix(float3(luma), col, 1.4), 0.0);
+    col = max(mix(float3(luma), col, 1.30), 0.0);
     col = col / (1.0 + col);
     col = col * col * (3.0 - 2.0 * col);
+    // The whole scene rises out of black on a visualizer switch rather than
+    // popping in mid-motion (see VizUniforms.intro).
+    col *= smoothstep(0.0, 1.0, u.intro);
+    return float4(col, 1.0);
+}
+
+// ---------------------------------------------------------------- Bars
+//
+// A mixing console seen from the producer's chair, drawn entirely with
+// signed-distance fields in one fullscreen pass. The meter bridge stands
+// vertically at the back (LED spectrum wall, two analog VU meters, a
+// phosphor scope) and the desk surface recedes in perspective in front of
+// it (one channel strip per slice of the spectrum: moving fader, EQ knob
+// with an LED collar, channel lamp).
+//
+// Two conventions make the rest of this section readable:
+//
+//  * **Everything is measured in screen-height units.** `uv` is 0…1 on both
+//    axes, so a y distance is already in height units and an x distance
+//    becomes one by multiplying by the aspect ratio. Sizes written here are
+//    therefore literally "fraction of the window's height", and one pixel is
+//    `aa` — which is all the anti-aliasing any of these edges needs.
+//  * **No audio is read directly.** Every value comes from `st`, the state
+//    buffer that BarsVisualizer's CPU simulation fills each frame (column
+//    ballistics, peak-hold caps, fader positions, needle angles). Meters are
+//    defined by their time constants, and time constants need memory between
+//    frames, which a fragment shader does not have.
+//
+// Bars' option slots, in descriptor order. Named `kBarsOpt…` to keep them
+// clearly apart from the `kBars…` offsets into the state buffer below.
+constant int kBarsOptColumns = 0;
+constant int kBarsOptSegments = 1;
+constant int kBarsOptPeakHold = 2;
+constant int kBarsOptGlow = 3;
+constant int kBarsOptShowDesk = 4;
+constant int kBarsOptDesk = 5;
+constant int kBarsOptChannels = 6;
+constant int kBarsOptMeters = 7;
+
+// Layout of `st`, in floats — must match `BarsVisualizer.Slot` exactly.
+constant int kBarsHeights = 0;    // 64 column heights, 0…1
+constant int kBarsPeaks = 64;     // 64 peak-hold caps, 0…1
+constant int kBarsFaders = 128;   // 16 fader positions, 0…1
+constant int kBarsKnobs = 144;    // 16 knob values, 0…1
+constant int kBarsVU = 160;       // 2 needle positions (program, peak)
+constant int kBarsLamp = 162;     // console lamp brightness
+
+// Distance to the edge of a box: negative inside, positive outside.
+static float sdBox(float2 p, float2 b) {
+    float2 d = fabs(p) - b;
+    return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+}
+
+// Same, with rounded corners of radius r (shrink the box, then inflate the
+// field — the standard SDF rounding trick).
+static float sdRoundBox(float2 p, float2 b, float r) {
+    r = min(r, min(b.x, b.y));
+    return sdBox(p, b - r) - r;
+}
+
+// Distance to the line segment ab.
+static float sdSegment(float2 p, float2 a, float2 b) {
+    float2 pa = p - a, ba = b - a;
+    float h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-8), 0.0, 1.0);
+    return length(pa - ba * h);
+}
+
+// Coverage of an SDF shape: 1 inside, 0 outside, `aa` of soft edge. Every
+// edge in this section goes through here, which is why nothing crawls.
+static float aaFill(float d, float aa) {
+    return smoothstep(aa, -aa, d);
+}
+
+// Linearly interpolated waveform sample. `waveAt` snaps to whole samples,
+// which is invisible in a ribbon but turns the scope's thin trace into a
+// staircase of disconnected dots.
+static float waveLerp(constant float* wave, float x) {
+    float f = clamp(x, 0.0, 0.9999) * 255.0;
+    int i = int(f);
+    return mix(wave[i], wave[min(i + 1, 255)], fract(f));
+}
+
+// Brushed-aluminium panel: anisotropic grain (fine across, stretched along),
+// plus a broad specular sweep standing in for a lamp somewhere in the room.
+static float3 barsPanel(float2 uv, constant VizUniforms& u) {
+    float brush = 0.65 * vnoise(float2(uv.x * 6.0, uv.y * 520.0))
+                + 0.35 * vnoise(float2(uv.x * 17.0, uv.y * 1900.0));
+    float3 col = float3(0.052, 0.055, 0.064) * (0.55 + 0.9 * brush);
+    float lx = 0.5 + 0.42 * sin(u.time * 0.05 * u.speed);
+    col += float3(0.030, 0.032, 0.040) * exp(-pow((uv.x - lx) * 1.6, 2.0))
+         * (0.35 + 0.65 * uv.y);
+    return col;
+}
+
+// One panel screw: dark recessed head, top-lit bevel, driver slot, glint.
+static float3 barsScrew(float2 d, float aa) {
+    if (dot(d, d) > 0.00022) { return float3(0.0); }
+    float r = length(d);
+    float head = aaFill(r - 0.0080, aa);
+    float ring = aaFill(r - 0.0098, aa) - head;
+    float3 col = float3(0.030, 0.031, 0.035) * head;
+    col += float3(0.10, 0.105, 0.115) * ring * (0.30 + 1.0 * smoothstep(-0.008, 0.008, d.y));
+    col = mix(col, float3(0.018) * head, aaFill(sdBox(rot2(d, 0.7), float2(0.0062, 0.0010)), aa) * head);
+    col += float3(0.30, 0.31, 0.34) * ring * exp(-pow((d.y - d.x - 0.006) * 260.0, 2.0));
+    return col;
+}
+
+// One pixel of the LED ladder.
+//   wx, wy  position on the wall: 0…1 across the columns, 0…1 up the ladder
+//           (the reflection passes a mirrored wy, hence no upper clamp here)
+//   ww, wh  the ladder's size in screen-height units, so a lens keeps its
+//           shape whatever the window aspect is
+static float3 barsWall(float wx, float wy, float ww, float wh,
+                       int cols, int segs, float glow, float peakAmt,
+                       constant float* st, constant VizUniforms& u, float aa) {
+    float3 col = float3(0.0);
+    if (wx < 0.0 || wx > 1.0 || wy < 0.0 || wy > 1.0) { return col; }
+
+    float cf = wx * float(cols);
+    int ci = clamp(int(cf), 0, cols - 1);
+    float h = st[kBarsHeights + ci];
+    float pk = st[kBarsPeaks + ci];
+    float colFrac = (float(ci) + 0.5) / float(cols);
+
+    float cw = ww / float(cols);
+    float qx = (fract(cf) - 0.5) * cw;
+    float halfW = cw * 0.38;
+    float yh = wy * wh;      // height above the base, in screen-height units
+
+    // Two ways to draw a column. Segmented is the LED ladder; "0 segments"
+    // is one continuous bar, and it needs its own path rather than a ladder
+    // of very fine segments — once a segment is thinner than the pixel that
+    // anti-aliases it, the boundaries come back as banding.
+    float2 q, b;      // this pixel's position within the drawn shape
+    float unlitD;     // the dark lens/tube that is visible even when off
+    float lit, sc, capT;
+    if (segs >= 2) {
+        float ch = wh / float(segs);
+        float sf = wy * float(segs);
+        float si = floor(sf);
+        lit = clamp(h * float(segs) - si, 0.0, 1.0);
+        sc = (si + 0.5) / float(segs);
+        q = float2(qx, (fract(sf) - 0.5) * ch);
+        b = float2(halfW, ch * 0.35);
+        unlitD = sdRoundBox(q, b, 0.34 * min(b.x, b.y));
+        capT = max(0.55 / float(segs), 0.006);
+    } else {
+        lit = 1.0;                    // coverage comes from the bar's own edge
+        sc = wy;
+        b = float2(halfW, max(h * wh * 0.5, 1e-5));
+        q = float2(qx, yh - h * wh * 0.5);
+        unlitD = sdRoundBox(float2(qx, yh - wh * 0.5), float2(halfW, wh * 0.5), halfW * 0.35);
+        capT = 0.006;
+    }
+    float d = sdRoundBox(q, b, 0.34 * min(b.x, b.y));
+    float face = aaFill(d, aa);
+
+    // The hue ladder climbs the bar rather than running across the wall: a
+    // meter is read vertically, and 0.66 → 1.0 of the cosine palette happens
+    // to be exactly the green → amber → red of hardware in the default
+    // palette, while every other palette gets its own cool-to-hot run. The
+    // top of the scale is pushed red in *all* of them — the "over" cue is
+    // universal enough on real gear to be worth breaking palette purity for.
+    float3 hue = cosPalette(0.56 + 0.46 * sc + 0.05 * colFrac + 0.06 * u.centroid, u.palette);
+    float3 c = mix(hue, float3(1.0, 0.13, 0.04), smoothstep(0.76, 1.0, sc) * 0.7);
+    // Saturate and ramp: a lit LED is driven hard enough to wash toward white
+    // through the exposure curve, so the ladder needs more colour than the
+    // palette's raw value to survive the trip.
+    c = max(mix(float3(dot(c, float3(0.299, 0.587, 0.114))), c, 1.4), 0.0);
+    c *= 0.85 + 0.30 * sc;
+
+    // unlit lens: dark smoked plastic that still shows the whole ladder
+    float tube = aaFill(unlitD, aa);
+    col += mix(c, float3(0.5), 0.65) * tube * 0.030;
+    col += c * face * (0.35 + 1.6 * lit) * lit;           // the lit face
+    col += c * exp(-max(d, 0.0) * (34.0 / max(glow, 0.25))) * lit * 0.55 * glow;
+    // moulded highlight across the top of a lit lens
+    col += mix(float3(1.0), c, 0.45) * face * lit * 0.20
+         * smoothstep(-b.y, b.y, q.y) * smoothstep(b.x, 0.25 * b.x, fabs(q.x));
+
+    // Peak-hold cap: one LED hanging at the loudest recent value, its core
+    // driven white. `wy` and `pk` are both normalised, so `capT` is too — a
+    // little over half a segment, which snaps it to the lens grid.
+    // (`tube`, not `face`: the cap floats above the bar top, where the lit
+    // face has no coverage at all in continuous mode.)
+    float cap = smoothstep(capT, capT * 0.3, fabs(wy - pk)) * step(0.02, pk)
+              * clamp(peakAmt, 0.0, 1.0);
+    col += mix(c, float3(1.0), 0.30) * cap
+         * (tube * 0.95 + exp(-max(unlitD, 0.0) * 50.0) * (1.0 - tube) * 0.5 * glow);
+    return col;
+}
+
+// One lamp-lit analog VU meter, centred on `p` with ext-extents `ext`.
+// `value` 0…1 sweeps the needle across the arc; `lamp` pulses the backlight.
+static float3 barsVU(float3 col, float2 p, float2 ext, float value,
+                     float lamp, float glow, float aa, constant VizUniforms& u) {
+    if (fabs(p.x) > ext.x + 0.05 || fabs(p.y) > ext.y + 0.05) { return col; }
+
+    float bezelD = sdRoundBox(p, ext, min(ext.x, ext.y) * 0.22);
+    float faceD = sdRoundBox(p, ext - 0.011, min(ext.x, ext.y) * 0.14);
+    float bezel = aaFill(bezelD, aa);
+    float faceM = aaFill(faceD, aa);
+    float up = smoothstep(-ext.y, ext.y, p.y);
+
+    // machined frame with a top-lit bevel
+    col = mix(col, float3(0.075, 0.078, 0.088) * (0.5 + 1.0 * up), bezel);
+    col += float3(0.10, 0.105, 0.115) * smoothstep(0.0022, 0.0, fabs(bezelD)) * (0.25 + 0.9 * up);
+
+    // The face is cream card lit by a warm lamp behind the glass. The lamp
+    // takes a little of the palette so the meter belongs to the scene, but
+    // half-desaturated first — at full strength the palette can land on a
+    // saturated hue and the meter stops reading as a lamp-lit card at all.
+    float3 tint = cosPalette(0.10 + 0.30 * u.centroid, u.palette);
+    tint = mix(float3(dot(tint, float3(0.299, 0.587, 0.114))), tint, 0.5);
+    float3 lampCol = mix(float3(1.0, 0.84, 0.60), tint, 0.30);
+    float3 face = float3(1.05, 1.00, 0.86) * (0.55 + 0.80 * smoothstep(-ext.y * 1.5, ext.y, p.y));
+    face *= mix(float3(1.0), lampCol, 0.60) * (0.80 + 0.50 * lamp);
+    col = mix(col, face, faceM);
+
+    // Scale arc, struck from a pivot below the face like the real movement.
+    float2 pivot = float2(0.0, -ext.y * 1.30);
+    float2 rp = p - pivot;
+    float rr = length(rp);
+    float ang = atan2(rp.x, rp.y);
+    float R = ext.y * 1.95;
+    float aMax = 0.52;
+    float inArc = step(fabs(ang), aMax) * faceM;
+    col = mix(col, float3(0.10, 0.09, 0.08),
+              smoothstep(0.0030, 0.0, fabs(rr - R)) * inArc * 0.95);
+    // the red zone above 0 VU
+    col = mix(col, float3(0.80, 0.10, 0.07),
+              step(0.16, ang) * inArc * smoothstep(0.0042, 0.0, fabs(rr - R * 1.015)));
+    // graduations, every other one long
+    float tf = (ang + aMax) / (2.0 * aMax) * 10.0;
+    float ti = round(tf);
+    float tickLen = mix(0.055, 0.105, step(fract(ti * 0.5), 0.25)) * R;
+    float tick = smoothstep(0.0016, 0.0, fabs(tf - ti) * (2.0 * aMax / 10.0) * rr)
+               * step(rr, R) * step(R - tickLen, rr) * inArc;
+    col = mix(col, float3(0.08, 0.075, 0.07), tick);
+    // the bold 0 VU mark where the red zone begins
+    col = mix(col, float3(0.06, 0.055, 0.05),
+              smoothstep(0.0030, 0.0, fabs(ang - 0.16) * rr)
+              * step(R * 0.83, rr) * step(rr, R) * inArc);
+
+    // The needle, with its shadow cast on the card just below it.
+    float na = mix(-aMax * 0.97, aMax * 0.97, clamp(value, 0.0, 1.0));
+    float2 dir = float2(sin(na), cos(na));
+    float w = 0.0022 - 0.0012 * clamp(dot(rp, dir) / R, 0.0, 1.0);
+    col = mix(col, col * 0.62,
+              aaFill(sdSegment(rp - float2(0.0018, -0.0018), dir * R * 0.20, dir * R) - w, aa * 2.0)
+              * faceM * 0.55);
+    col = mix(col, float3(0.06, 0.05, 0.045),
+              aaFill(sdSegment(rp, dir * R * 0.20, dir * R * 1.005) - w, aa) * faceM);
+    col = mix(col, float3(0.13, 0.12, 0.11), aaFill(rr - ext.y * 0.09, aa) * faceM);
+
+    // glass: one diagonal reflection band, then a soft edge vignette
+    col += float3(0.85, 0.90, 1.0) * faceM
+         * exp(-pow((p.x * 0.7 + p.y * 1.5 - ext.y * 0.35) * 6.0, 2.0)) * 0.07;
+    col *= 1.0 - 0.22 * faceM * smoothstep(0.45, 1.0, length(p / ext));
+    // the lamp spilling out onto the panel around the bezel
+    col += lampCol * exp(-max(bezelD, 0.0) * 26.0) * (0.03 + 0.05 * lamp) * glow;
+    return col;
+}
+
+// The phosphor scope between the meters: the live waveform on a curved CRT.
+static float3 barsScope(float3 col, float2 p, float2 ext, float glow, float aa,
+                        constant float* wave, constant VizUniforms& u) {
+    if (fabs(p.x) > ext.x + 0.04 || fabs(p.y) > ext.y + 0.04) { return col; }
+
+    float bezelD = sdRoundBox(p, ext, 0.012);
+    float faceD = sdRoundBox(p, ext - 0.009, 0.010);
+    float bezel = aaFill(bezelD, aa);
+    float faceM = aaFill(faceD, aa);
+    col = mix(col, float3(0.060, 0.063, 0.072) * (0.5 + 1.0 * smoothstep(-ext.y, ext.y, p.y)), bezel);
+    col += float3(0.09) * smoothstep(0.0022, 0.0, fabs(bezelD));
+
+    // Barrel distortion, so the tube reads as glass rather than a flat rect.
+    float2 q = p / (ext - 0.009);
+    q *= 1.0 + 0.055 * dot(q, q);
+    if (max(fabs(q.x), fabs(q.y)) > 1.0) { return col; }
+    float3 screen = float3(0.012, 0.020, 0.017) * (1.0 - 0.45 * dot(q, q));
+
+    // graticule
+    float2 g = q * float2(6.0, 3.0);
+    float2 gd = fabs(g - round(g)) / float2(6.0, 3.0);
+    screen += float3(0.06, 0.10, 0.08) * smoothstep(0.006, 0.0, min(gd.x, gd.y));
+
+    // The trace: nearest distance to a few samples either side, so steep
+    // slopes stay a connected line instead of breaking into dots.
+    float gain = 0.72 * clamp(u.sensitivity, 0.2, 2.0);
+    float tx = q.x * 0.5 + 0.5;
+    float best = 1e3;
+    for (int k = -3; k <= 3; k++) {
+        float xs = tx + float(k) * 0.0055;
+        float ys = waveLerp(wave, xs) * gain;
+        best = min(best, length(float2((xs - tx) * 2.0, q.y - ys)));
+    }
+    float3 phosphor = mix(cosPalette(0.42 + 0.25 * u.centroid, u.palette),
+                          float3(0.55, 1.0, 0.70), 0.45);
+    screen += phosphor * (pow(0.035 / (best + 0.035), 2.6) * 1.5 + 0.13 / (best * 6.0 + 0.13) * glow);
+
+    // scanlines and a slow bright band rolling up the tube
+    screen *= 0.85 + 0.15 * sin(q.y * 190.0);
+    screen *= 1.0 + 0.10 * exp(-pow((q.y - fract(u.time * 0.11 * u.speed) * 2.4 + 1.2) * 3.0, 2.0));
+    col = mix(col, screen, faceM);
+    col += float3(0.8, 0.9, 1.0) * faceM
+         * exp(-pow((q.x * 0.6 + q.y * 1.1 - 0.55) * 2.6, 2.0)) * 0.030;
+    return col;
+}
+
+// The desk surface, in its own world coordinates: X across (-0.5…0.5 spans
+// the desk), Z into the screen (0 at the front edge, 0.45 at the meter
+// bridge). `aaX`/`aaZ` are one pixel measured in those units — they grow
+// toward the back, which is exactly the blur the foreshortening needs.
+static float3 barsDesk(float3 col, float X, float Z, float aaX, float aaZ,
+                       int chans, int cols, float glow,
+                       constant float* st, constant VizUniforms& u) {
+    float aa = max(aaX, aaZ);
+    float edge = sdBox(float2(X, Z - 0.225), float2(0.5, 0.225));
+    if (edge > 0.012) {
+        // Off the desk: studio floor, lit by nothing but what the meter wall
+        // throws down onto it, with the desk's shadow pooling along its edge.
+        float3 floorCol = col * 0.5
+                        + float3(0.017, 0.018, 0.022) * (0.5 + 0.9 * vnoise(float2(X * 16.0, Z * 44.0)));
+        floorCol += cosPalette(0.60 + 0.16 * u.centroid, u.palette)
+                  * exp(-(0.45 - Z) * 5.0) * 0.055 * glow;
+        return floorCol * mix(1.0, 0.30, smoothstep(0.20, 0.0, edge));
+    }
+
+    float3 surface = float3(0.070, 0.073, 0.084);
+    surface *= 0.82 + 0.36 * vnoise(float2(X * 70.0, Z * 300.0));
+    surface += float3(0.030, 0.031, 0.038) * smoothstep(0.10, 0.45, Z);
+    surface *= 1.0 - 0.50 * smoothstep(0.39, 0.45, Z);          // bridge shadow
+    // the armrest trim along the front edge, catching the room light
+    surface = mix(float3(0.115, 0.105, 0.092), surface, smoothstep(0.014, 0.034, Z));
+    col = mix(col, surface, aaFill(edge, aa));
+    col += float3(0.12) * smoothstep(0.0018, 0.0, fabs(edge));
+
+    float sw = 1.0 / float(chans);
+    float sf = (X + 0.5) / sw;
+    int ci = clamp(int(sf), 0, chans - 1);
+    float lx = (fract(sf) - 0.5) * sw;
+    float fader = st[kBarsFaders + ci];
+    float knob = st[kBarsKnobs + ci];
+    float3 accent = cosPalette(0.12 + 0.52 * ((float(ci) + 0.5) / float(chans))
+                               + 0.16 * u.centroid, u.palette);
+
+    // engraved separator between strips
+    float bnd = fabs(fabs(lx) - sw * 0.5);
+    col *= 1.0 - 0.55 * smoothstep(0.0040, 0.0, bnd);
+    col += float3(0.05, 0.052, 0.060) * smoothstep(0.0018, 0.0, fabs(bnd - 0.0042));
+
+    // Fader slot, its printed travel scale, and the moving cap.
+    float slotW = min(sw * 0.11, 0.013);
+    float2 fq = float2(lx, Z - 0.175);
+    float slotD = sdRoundBox(fq, float2(slotW, 0.115), slotW);
+    col = mix(col, float3(0.008, 0.008, 0.010), aaFill(slotD, aa));
+    col += float3(0.06) * smoothstep(0.0014, 0.0, fabs(slotD));
+    float tickZ = fabs(fract((Z - 0.062) / 0.0440) - 0.5) * 0.0440;
+    col += float3(0.10, 0.102, 0.11)
+         * smoothstep(0.0016, 0.0, tickZ)
+         * smoothstep(0.0040, 0.0, fabs(fabs(lx) - slotW - 0.008))
+         * step(0.055, Z) * step(Z, 0.292);
+
+    float capZ = 0.070 + clamp(fader, 0.0, 1.0) * 0.205;
+    float2 cq = float2(lx, Z - capZ);
+    float capW = min(sw * 0.34, 0.040);
+    float capD = sdRoundBox(cq, float2(capW, 0.0165), 0.006);
+    float capM = aaFill(capD, aa);
+    col *= 1.0 - 0.6 * aaFill(sdRoundBox(cq + float2(0.0, 0.008), float2(capW, 0.020), 0.008),
+                              aa * 2.5) * (1.0 - capM);
+    // The cap is a moulded plastic block: bright on the face turned toward
+    // the viewer, falling into shadow along its far edge.
+    float3 capCol = float3(0.26, 0.265, 0.285) * (0.35 + 1.05 * smoothstep(0.020, -0.014, cq.y));
+    capCol *= 0.86 + 0.28 * vnoise(float2(lx * 420.0, 0.0));    // moulded ribs
+    col = mix(col, capCol, capM);
+    col += float3(0.16) * smoothstep(0.0022, 0.0, fabs(capD))
+         * smoothstep(-0.004, 0.012, cq.y);                     // lit top edge
+    float capLine = aaFill(sdRoundBox(cq, float2(capW * 0.86, 0.0022), 0.0018), aa);
+    col += accent * capLine * (0.25 + 1.7 * fader) * glow;
+    // spill onto the desk *around* the cap — inside is moulded plastic, and
+    // exp(-max(d,0)) is 1 everywhere inside a shape, which would flood it
+    col += accent * exp(-max(capD, 0.0) * 110.0) * (1.0 - capM) * (0.06 + 0.45 * fader) * glow;
+
+    // EQ knob: dished cap, pointer, and an LED collar that fills as it turns.
+    float kr = min(sw * 0.30, 0.028);
+    float2 kq = float2(lx, Z - 0.378);
+    float kd = length(kq) - kr;
+    float km = aaFill(kd, aa);
+    float3 knobCol = float3(0.155, 0.160, 0.178) * (0.45 + 1.00 * smoothstep(-kr, kr, kq.y));
+    knobCol *= 1.0 - 0.30 * smoothstep(kr * 0.45, kr, length(kq));
+    col = mix(col, knobCol, km);
+    col += float3(0.11) * smoothstep(0.0016, 0.0, fabs(kd));
+    float ka = mix(-2.35, 2.35, clamp(knob, 0.0, 1.0));
+    float2 kdir = float2(sin(ka), cos(ka));
+    col = mix(col, float3(0.85, 0.87, 0.92),
+              aaFill(sdSegment(kq, kdir * kr * 0.20, kdir * kr * 0.82) - kr * 0.10, aa) * km);
+    float collar = smoothstep(0.0030 + aa, 0.0, fabs(length(kq) - kr * 1.22))
+                 * step(fabs(atan2(kq.x, kq.y)), 2.35)
+                 * step(atan2(kq.x, kq.y), ka);
+    col += accent * collar * (0.20 + 1.3 * knob) * glow;
+
+    // channel lamp, between the knob and the head of the fader slot
+    float2 bq = float2(lx, Z - 0.315);
+    float bd = sdRoundBox(bq, float2(min(sw * 0.26, 0.028), 0.0085), 0.004);
+    float bm = aaFill(bd, aa);
+    col = mix(col, float3(0.055, 0.057, 0.064), bm);
+    col += accent * (bm + exp(-max(bd, 0.0) * 130.0) * 0.4)
+         * (0.05 + 1.1 * smoothstep(0.10, 0.75, fader)) * glow;
+
+    // The meter wall spills its colour down onto the back of the desk.
+    int wc = clamp(int((X + 0.5) * float(cols)), 0, cols - 1);
+    float3 spill = cosPalette(0.05 + 0.48 * ((float(wc) + 0.5) / float(cols))
+                              + 0.12 + 0.16 * u.centroid, u.palette);
+    col += spill * st[kBarsHeights + wc] * exp(-(0.45 - Z) * 7.0) * 0.30 * glow;
+    return col;
+}
+
+// (No `bands` at buffer(1): the columns arrive pre-aggregated and shaped in
+// `st`. The waveform stays at buffer(2) so that index means the same thing
+// here as in every other visualizer.)
+fragment float4 barsFragment(FSQuadOut in [[stage_in]],
+                             constant VizUniforms& u [[buffer(0)]],
+                             constant float* wave [[buffer(2)]],
+                             constant float* st [[buffer(3)]]) {
+    float2 uv = in.uv;
+    float A = u.resolution.x / max(u.resolution.y, 1.0);
+    float aa = 1.4 / max(u.resolution.y, 1.0);
+
+    int cols = clamp(int(u.p[kBarsOptColumns] + 0.5), 8, 64);
+    int segs = int(u.p[kBarsOptSegments] + 0.5);
+    float peakAmt = u.p[kBarsOptPeakHold];
+    float glow = u.p[kBarsOptGlow];
+    bool showDesk = u.p[kBarsOptShowDesk] > 0.5;
+    float deskAmt = clamp(u.p[kBarsOptDesk], 0.0, 1.0);
+    int chans = clamp(int(u.p[kBarsOptChannels] + 0.5), 4, 16);
+    float meters = clamp(u.p[kBarsOptMeters], 0.0, 2.0);
+    float lamp = st[kBarsLamp];
+
+    // Vertical layout, bottom to top: desk, gloss shelf (which catches the
+    // wall's reflection), LED ladder, meter bay. The controls that hide a
+    // section give its space back to the ladder rather than leaving a hole.
+    float bayH = 0.165 * min(meters, 1.0);
+    float bayHi = 0.986;
+    float bayLo = bayHi - bayH;
+    bool hasDesk = showDesk && deskAmt > 0.03;
+    float horizon = 0.015 + 0.50 * deskAmt;
+    float panelLo = hasDesk ? horizon : 0.010;
+    float shelfHi = panelLo + 0.050;
+    float wallLo = shelfHi;
+    float wallHi = bayLo - (bayH > 0.001 ? 0.014 : 0.0);
+    float ladderHi = wallHi - 0.026;   // the strip above holds the over-lamps
+
+    // the room the console sits in
+    float3 col = float3(0.008, 0.008, 0.011);
+    col += cosPalette(0.55 + 0.25 * u.centroid, u.palette) * 0.012 * (0.35 + 0.65 * uv.y);
+
+    if (hasDesk && uv.y < horizon) {
+        // Floor projection: a fixed world width appears `dy` wide on screen,
+        // so world x is (screen x)/dy and world depth is 1/dy. `e` stops the
+        // far edge at a finite distance — it is what sets how hard the desk
+        // converges (here, the back edge is 46% of the near edge's width).
+        float conv = 0.46;
+        float e = conv * horizon / (1.0 - conv);
+        float dyB = horizon + e;
+        float dy = horizon - uv.y + e;
+        float X = (uv.x - 0.5) * dyB / dy;
+        float Z = 0.45 * (1.0 / dy - 1.0 / dyB) / (1.0 / e - 1.0 / dyB);
+        // One pixel in world units, differentiated analytically (fwidth would
+        // be undefined in the quads that straddle the horizon).
+        float aaX = 1.4 * (dyB / dy) / max(u.resolution.x, 1.0);
+        float aaZ = 1.4 * 0.45 / (dy * dy * (1.0 / e - 1.0 / dyB)) / max(u.resolution.y, 1.0);
+        col = barsDesk(col, X, Z, aaX, aaZ, chans, cols, glow, st, u);
+    } else {
+        // ---- the meter bridge ----
+        float2 pc = float2((uv.x - 0.5) * A, uv.y - (panelLo + bayHi) * 0.5);
+        float2 ph = float2(0.492 * A, (bayHi - panelLo) * 0.5);
+        float panelD = sdRoundBox(pc, ph, 0.014);
+        float panel = aaFill(panelD, aa);
+        col = mix(col, barsPanel(uv, u), panel);
+        col += float3(0.075, 0.078, 0.088) * smoothstep(0.0030, 0.0, fabs(panelD))
+             * (0.30 + 0.70 * smoothstep(panelLo, bayHi, uv.y));
+
+        // The ladder sits in a smoked recess; the bevel is dark along the top
+        // inside edge and bright along the bottom, which is what reads as
+        // "cut into the panel" rather than "printed on it".
+        float2 wc = float2((uv.x - 0.5) * A, uv.y - (wallLo + wallHi) * 0.5);
+        float2 wh2 = float2(0.470 * A, (wallHi - wallLo) * 0.5);
+        float windowD = sdRoundBox(wc, wh2, 0.008);
+        float window = aaFill(windowD, aa);
+        col = mix(col, float3(0.014, 0.015, 0.019), window);
+        col += mix(float3(0.075), float3(0.012), smoothstep(-0.5, 0.5, wc.y / max(wh2.y, 1e-4)))
+             * smoothstep(0.0035, 0.0, fabs(windowD)) * window;
+
+        float ladderX0 = 0.045, ladderX1 = 0.955;
+        float wx = (uv.x - ladderX0) / (ladderX1 - ladderX0);
+        float ww = (ladderX1 - ladderX0) * A;
+        // The ladder stops just short of the recess floor. That sliver of
+        // sill is what separates the bars from their reflection below —
+        // without it the two run together into one continuous bar.
+        float ladderLo = wallLo + 0.011;
+        float wh = ladderHi - ladderLo;
+
+        // printed dB scale: engraved rules behind the columns, matching ticks
+        // in the margins outside the recess
+        float scaleY = (uv.y - ladderLo) / max(wh, 1e-4);
+        float rule = smoothstep(0.0016, 0.0, fabs(fract(scaleY * 5.0 + 0.5) - 0.5) / 5.0);
+        float overLine = smoothstep(0.0022, 0.0, fabs(scaleY - 0.86));
+        if (scaleY > 0.0 && scaleY < 1.0) {
+            float gapMask = 1.0 - step(fabs(fract(wx * float(cols)) - 0.5) * 2.0, 0.80);
+            col += float3(0.055, 0.058, 0.066) * rule * gapMask * step(0.0, wx) * step(wx, 1.0);
+            col += float3(0.25, 0.05, 0.03) * overLine * gapMask * step(0.0, wx) * step(wx, 1.0);
+            float margin = step(uv.x, ladderX0 - 0.004) + step(ladderX1 + 0.004, uv.x);
+            col += float3(0.12, 0.125, 0.14) * (rule + overLine) * margin * (1.0 - window);
+        }
+
+        col += barsWall(wx, scaleY, ww, wh, cols, segs, glow, peakAmt, st, u, aa);
+
+        // Over-lamps: one tiny red LED per column, latched by the peak cap.
+        if (uv.y > ladderHi + 0.004 && uv.y < wallHi - 0.004 && wx > 0.0 && wx < 1.0) {
+            float lampX = fract(wx * float(cols)) - 0.5;
+            int lc = clamp(int(wx * float(cols)), 0, cols - 1);
+            float over = smoothstep(0.94, 1.0, st[kBarsPeaks + lc]);
+            float2 lq = float2(lampX * ww / float(cols), uv.y - (ladderHi + wallHi) * 0.5);
+            float ld = length(lq) - min(0.0055, ww / float(cols) * 0.22);
+            float lm = aaFill(ld, aa);
+            col += float3(0.30, 0.03, 0.02) * lm * 0.25;
+            col += float3(1.0, 0.12, 0.06) * over
+                 * (lm * 1.6 + exp(-max(ld, 0.0) * 90.0) * 0.8 * glow);
+        }
+
+        // Gloss shelf: the ladder reflected in the polished sill below it.
+        if (uv.y < shelfHi && uv.y > panelLo) {
+            float below = shelfHi - uv.y;
+            col *= 0.30;
+            col += barsWall(wx, (below + 0.011) / max(wh, 1e-4), ww, wh, cols, segs,
+                            glow, 0.0, st, u, aa * 3.0)
+                 * 0.26 * exp(-below * 30.0);
+            col += float3(0.05) * smoothstep(0.0022, 0.0, fabs(uv.y - shelfHi));
+        }
+
+        // ---- the meter bay ----
+        if (bayH > 0.001 && uv.y > bayLo - 0.02) {
+            float cy = (bayLo + bayHi) * 0.5;
+            float vuHy = bayH * 0.44;
+            float vuHx = vuHy * 1.45;
+            float vuHxUV = vuHx / A;
+            float cxL = 0.028 + vuHxUV;
+            float cxR = 0.972 - vuHxUV;
+            float gain = min(meters, 1.6);
+            col = barsVU(col, float2((uv.x - cxL) * A, uv.y - cy), float2(vuHx, vuHy),
+                         st[kBarsVU], lamp, glow * gain, aa, u);
+            col = barsVU(col, float2((uv.x - cxR) * A, uv.y - cy), float2(vuHx, vuHy),
+                         st[kBarsVU + 1], lamp, glow * gain, aa, u);
+            // The scope keeps a tube-like aspect instead of stretching to
+            // fill; whatever is left over stays panel.
+            float freeHx = max((cxR - cxL) * 0.5 * A - vuHx - 0.045, 0.02);
+            float scopeHx = min(freeHx, vuHy * 4.6);
+            col = barsScope(col, float2((uv.x - 0.5) * A, uv.y - cy),
+                            float2(scopeHx, vuHy * 0.94), glow * gain, aa, wave, u);
+
+            // Between scope and meters, a cluster of eight indicator LEDs —
+            // one per named band, sub-bass on the left through air on the
+            // right, mirrored on both sides of the bay.
+            float comps[8] = {u.subBass, u.bass, u.lowMid, u.mid,
+                              u.highMid, u.presence, u.treble, u.air};
+            float clusterX = (scopeHx + freeHx) * 0.5;
+            for (int i = 0; i < 8; i++) {
+                float2 lp = float2(fabs((uv.x - 0.5) * A) - clusterX,
+                                   uv.y - cy - (float(i / 4) - 0.5) * 0.026);
+                lp.x -= (float(i % 4) - 1.5) * 0.020;
+                float ld = length(lp) - 0.0042;
+                float lm = aaFill(ld, aa);
+                float e = clamp(comps[i] * u.sensitivity * 1.6, 0.0, 1.0);
+                float3 lc = cosPalette(0.66 + 0.30 * float(i) / 7.0, u.palette);
+                col += lc * (lm * (0.05 + 1.5 * e)
+                             + exp(-max(ld, 0.0) * 220.0) * e * 0.5 * glow) * gain;
+                col += float3(0.05) * smoothstep(0.0016, 0.0, fabs(ld + 0.0016));
+            }
+        }
+
+        // fixings, on the metal only
+        float pin = 1.0 - window;
+        float sy0 = panelLo + 0.020, sy1 = bayHi - 0.020;
+        col += barsScrew(float2((uv.x - 0.016) * A, uv.y - sy0), aa) * pin;
+        col += barsScrew(float2((uv.x - 0.984) * A, uv.y - sy0), aa) * pin;
+        col += barsScrew(float2((uv.x - 0.016) * A, uv.y - sy1), aa) * pin;
+        col += barsScrew(float2((uv.x - 0.984) * A, uv.y - sy1), aa) * pin;
+    }
+
+    // Room light: the lamp over the desk lifts with the kick, and the whole
+    // frame falls off toward the corners.
+    col *= 1.0 + 0.14 * lamp;
+    col *= 1.0 - 0.40
+         * smoothstep(0.55, 1.45, length(float2((uv.x - 0.5) * 1.9, (uv.y - 0.5) * 1.25)));
+    // Film grain, reshuffled 12×/second rather than every frame: at display
+    // rate this reads as static rather than grain, and it is the one thing
+    // here that would flicker on a 120 Hz panel.
+    col += (hash21(uv * 640.0 + floor(u.time * 12.0)) - 0.5) * 0.009;
+
+    // Vibrance, then an exposure curve rather than the Reinhard + S-curve the
+    // other visualizers finish with: this frame is lit *hardware*, not an
+    // additive glow, and the S-curve's midtone crush would swallow the panel
+    // detail. 1 - exp(-x) leaves the dark end nearly untouched and rolls the
+    // LED pile-ups smoothly into white.
+    float luma = dot(col, float3(0.299, 0.587, 0.114));
+    col = max(mix(float3(luma), col, 1.22), 0.0);
+    col = 1.0 - exp(-col * 1.18);
     return float4(col, 1.0);
 }

@@ -1,18 +1,32 @@
 ---
 /**
- * The hero shot: the three visualizers in the same window, crossfading.
+ * The hero shot: every visualizer in the same window, crossfading.
  *
  * Every frame is a real capture taken by `make screenshots` off the shipping
  * build — the carousel is the only reason the visualizers don't need a wall of
- * plates further down the page. All three captures are 2048 × 1536, so the
- * stage can hold a fixed 4:3 box and nothing reflows between slides.
+ * plates further down the page. Every capture is 2880 × 1800, so the stage
+ * can hold a fixed 16:10 box and nothing reflows between slides.
+ *
+ * Each slide is a link to its own full-size image (see Lightbox.astro). That
+ * puts focusable content inside slides that are merely transparent, so the
+ * inactive ones carry `inert` — without it, tabbing through the hero walks into
+ * a stack of invisible links. boot.ts moves the attribute with `data-active`.
  *
  * Without JavaScript the first slide stays visible (it carries `data-active`
- * from the server) and the tabs are hidden, so the hero is still a screenshot.
+ * from the server) and the controls are hidden, so the hero is still a
+ * screenshot.
+ *
+ * The stop/play button is not decoration: this thing moves by itself for longer
+ * than five seconds, which WCAG 2.2.2 (Pause, Stop, Hide) requires a mechanism
+ * to halt. Hovering and focusing already pause it, but neither is available to
+ * someone on a touch screen, and neither is discoverable.
  */
 import { Picture } from 'astro:assets';
 
+import { fullSize } from '../lib/shots';
+
 import auroraWindow from '../assets/screenshots/aurora-windowed.png';
+import barsWindow from '../assets/screenshots/bars-windowed.png';
 import nebulaWindow from '../assets/screenshots/nebula-windowed.png';
 import tunnelWindow from '../assets/screenshots/tunnel-windowed.png';
 
@@ -21,66 +35,116 @@ const shots = [
 		id: 'nebula',
 		name: 'Nebula',
 		image: nebulaWindow,
-		alt: 'Synesthia in a window on macOS running Nebula: a dense sphere of violet, blue and green particles on black, with the now-playing badge and playback controls along the bottom.',
+		alt: 'Synesthia in a window on macOS running Nebula: a cloud of blue, green and gold particles hanging on black inside a faint ring, with the now-playing badge and playback controls along the bottom.',
 	},
 	{
 		id: 'tunnel',
 		name: 'Spectrum Tunnel',
 		image: tunnelWindow,
-		alt: 'Synesthia in a window running Spectrum Tunnel: concentric rings of magenta, cyan and gold receding toward a vanishing point.',
+		alt: 'Synesthia in a window running Spectrum Tunnel: the inside of a cave of glowing blue and gold rock and steam, lit from within, curving away out of sight.',
 	},
 	{
 		id: 'aurora',
 		name: 'Aurora',
 		image: auroraWindow,
-		alt: 'Synesthia in a window running Aurora: stacked ribbons of magenta, gold, green and blue rippling horizontally like northern lights.',
+		alt: 'Synesthia in a window running Aurora: stacked ribbons of violet, blue, green, gold and red rippling across a starfield like northern lights.',
+	},
+	{
+		id: 'bars',
+		name: 'Bars',
+		image: barsWindow,
+		alt: 'Synesthia in a window running Bars: a mixing console drawn in perspective — a wall of green-to-red LED meter columns with peak-hold caps, two lamp-lit VU needles and a green waveform scope above it, and a row of lit faders receding below.',
 	},
 ];
+
+const slides = await Promise.all(
+	shots.map(async (shot) => ({ ...shot, full: await fullSize(shot.image) })),
+);
 ---
 
 <div class="carousel" data-carousel data-interval="4600">
-	<div class="carousel-stage">
+	<div class="carousel-stage" aria-live="off">
 		{
-			shots.map((shot, i) => (
+			slides.map((shot, i) => (
 				<div
 					class="carousel-slide"
 					id={`shot-${shot.id}`}
 					role="tabpanel"
-					aria-label={shot.name}
+					aria-labelledby={`tab-${shot.id}`}
+					data-slide={shot.id}
 					data-active={i === 0 ? '' : undefined}
 					aria-hidden={i === 0 ? undefined : 'true'}
+					inert={i !== 0}
 				>
-					<Picture
-						src={shot.image}
-						formats={['avif']}
-						fallbackFormat="webp"
-						widths={[640, 900, 1200, 1600, 2048]}
-						sizes="(min-width: 1024px) 54vw, 100vw"
-						alt={shot.alt}
-						loading={i === 0 ? 'eager' : 'lazy'}
-						fetchpriority={i === 0 ? 'high' : 'auto'}
-						class="shot-shadow w-full"
-					/>
+					<a
+						class="shot-zoom"
+						href={shot.full}
+						data-lightbox
+						data-label={`${shot.name}, running in a window`}
+						aria-label={`View the ${shot.name} screenshot full size`}
+					>
+						<Picture
+							src={shot.image}
+							formats={['avif']}
+							fallbackFormat="webp"
+							widths={[640, 900, 1200, 1600, 2048]}
+							sizes="(min-width: 1024px) 54vw, 100vw"
+							alt={shot.alt}
+							loading={i === 0 ? 'eager' : 'lazy'}
+							fetchpriority={i === 0 ? 'high' : 'auto'}
+							class="shot-shadow w-full"
+						/>
+						<span class="zoom-badge" aria-hidden="true">
+							<svg viewBox="0 0 16 16" focusable="false">
+								<path
+									d="M6 2.75H2.75V6M10 13.25h3.25V10"
+									stroke="currentColor"
+									stroke-width="1.5"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									fill="none"
+								/>
+							</svg>
+						</span>
+					</a>
 				</div>
 			))
 		}
 	</div>
 
-	<div class="carousel-tabs" role="tablist" aria-label="Visualizer">
-		{
-			shots.map((shot, i) => (
-				<button
-					type="button"
-					class="tab"
-					role="tab"
-					data-tab
-					aria-controls={`shot-${shot.id}`}
-					aria-selected={i === 0 ? 'true' : 'false'}
-					tabindex={i === 0 ? 0 : -1}
-				>
-					{shot.name}
-				</button>
-			))
-		}
+	<div class="carousel-controls">
+		<div class="carousel-tabs" role="tablist" aria-label="Visualizer">
+			{
+				slides.map((shot, i) => (
+					<button
+						type="button"
+						class="tab"
+						role="tab"
+						id={`tab-${shot.id}`}
+						data-tab
+						data-slide={shot.id}
+						aria-controls={`shot-${shot.id}`}
+						aria-selected={i === 0 ? 'true' : 'false'}
+						tabindex={i === 0 ? 0 : -1}
+					>
+						{shot.name}
+					</button>
+				))
+			}
+		</div>
+
+		<!-- A label, not just an icon: the accessible name has to say what pressing
+		     it does. Both the glyph and the word follow `data-paused` on the
+		     carousel root, which boot.ts owns. -->
+		<button type="button" class="tab carousel-toggle" data-carousel-toggle>
+			<svg viewBox="0 0 12 12" aria-hidden="true" focusable="false" class="icon-pause">
+				<rect x="2" y="1.5" width="3" height="9" rx="0.6"></rect>
+				<rect x="7" y="1.5" width="3" height="9" rx="0.6"></rect>
+			</svg>
+			<svg viewBox="0 0 12 12" aria-hidden="true" focusable="false" class="icon-play">
+				<path d="M3 1.7 10 6l-7 4.3z"></path>
+			</svg>
+			<span data-carousel-toggle-label>Pause</span>
+		</button>
 	</div>
 </div>

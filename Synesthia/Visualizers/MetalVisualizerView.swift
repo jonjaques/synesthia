@@ -86,6 +86,22 @@ struct MetalVisualizerView: NSViewRepresentable {
         /// so brightness drifts instead of strobing.
         private var smoothed = SIMD4<Float>(repeating: 0)
 
+        /// Last frame's transient envelopes, for the rising-edge detection
+        /// below. The analyzer publishes `beat`/`trebleBeat` as envelopes that
+        /// decay smoothly between hits, so "high" is not the same as "a hit
+        /// just landed"; only a frame where the value *jumps* is a new hit.
+        /// Every visualizer that wanted impulses used to redo this itself —
+        /// and a GPU simulation kernel, which has no memory of the previous
+        /// frame, could not have done it at all.
+        private var previousBeat: Float = 0
+        private var previousTrebleBeat: Float = 0
+        private var beatCount: Float = 0
+        private var frameCount: Float = 0
+        /// When the current visualizer was built, for the `intro` ramp.
+        private var visualizerBuiltAt = CACurrentMediaTime()
+        /// How long a freshly built visualizer takes to fade in.
+        private static let introDuration = 0.7
+
         /// The rungs of the adaptive-resolution ladder (see `adaptResolution`):
         /// the drawable renders at this fraction of native pixels per axis, so
         /// the bottom rung costs a quarter of the top one. Discrete steps with
@@ -172,6 +188,7 @@ struct MetalVisualizerView: NSViewRepresentable {
                 // fresh measurements.
                 renderScaleIndex = Self.renderScales.count - 1
                 gpuTimer.reset()
+                visualizerBuiltAt = CACurrentMediaTime()
             }
             guard let visualizer,
                 let descriptor = VisualizerRegistry.descriptor(id: wantedID)
@@ -208,9 +225,10 @@ struct MetalVisualizerView: NSViewRepresentable {
             uniforms.sensitivity = Float(tuning.sensitivity)
             uniforms.speed = Float(tuning.speed)
             uniforms.palette = Float(tuning.paletteIndex)
-            for (index, option) in descriptor.options.prefix(8).enumerated() {
+            for (index, option) in descriptor.options.prefix(VizUniforms.parameterCount).enumerated() {
                 uniforms.setParameter(index, to: Float(tuning.value(for: option)))
             }
+            applyFrameState(to: &uniforms, snapshot: snapshot, now: now)
             applyReduceMotionIfNeeded(to: &uniforms, dt: dt)
 
             // Standard Metal frame: record GPU work into a command buffer,
@@ -298,15 +316,54 @@ struct MetalVisualizerView: NSViewRepresentable {
             }
         }
 
+        /// Fills in the fields no visualizer should have to derive itself: the
+        /// rising edges of the two transient envelopes, the beat and frame
+        /// counters, the Reduce Motion flag, and the entrance ramp.
+        ///
+        /// The hits are the interesting ones. `beat` and `trebleBeat` decay
+        /// smoothly, so a shader or a kernel sees only "loud-ish", never "a
+        /// kick landed on *this* frame" — and an impulse (a comet fling, a
+        /// shockwave launch) has to happen on exactly one frame or it either
+        /// misfires or applies forever. Detecting the jump needs the previous
+        /// frame's value, which the host has and the GPU does not.
+        private func applyFrameState(
+            to uniforms: inout VizUniforms,
+            snapshot: AudioSnapshot,
+            now: CFTimeInterval
+        ) {
+            // Thresholds, not `>`: the envelopes wobble slightly while
+            // decaying, and a bare comparison would fire on the wobble.
+            let beatHit = snapshot.beat > previousBeat + 0.25
+            let trebleHit = snapshot.trebleBeat > previousTrebleBeat + 0.30
+            previousBeat = snapshot.beat
+            previousTrebleBeat = snapshot.trebleBeat
+            if beatHit { beatCount += 1 }
+            // Wrapped well inside the range where a Float still counts whole
+            // numbers exactly (2^24), so a long session can't start skipping.
+            if beatCount >= 1_048_576 { beatCount = 0 }
+            frameCount += 1
+            if frameCount >= 1_048_576 { frameCount = 0 }
+
+            uniforms.beatHit = beatHit ? 1 : 0
+            uniforms.trebleHit = trebleHit ? 1 : 0
+            uniforms.beatCount = beatCount
+            uniforms.frame = frameCount
+            uniforms.reduceMotion = reduceMotion ? 1 : 0
+            uniforms.intro = Float(
+                min(max((now - visualizerBuiltAt) / Self.introDuration, 0), 1))
+        }
+
         /// Honors the system Reduce Motion setting. A beat-reactive visualizer
         /// that flashes on every transient carries a genuine photosensitivity
         /// risk, so when Reduce Motion is on we damp the transient features
         /// (which drive the flashing), slow the animation clock, and smooth the
         /// sustained ones so brightness drifts rather than strobes.
         ///
-        /// Done entirely on the CPU: `VizUniforms` is a fixed 112-byte
-        /// contract shared with Shaders.metal, so adding a flag field would
-        /// mean touching every shader.
+        /// Damping the *inputs* covers most of it, and it needs no cooperation
+        /// from any shader. Some effects can only be toned down structurally,
+        /// though — a particle sim's turbulence has no audio feature to damp —
+        /// so `uniforms.reduceMotion` also tells them outright (see
+        /// `applyFrameState`, and `calm` in `nebulaStep`).
         private func applyReduceMotionIfNeeded(to uniforms: inout VizUniforms, dt: Float) {
             guard reduceMotion else { return }
             uniforms.speed *= 0.5
@@ -382,7 +439,7 @@ struct MetalUnavailableView: View {
             Text("Metal is unavailable on this Mac")
                 .font(.title3.weight(.semibold))
             Text(
-                "Synesthia renders its visualizers on the GPU and needs Metal, which this system doesn’t provide. This usually means the app is running in a virtual machine without graphics acceleration."
+                "Synesthia draws on the graphics card, and this system offers no Metal device to draw with. That usually means it is running in a virtual machine without graphics acceleration."
             )
             .font(.callout)
             .foregroundStyle(.secondary)
