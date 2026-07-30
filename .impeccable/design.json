@@ -1,0 +1,478 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-30T00:00:00Z",
+  "title": "Design System: Synesthia",
+  "extensions": {
+    "colorMeta": {
+      "ink": {
+        "role": "neutral",
+        "displayName": "Indigo Black",
+        "canonical": "oklch(14.6% 0.0194 289.0)",
+        "tonalRamp": [
+          "#0b0a13",
+          "#25242e",
+          "#41404c",
+          "#61606c",
+          "#82818e",
+          "#a4a3b1",
+          "#c8c7d5",
+          "#eeedfb"
+        ]
+      },
+      "raised": {
+        "role": "neutral",
+        "displayName": "Raised Indigo",
+        "canonical": "oklch(20.0% 0.0259 290.9)",
+        "tonalRamp": [
+          "#0b0915",
+          "#252331",
+          "#42404f",
+          "#615f6f",
+          "#828091",
+          "#a5a3b5",
+          "#c9c7d9",
+          "#eeecff"
+        ]
+      },
+      "line": {
+        "role": "neutral",
+        "displayName": "Indigo Hairline",
+        "canonical": "oklch(27.1% 0.0387 292.3)",
+        "tonalRamp": [
+          "#0c081a",
+          "#252136",
+          "#423e55",
+          "#615d76",
+          "#827e98",
+          "#a5a1bc",
+          "#c9c5e1",
+          "#efeaff"
+        ]
+      },
+      "line-soft": {
+        "role": "neutral",
+        "displayName": "Whisper Rule",
+        "canonical": "oklch(21.6% 0.0312 292.2)",
+        "tonalRamp": [
+          "#0c0817",
+          "#252233",
+          "#423f52",
+          "#615e72",
+          "#827f94",
+          "#a5a2b8",
+          "#c9c6dc",
+          "#eeebff"
+        ]
+      },
+      "line-lift": {
+        "role": "neutral",
+        "displayName": "Hairline Lift",
+        "canonical": "oklch(32.7% 0.0211 289.0)",
+        "tonalRamp": [
+          "#0b0a14",
+          "#25232f",
+          "#41404d",
+          "#605f6d",
+          "#81818f",
+          "#a4a3b2",
+          "#c8c7d6",
+          "#eeedfc"
+        ]
+      },
+      "paper": {
+        "role": "neutral",
+        "displayName": "Cool Paper",
+        "canonical": "oklch(96.5% 0.0095 299.2)",
+        "tonalRamp": [
+          "#0c0a0f",
+          "#262429",
+          "#434146",
+          "#626066",
+          "#838187",
+          "#a6a4aa",
+          "#cac8cf",
+          "#efedf4"
+        ]
+      },
+      "dim": {
+        "role": "neutral",
+        "displayName": "Dimmed Paper",
+        "canonical": "oklch(72.0% 0.0260 293.4)",
+        "tonalRamp": [
+          "#0c0915",
+          "#252331",
+          "#42404f",
+          "#625f6f",
+          "#838091",
+          "#a5a2b4",
+          "#c9c6d9",
+          "#efecff"
+        ]
+      },
+      "mute": {
+        "role": "neutral",
+        "displayName": "Muted Slate",
+        "canonical": "oklch(62.0% 0.0286 295.2)",
+        "tonalRamp": [
+          "#0c0916",
+          "#262232",
+          "#433f50",
+          "#625e70",
+          "#837f92",
+          "#a6a2b6",
+          "#cac6da",
+          "#efebff"
+        ]
+      },
+      "accent": {
+        "role": "primary",
+        "displayName": "Icon Indigo",
+        "canonical": "oklch(56.4% 0.2501 283.9)",
+        "tonalRamp": [
+          "#220070",
+          "#300096",
+          "#4300be",
+          "#5c2fe6",
+          "#795bff",
+          "#9982ff",
+          "#baa9ff",
+          "#ded0ff"
+        ]
+      },
+      "wash-cold": {
+        "role": "secondary",
+        "displayName": "Cold Lobe Blue",
+        "canonical": "oklch(67.9% 0.1756 250.9)",
+        "tonalRamp": [
+          "#000051",
+          "#001675",
+          "#003d9a",
+          "#0060bf",
+          "#0184e6",
+          "#3fa9ff",
+          "#67ceff",
+          "#8ef5ff"
+        ]
+      },
+      "capture-tint": {
+        "role": "primary",
+        "displayName": "Capture Purple",
+        "canonical": "oklch(60.1% 0.2229 281.4)",
+        "tonalRamp": [
+          "#1c0065",
+          "#29008b",
+          "#3c06b2",
+          "#563ed9",
+          "#7365ff",
+          "#928bff",
+          "#b4b1ff",
+          "#d8d7ff"
+        ]
+      },
+      "icon-field": {
+        "role": "primary",
+        "displayName": "Icon Field Indigo",
+        "canonical": "color(display-p3 0.07979 0 0.45094)",
+        "tonalRamp": [
+          "#160049",
+          "#1e0062",
+          "#28007d",
+          "#340099",
+          "#4400b6",
+          "#5722d4",
+          "#7052f2",
+          "#9a86ff"
+        ]
+      },
+      "plate-black": {
+        "role": "neutral",
+        "displayName": "Plate Black",
+        "canonical": "oklch(0% 0 0)",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252525",
+          "#424242",
+          "#616161",
+          "#828282",
+          "#a5a5a5",
+          "#c9c9c9",
+          "#eeeeee"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "One per page. The page's single claim, balanced-wrapped."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Section headings, always preceded by a mono eyebrow."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "The workhorse: visualizer names, pipeline stages, source names, FAQ questions."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Prose in Dimmed Paper. Measure capped in ch at the point of use (42ch / 46ch)."
+      },
+      "label": {
+        "displayName": "Label / Eyebrow",
+        "purpose": "Uppercase mono above every section heading, plus carousel tabs and keycaps. Tracking is what makes it legible at 11px."
+      },
+      "spec": {
+        "displayName": "Spec",
+        "purpose": "Machine-readable facts on their own line, tabular figures so versions and sizes never shift."
+      }
+    },
+    "shadows": [
+      {
+        "name": "plate",
+        "value": "0 18px 44px rgba(0,0,0,0.5), 0 4px 30px color-mix(in oklab, var(--color-accent) 12%, transparent)",
+        "purpose": "Framed opaque captures (fullscreen shots). The indigo second pass is what lifts a black screenshot off a near-black page."
+      },
+      {
+        "name": "shot",
+        "value": "drop-shadow(0 24px 60px rgba(0,0,0,0.7)) drop-shadow(0 6px 44px color-mix(in oklab, var(--color-accent) 20%, transparent))",
+        "purpose": "Windowed captures. A filter, not a box-shadow, so the shadow follows the capture's alpha corners instead of a rectangle."
+      },
+      {
+        "name": "glass-fallback",
+        "value": "0 3px 10px rgba(0,0,0,0.35)",
+        "purpose": "App only, macOS 15 path: under a chrome pod, alongside a 14%-white hairline, standing in for Liquid Glass."
+      },
+      {
+        "name": "glyph",
+        "value": "0 1px 3px rgba(0,0,0,0.35)",
+        "purpose": "App only. Applied by chromeForeground() inside the glass so it lands on glyphs, guaranteeing contrast when a bright canvas pushes the material light."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-out-quart",
+        "value": "cubic-bezier(0.25, 1, 0.5, 1)",
+        "purpose": "The site's only custom easing: carousel crossfade and the single scroll reveal."
+      },
+      {
+        "name": "control",
+        "value": "180ms ease",
+        "purpose": "Button and tab colour/border transitions."
+      },
+      {
+        "name": "reveal",
+        "value": "500ms cubic-bezier(0.25, 1, 0.5, 1)",
+        "purpose": "One short opacity + 10px rise, applied once per section. Only exists when JS is present."
+      },
+      {
+        "name": "crossfade",
+        "value": "700ms cubic-bezier(0.25, 1, 0.5, 1)",
+        "purpose": "Carousel slide opacity, on a 4600ms interval."
+      },
+      {
+        "name": "chrome-fade",
+        "value": "350ms easeInOut",
+        "purpose": "App: the bottom chrome fading in and out."
+      },
+      {
+        "name": "chrome-idle",
+        "value": "3s",
+        "purpose": "App: how long the pointer may sit still before the chrome fades. Suspended entirely while VoiceOver runs or the pointer rests on a pod."
+      },
+      {
+        "name": "hover-press",
+        "value": "120ms / 100ms ease-out, scale 0.92 pressed",
+        "purpose": "App icon buttons. The scale is the tactile half of the interaction."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "transition-duration: 0.001ms; animation-iteration-count: 1",
+        "purpose": "Global escape hatch. prefers-reduced-motion flattens every transition, stops the reveal, and disables smooth scrolling; the app damps beat-driven flashing on the same signal."
+      }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px" },
+      { "name": "md", "value": "768px" },
+      { "name": "lg", "value": "1024px" },
+      { "name": "app-medium", "value": "680pt" },
+      { "name": "app-wide", "value": "940pt" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The download. One per band, and it names the channel except in the header.",
+      "html": "<a class=\"ds-btn ds-btn-primary\" href=\"#\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M11 3h2v9.6l3.3-3.3 1.4 1.4-5.7 5.7-5.7-5.7 1.4-1.4L11 12.6V3zM4 18h16v2H4v-2z\"/></svg><span>Download for macOS</span></a>",
+      "css": ".ds-btn { display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; border-radius: 0.625rem; font-family: 'IBM Plex Sans', 'Helvetica Neue', sans-serif; font-size: 0.9375rem; font-weight: 500; line-height: 1; white-space: nowrap; text-decoration: none; padding: 0.9rem 1.25rem; transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease; } .ds-btn svg { width: 1.125rem; height: 1.125rem; flex-shrink: 0; fill: currentColor; } .ds-btn-primary { background: var(--color-paper, #f4f2f9); color: var(--color-ink, #0a0912); border: none; } .ds-btn-primary:hover { background: #ffffff; } .ds-btn-primary:focus-visible { outline: 2px solid var(--color-accent, #6e4bff); outline-offset: 3px; }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Ghost counterpart. Never more than one filled button in a pair; emphasis is assigned by order.",
+      "html": "<a class=\"ds-btn ds-btn-secondary\" href=\"#\"><span>See it running</span></a>",
+      "css": ".ds-btn { display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; border-radius: 0.625rem; font-family: 'IBM Plex Sans', 'Helvetica Neue', sans-serif; font-size: 0.9375rem; font-weight: 500; line-height: 1; white-space: nowrap; text-decoration: none; padding: 0.9rem 1.25rem; transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease; } .ds-btn-secondary { color: var(--color-paper, #f4f2f9); border: 1px solid var(--color-line, #272338); background: transparent; } .ds-btn-secondary:hover { border-color: #34333f; background: var(--color-raised, #161421); } .ds-btn-secondary:focus-visible { outline: 2px solid var(--color-accent, #6e4bff); outline-offset: 3px; }"
+    },
+    {
+      "name": "Tab",
+      "kind": "chip",
+      "refersTo": "tab",
+      "description": "Carousel tablist. Mono uppercase, transparent at rest, and the selected state is the only one with a surface.",
+      "html": "<div class=\"ds-tabs\" role=\"tablist\" aria-label=\"Visualizer\"><button type=\"button\" class=\"ds-tab\" role=\"tab\" aria-selected=\"true\">Nebula</button><button type=\"button\" class=\"ds-tab\" role=\"tab\" aria-selected=\"false\">Spectrum Tunnel</button><button type=\"button\" class=\"ds-tab\" role=\"tab\" aria-selected=\"false\">Aurora</button></div>",
+      "css": ".ds-tabs { display: flex; flex-wrap: wrap; gap: 0.25rem; } .ds-tab { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 0.6875rem; font-weight: 500; letter-spacing: 0.1em; text-transform: uppercase; color: var(--color-mute, #878396); padding: 0.4rem 0.7rem; border-radius: 0.4rem; border: 1px solid transparent; background: transparent; cursor: pointer; transition: color 0.18s ease, border-color 0.18s ease, background-color 0.18s ease; } .ds-tab:hover { color: var(--color-dim, #a5a2b4); } .ds-tab[aria-selected=\"true\"] { color: var(--color-paper, #f4f2f9); border-color: var(--color-line, #272338); background: var(--color-raised, #161421); } .ds-tab:focus-visible { outline: 2px solid var(--color-accent, #6e4bff); outline-offset: 3px; }"
+    },
+    {
+      "name": "Keycap",
+      "kind": "chip",
+      "refersTo": "kbd",
+      "description": "Shortcut key. Mono, min-width so a single glyph and a word-key stay the same rhythm.",
+      "html": "<span class=\"ds-keys\"><kbd class=\"ds-kbd\">⌃</kbd><kbd class=\"ds-kbd\">⌘</kbd><kbd class=\"ds-kbd\">F</kbd><kbd class=\"ds-kbd\">Space</kbd></span>",
+      "css": ".ds-keys { display: inline-flex; gap: 0.25rem; } .ds-kbd { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 0.6875rem; min-width: 1.55rem; display: inline-flex; align-items: center; justify-content: center; padding: 0.25rem 0.4rem; border-radius: 0.3rem; border: 1px solid var(--color-line, #272338); background: var(--color-raised, #161421); color: var(--color-dim, #a5a2b4); white-space: nowrap; }"
+    },
+    {
+      "name": "Surface Card",
+      "kind": "card",
+      "refersTo": "surface-card",
+      "description": "The only panel treatment: hairline plus one tonal step, no shadow, no blur, no gradient.",
+      "html": "<div class=\"ds-surface\"><p class=\"ds-eyebrow\">Keyboard</p><dl class=\"ds-rows\"><div class=\"ds-row\"><dt class=\"ds-keys\"><kbd class=\"ds-kbd\">Space</kbd></dt><dd class=\"ds-row-desc\">Play or pause</dd></div><div class=\"ds-row\"><dt class=\"ds-keys\"><kbd class=\"ds-kbd\">⌘</kbd><kbd class=\"ds-kbd\">1</kbd></dt><dd class=\"ds-row-desc\">Switch visualizer</dd></div></dl></div>",
+      "css": ".ds-surface { border: 1px solid var(--color-line, #272338); background: var(--color-raised, #161421); border-radius: 0.875rem; padding: 1.5rem; } .ds-eyebrow { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 0.6875rem; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--color-mute, #878396); margin: 0; } .ds-rows { margin: 1.25rem 0 0; } .ds-row { display: flex; flex-direction: row-reverse; align-items: center; justify-content: space-between; gap: 1.5rem; border-bottom: 1px solid var(--color-line-soft, #1a1727); padding: 0.75rem 0; } .ds-row:first-of-type { padding-top: 0; } .ds-row:last-of-type { border-bottom: 0; padding-bottom: 0; } .ds-row-desc { font-family: 'IBM Plex Sans', 'Helvetica Neue', sans-serif; font-size: 0.95rem; color: var(--color-dim, #a5a2b4); margin: 0; } .ds-keys { display: inline-flex; gap: 0.25rem; flex-shrink: 0; } .ds-kbd { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 0.6875rem; min-width: 1.55rem; display: inline-flex; align-items: center; justify-content: center; padding: 0.25rem 0.4rem; border-radius: 0.3rem; border: 1px solid var(--color-line, #272338); background: var(--color-raised, #161421); color: var(--color-dim, #a5a2b4); }"
+    },
+    {
+      "name": "Section Header",
+      "kind": "custom",
+      "refersTo": "typography.headline",
+      "description": "The site's fixed opening move for every band: mono eyebrow, display headline, body lead capped at 42ch.",
+      "html": "<div class=\"ds-section-head\"><p class=\"ds-eyebrow\">Visualizers</p><h2 class=\"ds-headline\">Three ways to draw the same 64 bands.</h2><p class=\"ds-lead\">Each reads the same analysis and interprets it differently. All of them share Sensitivity, Speed and five palettes.</p><p class=\"ds-spec\">64 bands · 30 Hz – 16 kHz · 2048-point FFT</p></div>",
+      "css": ".ds-section-head { max-width: 42rem; } .ds-eyebrow { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 0.6875rem; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--color-mute, #878396); margin: 0; } .ds-headline { font-family: 'Familjen Grotesk', 'Helvetica Neue', Helvetica, sans-serif; font-weight: 600; letter-spacing: -0.022em; line-height: 1.04; text-wrap: balance; font-size: clamp(1.75rem, 3.4vw, 2.375rem); color: var(--color-paper, #f4f2f9); margin: 1rem 0 0; } .ds-lead { font-family: 'IBM Plex Sans', 'Helvetica Neue', sans-serif; font-size: 1rem; line-height: 1.6; color: var(--color-dim, #a5a2b4); max-width: 42ch; margin: 1.25rem 0 0; } .ds-spec { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 0.75rem; color: var(--color-mute, #878396); font-variant-numeric: tabular-nums; margin: 1.5rem 0 0; }"
+    },
+    {
+      "name": "Nav Link",
+      "kind": "nav",
+      "refersTo": "typography.body",
+      "description": "Sticky header links. The header is the one place on the site that blurs, because content scrolls under it.",
+      "html": "<header class=\"ds-header\"><a class=\"ds-brand\" href=\"#\"><span class=\"ds-brand-mark\" aria-hidden=\"true\"></span><span>Synesthia</span></a><nav class=\"ds-nav\" aria-label=\"Sections\"><a href=\"#\" aria-current=\"page\">Visualizers</a><a href=\"#\">Sources</a><a href=\"#\">How it works</a></nav></header>",
+      "css": ".ds-header { display: flex; align-items: center; justify-content: space-between; gap: 1.5rem; height: 3.5rem; padding: 0 1.25rem; border-bottom: 1px solid var(--color-line, #272338); background: color-mix(in oklab, var(--color-ink, #0a0912) 70%, transparent); backdrop-filter: blur(24px); } .ds-brand { display: flex; align-items: center; gap: 0.625rem; font-family: 'Familjen Grotesk', 'Helvetica Neue', Helvetica, sans-serif; font-size: 0.95rem; font-weight: 600; letter-spacing: -0.012em; color: var(--color-paper, #f4f2f9); text-decoration: none; } .ds-brand-mark { width: 26px; height: 26px; border-radius: 7px; background: linear-gradient(180deg, #1b0073, #6e4bff); } .ds-nav { display: flex; align-items: center; gap: 1.75rem; } .ds-nav a { font-family: 'IBM Plex Sans', 'Helvetica Neue', sans-serif; font-size: 0.875rem; color: var(--color-dim, #a5a2b4); text-decoration: none; transition: color 0.18s ease; } .ds-nav a:hover, .ds-nav a[aria-current=\"page\"] { color: var(--color-paper, #f4f2f9); } .ds-nav a:focus-visible { outline: 2px solid var(--color-accent, #6e4bff); outline-offset: 3px; border-radius: 3px; }"
+    },
+    {
+      "name": "Chrome Pod (app)",
+      "kind": "custom",
+      "refersTo": "chrome-pod",
+      "description": "The app's floating control capsule, rendered here as its macOS 15 fallback (ultraThinMaterial ≈ blur + 14%-white hairline + drop shadow). On macOS 26 the same modifier produces real Liquid Glass. Exactly 56pt tall; icon buttons are 32pt circles.",
+      "html": "<div class=\"ds-pod\"><span class=\"ds-pod-menu\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M12 3a1 1 0 0 1 1 1v16a1 1 0 0 1-2 0V4a1 1 0 0 1 1-1zm-4 4a1 1 0 0 1 1 1v8a1 1 0 0 1-2 0V8a1 1 0 0 1 1-1zm8 0a1 1 0 0 1 1 1v8a1 1 0 0 1-2 0V8a1 1 0 0 1 1-1zM4 10a1 1 0 0 1 1 1v2a1 1 0 0 1-2 0v-2a1 1 0 0 1 1-1zm16 0a1 1 0 0 1 1 1v2a1 1 0 0 1-2 0v-2a1 1 0 0 1 1-1z\"/></svg><span>System audio</span></span><span class=\"ds-pod-rule\"></span><button type=\"button\" class=\"ds-pod-btn ds-pod-btn-prominent\" aria-label=\"Stop listening\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"11\"/><path fill=\"#fff\" d=\"M11.4 7h1.2v10h-1.2zm-3 2.4h1.2v5.2H8.4zm6 0h1.2v5.2h-1.2zM5.4 11h1.2v2H5.4zm12 0h1.2v2h-1.2z\"/></svg></button><span class=\"ds-pod-rule\"></span><button type=\"button\" class=\"ds-pod-btn\" aria-label=\"Previous track\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M18 5v14l-11-7z\"/><rect x=\"4\" y=\"5\" width=\"2\" height=\"14\" rx=\"1\"/></svg></button><button type=\"button\" class=\"ds-pod-btn\" aria-label=\"Next track\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M6 5v14l11-7z\"/><rect x=\"18\" y=\"5\" width=\"2\" height=\"14\" rx=\"1\"/></svg></button></div>",
+      "css": ".ds-pod { display: inline-flex; align-items: center; gap: 8px; height: 56px; padding: 0 14px; border-radius: 9999px; background: rgba(255,255,255,0.08); backdrop-filter: blur(20px) saturate(140%); border: 1px solid rgba(255,255,255,0.14); box-shadow: 0 3px 10px rgba(0,0,0,0.35); color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,0.35); } .ds-pod-menu { display: inline-flex; align-items: center; gap: 6px; font-family: -apple-system, 'IBM Plex Sans', sans-serif; font-size: 0.8125rem; font-weight: 600; padding: 0 4px; } .ds-pod-menu svg { width: 17px; height: 17px; fill: rgba(255,255,255,0.72); } .ds-pod-rule { width: 1px; height: 20px; border-radius: 1px; background: rgba(255,255,255,0.18); margin: 0 2px; } .ds-pod-btn { width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; border: none; border-radius: 50%; background: transparent; cursor: pointer; transition: background-color 0.12s ease-out, transform 0.1s ease-out; } .ds-pod-btn svg { width: 15px; height: 15px; fill: rgba(255,255,255,0.78); } .ds-pod-btn:hover { background: rgba(255,255,255,0.1); } .ds-pod-btn:hover svg { fill: #fff; } .ds-pod-btn:active { background: rgba(255,255,255,0.18); transform: scale(0.92); } .ds-pod-btn:focus-visible { outline: 2px solid var(--color-accent, #6e4bff); outline-offset: 2px; } .ds-pod-btn-prominent { width: 30px; height: 30px; } .ds-pod-btn-prominent svg { width: 24px; height: 24px; fill: #7163ff; filter: drop-shadow(0 0 6px rgba(113,99,255,0.7)); } .ds-pod-btn-prominent:hover { background: transparent; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Darkened Listening Room",
+    "overview": "Synesthia's interface is an unlit room, and the app's own output is the only light source in it. That single idea generates every decision below. The room is never neutral black — every surface is pulled a few degrees toward the indigo of the app icon, so that a screenshot whose own background is pure black reads as a lit object *in* the room rather than a hole punched through it. The strongest colour anywhere in the chrome is a 14% indigo wash at the top of the landing page. Everything more saturated than that is the product, not the frame.\n\nThe room exists across two very different media, and it behaves the same in both. In the app, the chrome is glass floating over a live Metal canvas — three pods along the bottom edge, a status line at the top, and after three seconds of pointer stillness all of it fades out and the room goes dark except for the visual. On the site, the same restraint becomes flat near-black surfaces, hairline indigo rules, and real captures of the app lit by two drop shadows, one of which is deliberately indigo. Nothing on the site simulates the product; the plates *are* the product.\n\nThe voice is precise and unembarrassed by the machinery. Small mono labels carry the machine-readable facts — 64 bands, 30 Hz – 16 kHz, 2048-point FFT — in the same tone the app itself uses, because a listener who cares that the analysis is real is the listener this is for. Warmth comes from the display face (a Swedish grotesque, not another Inter) and from geometry being correct; it never comes from decoration. Three things this system is explicitly not: the neon VJ/EDM aesthetic (no synthwave grids, no glowing gradient chrome — saturation belongs to audio-driven output only), the SaaS landing page (no gradient mesh, no floating 3D mockups, no logo wall, no testimonial cards, no pill buttons), and any simulated product output whatsoever.",
+    "keyCharacteristics": [
+      "Indigo-tinted near-black, never neutral grey — the room has a colour temperature",
+      "Colour budget spent entirely on the product's own output; chrome stays under a 14% ceiling",
+      "Flat by default; light appears only around real captures of the app",
+      "Chrome that can disappear completely, and does",
+      "Display grotesque against a mono spec face — warmth carrying instrument readings",
+      "Every visual of the product is a real capture off the shipping build"
+    ],
+    "rules": [
+      {
+        "name": "The Colour Belongs to the Product Rule",
+        "body": "No chrome surface, border, glow, or wash may exceed 14% of a saturated hue. If a screen needs more colour, the answer is a real capture of the app, not a more colourful interface.",
+        "section": "colors"
+      },
+      {
+        "name": "The Accent Is Not Ink Rule",
+        "body": "Icon Indigo (#6e4bff) is a ring, a wash, and a shadow pass. It is never text, never an icon that carries meaning alone, and never a fill behind text.",
+        "section": "colors"
+      },
+      {
+        "name": "The Never-Neutral Rule",
+        "body": "Every grey in this system is rotated toward the icon's indigo. A literal neutral (#808080, #111, Tailwind's zinc) is the failure mode this palette exists to avoid — it makes the room read as an absence rather than a place.",
+        "section": "colors"
+      },
+      {
+        "name": "The Palette Coefficients Are Canonical Rule",
+        "body": "The app's five palettes are cosine palettes — a + b·cos(2π(c·t + d)) per channel — defined once in Palettes.color and mirrored in Shaders.metal. Those coefficients are the only source of truth. The five 5-stop swatch strips on the landing page are hand-authored and do not currently match them. This is known drift: regenerate those strips by sampling the coefficients, and never treat the site's hexes as the palette.",
+        "section": "colors"
+      },
+      {
+        "name": "The Mono Carries the Numbers Rule",
+        "body": "Any value a user could check — a version, a frequency, a file size, a band count, a shortcut — is set in Plex Mono with tabular numerals. Prose describes; mono measures.",
+        "section": "typography"
+      },
+      {
+        "name": "The One Weight Rule",
+        "body": "The display face ships exactly one weight (600), because exactly one weight is ever asked for. Adding 500 or 700 to a rule means adding a font download to every visit; three weights were once preloaded for nothing. Check astro.config.mjs before you set a display weight.",
+        "section": "typography"
+      },
+      {
+        "name": "The App Never Names a Size Rule",
+        "body": "No Font.system(size:) for text in the app. Semantic styles only, so the user's text-size and accessibility settings reach the UI. Icon glyphs are the sole exception, because those are drawn shapes, not type.",
+        "section": "typography"
+      },
+      {
+        "name": "The One Rail Rule",
+        "body": "Every full-width band on the site uses .rail. A section that sets its own horizontal padding is a bug, not a variant.",
+        "section": "layout"
+      },
+      {
+        "name": "The One Height Rule",
+        "body": "Every pod in the app's bottom chrome is exactly 56pt (chromePodHeight), set by the tallest content. Pods sizing themselves to their contents is what made the band read as three unrelated objects; do not let a new pod opt out.",
+        "section": "layout"
+      },
+      {
+        "name": "The Measure Rule",
+        "body": "Prose is capped in characters (42ch, 46ch, 18ch for the closing heading), never in pixels, and never left to the container.",
+        "section": "layout"
+      },
+      {
+        "name": "The Light Comes From the Work Rule",
+        "body": "Shadows exist to lift the product's own output off the page. A card, a panel, a button, or a nav bar that wants a shadow gets a hairline and a tonal step instead.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Glass Is One Modifier Rule",
+        "body": "All chrome material in the app goes through chromeGlass(in:interactive:). It owns the macOS 26 / 15 split; a direct glassEffect call compiles fine on both and silently breaks the fallback, which nothing catches.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Concentric Rule",
+        "body": "A shape nested inside a rounded shape takes the outer radius minus the inset, so the curves stay parallel. The now-playing badge is the reference implementation: 16pt outer, 6pt inset, 10pt artwork. Never nest a radius by eye.",
+        "section": "shapes"
+      },
+      {
+        "name": "The Rounded Rect, Not Pill Rule",
+        "body": "Site controls are rounded rectangles (0.625rem). Capsules and circles are reserved for chrome that floats over the canvas in the app.",
+        "section": "shapes"
+      }
+    ],
+    "dos": [
+      "Do put every full-width band inside .rail, and cap prose in ch.",
+      "Do spend the colour budget on the product. If a section feels flat, the fix is a real capture, not a gradient.",
+      "Do run new app chrome backgrounds through chromeGlass(in:interactive:), and apply chromeForeground() inside it so the glyph shadow lands on the glyphs.",
+      "Do keep every pod in the app's bottom band at exactly 56pt (chromePodHeight).",
+      "Do derive a nested radius as outer minus inset (badge: 16 − 6 = 10).",
+      "Do set machine-readable values in Plex Mono with tabular numerals.",
+      "Do give every animated thing a stop: the carousel has a labelled toggle, and prefers-reduced-motion flattens transitions to 0.001ms and disables the reveal. The app honours Reduce Motion by damping beat-driven flashing and smoothing brightness — a new visual with transient-driven luminance must too.",
+      "Do keep the app's chrome pinned when VoiceOver is running (NSWorkspace.isVoiceOverEnabled) — auto-hide on pointer idle is hostile to anyone who never moves a pointer.",
+      "Do ship real alt text that describes what the visualizer looks like, not \"screenshot of the app\".",
+      "Do check astro.config.mjs before using a font weight; the display face ships one.",
+      "Do regenerate the site's palette strips from the cosine coefficients when you next touch them, and close the tactile-vs-reticent gap named in Components — verified against a bright canvas frame."
+    ],
+    "donts": [
+      "Don't use a neutral grey anywhere. Every surface is tinted toward the icon's indigo.",
+      "Don't set Icon Indigo as a text or icon colour; it fails contrast. Rings, washes, and shadow passes only.",
+      "Don't exceed 14% saturation in chrome, or let anything on a page be brighter than the captures.",
+      "Don't add a shadow to a card, panel, button, or nav bar. Hairline plus one tonal step.",
+      "Don't use pills on the site, or rounded rectangles for the app's floating pods.",
+      "Don't call glassEffect directly, or use any macOS 26 API without an #available guard — the deployment target is 15.0.",
+      "Don't simulate, illustrate, mock up, or re-create the app's output. Captures come from make screenshots off the shipping build, or they don't ship.",
+      "Don't hardcode a text size in the app; semantic styles only (icon glyph sizes excepted).",
+      "Don't use Divider() inside a glass pod — the system separator reads as a dark scratch. Use the soft-white capsule rule.",
+      "Don't reach for the SaaS landing-page kit: gradient mesh, floating 3D device mockups, logo walls, testimonial cards, animated counters. None of it is in this world.",
+      "Don't import the visualizer's own look into the interface. No synthwave grids, no neon glow chrome, no rainbow gradients on type.",
+      "Don't make a control's only affordance a hover state; the chrome fades out entirely, so every function needs a keyboard path."
+    ]
+  }
+}
