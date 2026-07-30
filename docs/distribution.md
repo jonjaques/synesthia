@@ -480,6 +480,55 @@ to run if the nine copies have drifted apart, and updates `RELEASE.version` in
 `web/src/consts.ts` too. `RELEASE.size` is _not_ updated — the DMG's size is
 only known after `make direct`.
 
+`make bump` is the whole cut, not just the numbers:
+
+1. **Preflight.** The worktree must be clean and HEAD must be on a branch (not
+   `main`, not detached). A dirty tree would sweep unrelated edits into the
+   release commit; a detached HEAD would leave the release reachable only from
+   the tag. `--allow-dirty` and `--allow-main` override, `--dry-run` stops
+   before anything is written.
+2. **Release notes**, drafted by Claude Code from `<base>..HEAD` — the previous
+   `v*` tag if there is one, otherwise the fork point from `main`; `--since`
+   overrides. The draft is printed and the script waits: `a` accepts, `e` opens
+   `$EDITOR`, `r` redrafts, `q` aborts. `--notes <file>` supplies your own and
+   `--no-notes` skips the step. If `claude` isn't on `PATH` you get a stub built
+   from the commit log instead.
+3. **Confirmation.** Everything above happens before a single file changes; the
+   script then lists what it is about to write and asks. `--yes` skips the
+   prompts (and is _required_ when stdin isn't a terminal — it will not write
+   unattended by accident).
+4. **Write, verify, commit, tag.** `project.pbxproj`, `VERSION`,
+   `web/src/consts.ts`, `docs/releases/<version>.md`; then one commit staging
+   only those paths and an annotated `v<version>` tag whose message is the
+   notes. The tag is local until `git push --follow-tags`.
+
+`VERSION` at the repo root is a one-line mirror — `1.2 (5)` — so the current
+version is readable without opening Xcode or grepping a 2000-line pbxproj
+(`make version`). Nothing builds from it; the bump script rewrites it and then
+asserts it agrees with `project.pbxproj`, which is what keeps it honest.
+
+### Release notes and the appcast
+
+Notes live in `docs/releases/<version>.md`, one file per release, in git.
+`make appcast` renders each one into `build/releases/Synesthia-<version>.html`
+(`scripts/release-notes.py`) and `generate_appcast` inlines that file into the
+item's `<description>` as CDATA — Sparkle matches release-note files to archives
+by basename.
+
+Markdown would seem simpler, since `generate_appcast` accepts `.md` too, but it
+is **not embedded**: it becomes a `<sparkle:releaseNotesLink>`, which means a
+second artifact uploaded per release and a Pages Function that serves something
+other than a `.dmg` (`isSafeDmgName` rejects everything else). Embedding keeps a
+release a single upload. There is no markdown library in the toolchain and no
+pandoc, so `release-notes.py` converts the subset the notes use and escapes
+anything else rather than mangling it.
+
+One sharp edge: `generate_appcast` only writes a description for items it
+**adds**. An item already in the feed is left exactly as it was, so notes
+written _after_ a version's first `make appcast` are silently ignored. The
+script checks the newest item afterwards and says so; the fix is to delete that
+`<item>` from `build/releases/appcast.xml` and regenerate.
+
 ### Always bump the marketing version, not just the build
 
 `build-direct.sh` names the DMG `Synesthia-<MARKETING_VERSION>.dmg`, so two
@@ -495,7 +544,8 @@ what would have hidden it.
 ## Shipping a release, end to end
 
 ```bash
-make bump                         # or BUMP=minor / BUMP=major
+make bump BUMP=minor              # bump + notes + commit + tag (BUMP=patch by default)
+git push --follow-tags            # the tag is local until you do
 make direct                       # archive, sign, notarize, staple, DMG
 make appcast                      # fetch live feed, add the new version, sign
 make publish-dry-run              # see exactly what would be uploaded

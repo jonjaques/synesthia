@@ -54,7 +54,9 @@ Synesthia/
 
 SynesthiaTests/                   Swift Testing bundle; AudioAnalyzer + uniforms-layout coverage
 Makefile                          Every build/asset/release command in one place
+VERSION                           Current marketing version and build number, at a glance
 scripts/                          Demo-track generator, screenshot capture, release pipelines
+docs/releases/                    Release notes, one file per version — what Sparkle shows
 web/                              Astro marketing site
 ```
 
