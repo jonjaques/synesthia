@@ -581,9 +581,17 @@ reach it. The consequences are quiet and cumulative:
 - The DMG in R2 corresponds to a commit that is in no branch's history, so "what
   shipped as 1.2?" has no answer you can `git show`.
 
-`v1.2` is permanently in that state. It can't be repaired without force-pushing a
-tag, which is worse than leaving it, so it is named in the legacy allowlist in
-`.github/workflows/release-integrity.yml` and nothing new belongs on that list.
+`v1.2` was in exactly that state until it was repaired: the tag was moved onto
+`944b50a`, the squash commit on `main` that shipped as 1.2, and force-pushed.
+That was only safe because `git diff v1.2 944b50a` was **empty** — the squash
+commit's tree is byte-identical to the tag's, so nothing about what shipped
+changed. Check that before ever doing it again, and don't make a habit of
+rewriting published tags; the point of the guards below is that there is never a
+second one to repair.
+
+`v1.0`, `v1.0.1` and `v1.1` have no tags at all — they predate tagging — and are
+allowlisted in `.github/workflows/release-integrity.yml` only so a retroactive
+tag can't fail the check. Nothing new belongs on that list.
 
 Two guards now make it structural rather than remembered:
 
