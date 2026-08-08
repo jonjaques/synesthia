@@ -19,25 +19,6 @@ struct SynesthiaApp: App {
         NSWindow.allowsAutomaticWindowTabbing = false
     }
 
-    private var currentVisualizerName: String {
-        VisualizerRegistry.descriptor(id: appState.visualizerID)?.name ?? "Visualizer"
-    }
-
-    private static func open(_ urlString: String) {
-        guard let url = URL(string: urlString) else { return }
-        NSWorkspace.shared.open(url)
-    }
-
-    /// Mirrors the wording of the control bar's capture button (which acts
-    /// as play/pause for the file source).
-    private var captureMenuTitle: String {
-        switch appState.sourceKind {
-        case .demo: appState.isCaptureActive ? "Pause Demo Track" : "Play Demo Track"
-        case .audioFile: appState.isCaptureActive ? "Pause File" : "Play File"
-        default: appState.isCaptureActive ? "Stop Listening" : "Start Listening"
-        }
-    }
-
     var body: some Scene {
         // MUST stay the first scene. SwiftUI treats whichever scene is declared
         // first as the app's primary one: it is what launch opens, what a Dock
@@ -77,13 +58,13 @@ struct SynesthiaApp: App {
                 Divider()
 
                 Button("Synesthia Website") {
-                    Self.open("https://synesthia.app")
+                    openExternal("https://synesthia.app")
                 }
                 Button("Synesthia Support") {
-                    Self.open("https://synesthia.app/support")
+                    openExternal("https://synesthia.app/support")
                 }
                 Button("Privacy Policy") {
-                    Self.open("https://synesthia.app/privacy")
+                    openExternal("https://synesthia.app/privacy")
                 }
 
                 Divider()
@@ -92,10 +73,10 @@ struct SynesthiaApp: App {
                 // builds link out to the repository — the source is the same
                 // for either, only the build configuration differs.
                 Button("Source Code on GitHub") {
-                    Self.open("https://github.com/jonjaques/synesthia")
+                    openExternal("https://github.com/jonjaques/synesthia")
                 }
                 Button("Report an Issue") {
-                    Self.open("https://github.com/jonjaques/synesthia/issues/new")
+                    openExternal("https://github.com/jonjaques/synesthia/issues/new")
                 }
             }
 
@@ -127,7 +108,7 @@ struct SynesthiaApp: App {
 
                 Divider()
 
-                Button(captureMenuTitle) {
+                Button(appState.transport.captureMenuTitle) {
                     appState.toggleCapture()
                 }
                 .keyboardShortcut("l")
@@ -158,7 +139,7 @@ struct SynesthiaApp: App {
                     }
                 }
 
-                Button("Reset \(currentVisualizerName)") {
+                Button("Reset \(appState.transport.visualizerName)") {
                     if let descriptor = VisualizerRegistry.descriptor(id: appState.visualizerID) {
                         appState.settings.reset(descriptor)
                     }

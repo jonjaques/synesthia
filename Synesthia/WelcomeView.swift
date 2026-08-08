@@ -68,9 +68,16 @@ struct WelcomeView: View {
     /// past the text column; the negative padding keeps the text itself on
     /// the page margin.
     private var sourceRows: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        // The sheet used to read `screenAudioGranted`/`microphoneStatus`
+        // itself, which made it a third answer to "can this source run" and
+        // let it promise a source the picker had greyed out. It reads the
+        // same value the picker does now.
+        let transport = appState.transport
+
+        return VStack(alignment: .leading, spacing: 2) {
             ForEach(AudioSourceKind.selectable) { kind in
-                SourceRow(kind: kind, blurb: Self.blurb(for: kind), footnote: footnote(for: kind))
+                SourceRow(
+                    kind: kind, blurb: Self.blurb(for: kind), footnote: transport.footnote(for: kind))
             }
         }
         .padding(.horizontal, -14)
@@ -142,43 +149,6 @@ struct WelcomeView: View {
             "Pick an audio file from your Mac and let it loop."
         }
     }
-
-    private func footnote(for kind: AudioSourceKind) -> PermissionFootnote? {
-        switch kind {
-        case .demo:
-            nil
-        case .systemAudio:
-            appState.screenAudioGranted
-                ? PermissionFootnote(
-                    text: "Ready — access granted", symbol: "checkmark.seal.fill", ready: true)
-                : PermissionFootnote(
-                    text: "Asks for Screen & System Audio Recording",
-                    symbol: "lock.fill", ready: false)
-        case .inputDevice:
-            switch appState.microphoneStatus {
-            case .authorized:
-                PermissionFootnote(text: "Ready — access granted", symbol: "checkmark.seal.fill", ready: true)
-            case .denied, .restricted:
-                PermissionFootnote(
-                    text: "Microphone access is turned off in System Settings",
-                    symbol: "lock.fill", ready: false)
-            default:
-                PermissionFootnote(text: "Asks for Microphone access", symbol: "lock.fill", ready: false)
-            }
-        case .audioFile:
-            PermissionFootnote(
-                text: "No permission needed — you choose the file", symbol: "checkmark.seal.fill", ready: true
-            )
-        }
-    }
-}
-
-/// The permission line under a source row: the cost before it's paid, the
-/// green seal after.
-private struct PermissionFootnote {
-    let text: String
-    let symbol: String
-    let ready: Bool
 }
 
 /// One clickable source row: symbol, name, what it buys, and what it asks

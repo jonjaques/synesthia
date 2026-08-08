@@ -78,11 +78,23 @@ enum PrivacyPermission: String, Identifiable, CaseIterable {
 
     var id: String { rawValue }
 
+    /// Names the permission the way System Settings does, so a user hunting
+    /// for it in the sidebar sees the same words.
     var title: String {
         switch self {
         case .screenAndSystemAudio: "Screen & System Audio Recording"
         case .automation: "Automation"
         case .microphone: "Microphone"
+        }
+    }
+
+    /// The imperative form, for the explainer card's heading: `title` names
+    /// the permission, this one asks for it.
+    var actionTitle: String {
+        switch self {
+        case .screenAndSystemAudio: "Allow System Audio Recording"
+        case .automation: "Allow Control of Music"
+        case .microphone: "Allow Microphone Access"
         }
     }
 

@@ -429,7 +429,7 @@ struct PermissionCard: View {
                 .foregroundStyle(.white.opacity(0.9))
                 .padding(.bottom, 6)
                 .accessibilityHidden(true)
-            title
+            Text(permission.actionTitle)
                 .font(.title3.weight(.semibold))
             Text(permission.explanation)
                 .font(.callout)
@@ -452,14 +452,6 @@ struct PermissionCard: View {
         .padding(.vertical, 28)
         .frame(width: 430)
         .chromeGlass(in: .rect(cornerRadius: 24))
-    }
-
-    private var title: Text {
-        switch permission {
-        case .screenAndSystemAudio: Text("Allow System Audio Recording")
-        case .automation: Text("Allow Control of Music")
-        case .microphone: Text("Allow Microphone Access")
-        }
     }
 }
 
@@ -653,40 +645,25 @@ struct ArtworkTile: View {
 struct ControlsPod: View {
     @Environment(AppState.self) private var appState
 
-    /// The selectable sources whose permission is granted (or unneeded),
-    /// plus whatever is active right now — the demo, or a source whose
-    /// permission was just revoked — so the checkmark always has a row.
-    private var pickerSources: [AudioSourceKind] {
-        var kinds = AudioSourceKind.selectable.filter { appState.isSourceAvailable($0) }
-        if !kinds.contains(appState.sourceKind) {
-            kinds.insert(appState.sourceKind, at: 0)
-        }
-        return kinds
-    }
-
-    /// Sources that need a permission the user hasn't granted, shown disabled.
-    private var lockedSources: [AudioSourceKind] {
-        AudioSourceKind.selectable.filter {
-            !appState.isSourceAvailable($0) && $0 != appState.sourceKind
-        }
-    }
-
     var body: some View {
         @Bindable var state = appState
+        // Built here rather than in a stored property: reading it inside
+        // `body` is what registers the observation dependencies.
+        let transport = appState.transport
 
         HStack(spacing: 8) {
             Menu {
                 Picker("Audio Source", selection: $state.sourceKind) {
-                    ForEach(pickerSources) { kind in
+                    ForEach(transport.pickerSources) { kind in
                         Label(kind.label, systemImage: kind.symbol).tag(kind)
                     }
                 }
                 .pickerStyle(.inline)
                 .labelsHidden()
 
-                if !lockedSources.isEmpty {
+                if !transport.lockedSources.isEmpty {
                     Section("Needs Permission") {
-                        ForEach(lockedSources) { kind in
+                        ForEach(transport.lockedSources) { kind in
                             Button {
                             } label: {
                                 Label(kind.label, systemImage: kind.symbol)
@@ -724,9 +701,7 @@ struct ControlsPod: View {
                 // someone who has heard the loop enough times looks first.
                 if state.sourceKind == .demo {
                     Divider()
-                    Button(appState.isDemoPlaying ? "Pause Demo Track" : "Play Demo Track") {
-                        appState.toggleCapture()
-                    }
+                    Button(transport.captureMenuTitle) { appState.toggleCapture() }
                 }
             } label: {
                 PodMenuLabel(symbol: appState.sourceKind.symbol, title: appState.sourceKind.label)
@@ -787,12 +762,13 @@ struct CaptureButton: View {
     private static let captureTint = Color(red: 0x71 / 255.0, green: 0x63 / 255.0, blue: 0xFF / 255.0)
 
     var body: some View {
-        let active = appState.isCaptureActive
+        let transport = appState.transport
+        let active = transport.isLive
 
         Button {
             appState.toggleCapture()
         } label: {
-            Image(systemName: symbol)
+            Image(systemName: transport.captureSymbol)
                 // Active: white glyph inside a purple disc, like the menu bar chip.
                 .symbolRenderingMode(active ? .palette : .monochrome)
                 // Applied inside the label so it wins over the button style's
@@ -803,32 +779,9 @@ struct CaptureButton: View {
         }
         .buttonStyle(ChromeIconButtonStyle(size: 24, prominent: true))
         .animation(.easeInOut(duration: 0.2), value: active)
-        .help(helpText)
-        .accessibilityLabel(helpText)
+        .help(transport.captureHelp)
+        .accessibilityLabel(transport.captureHelp)
         .accessibilityAddTraits(active ? .isSelected : [])
-    }
-
-    /// Sources this app is playing itself get transport glyphs; sources it is
-    /// listening to get the capture waveform. Reaching for a waveform to
-    /// silence the demo track is not an obvious move.
-    private var symbol: String {
-        switch appState.sourceKind {
-        case .demo, .audioFile:
-            appState.isCaptureActive ? "pause.circle.fill" : "play.circle.fill"
-        case .systemAudio, .inputDevice:
-            appState.isCaptureActive ? "waveform.circle.fill" : "waveform.circle"
-        }
-    }
-
-    private var helpText: String {
-        switch appState.sourceKind {
-        case .demo:
-            appState.isCaptureActive ? "Pause demo track" : "Play demo track"
-        case .audioFile:
-            appState.isCaptureActive ? "Pause file" : "Play file"
-        case .systemAudio, .inputDevice:
-            appState.isCaptureActive ? "Stop listening" : "Start listening"
-        }
     }
 }
 
@@ -856,7 +809,7 @@ struct VisualizerPod: View {
                 .pickerStyle(.inline)
                 .labelsHidden()
             } label: {
-                PodMenuLabel(symbol: "sparkles", title: currentVisualizerName)
+                PodMenuLabel(symbol: "sparkles", title: appState.transport.visualizerName)
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
@@ -902,10 +855,6 @@ struct VisualizerPod: View {
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { _ in
             isFullScreen = false
         }
-    }
-
-    private var currentVisualizerName: String {
-        VisualizerRegistry.descriptor(id: appState.visualizerID)?.name ?? "Visualizer"
     }
 }
 
