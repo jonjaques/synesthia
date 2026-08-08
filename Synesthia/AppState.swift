@@ -253,6 +253,23 @@ final class AppState {
         }
     }
 
+    /// Everything the menu bar and the canvas chrome need to *say* about the
+    /// current source and which sources are offerable, in one pure value.
+    ///
+    /// Built fresh on every read rather than stored: reading it from inside a
+    /// view `body` touches `sourceKind`, `isDemoPlaying` and the permission
+    /// flags through the `@Observable` accessors, so SwiftUI registers exactly
+    /// the dependencies the old scattered switches did. A cached copy would
+    /// freeze them.
+    var transport: TransportPresentation {
+        TransportPresentation(
+            sourceKind: sourceKind,
+            isLive: isCaptureActive,
+            screenAudioGranted: screenAudioGranted,
+            microphoneStatus: microphoneStatus,
+            visualizerID: visualizerID)
+    }
+
     /// Whether audio is currently flowing into the analyzer.
     var isCaptureActive: Bool {
         switch sourceKind {
@@ -585,8 +602,7 @@ final class AppState {
     }
 
     func openPermissionSettings(_ permission: PrivacyPermission) {
-        guard let url = permission.settingsURL else { return }
-        NSWorkspace.shared.open(url)
+        openExternal(permission.settingsURL)
     }
 
     // MARK: - Permissions
@@ -596,23 +612,6 @@ final class AppState {
         microphoneStatus = AVCaptureDevice.authorizationStatus(for: .audio)
     }
 
-    /// Whether a source could produce audio right now, permission-wise.
-    /// Locked sources appear disabled in the source picker; the welcome
-    /// sheet — which explains what each permission buys *before* macOS asks —
-    /// is the granting path.
-    func isSourceAvailable(_ kind: AudioSourceKind) -> Bool {
-        switch kind {
-        case .demo, .audioFile:
-            true
-        case .systemAudio:
-            screenAudioGranted
-        case .inputDevice:
-            // .notDetermined stays available: selecting the source is what
-            // triggers the system prompt.
-            microphoneStatus != .denied && microphoneStatus != .restricted
-        }
-    }
-
     /// The app came back to the foreground — which is the moment a user
     /// returns from System Settings. Re-read TCC state and, if the active
     /// source was blocked and is now allowed, retry capture unprompted.
@@ -620,7 +619,7 @@ final class AppState {
         refreshPermissions()
         guard let blocked = blockedPermission,
             sourceKind.requiredPermission == blocked,
-            isSourceAvailable(sourceKind),
+            transport.isAvailable(sourceKind),
             !isCaptureActive
         else { return }
         toggleCapture()
@@ -836,4 +835,19 @@ final class AppState {
             if !Task.isCancelled { self?.statusMessage = nil }
         }
     }
+}
+
+/// Hands a URL to the system — a web page from the Help menu, or an
+/// `x-apple.systempreferences:` deep link into the pane a permission lives in.
+///
+/// One wrapper because there were two: `AppState.openPermissionSettings` and a
+/// private `SynesthiaApp.open(_:)` that did the same thing for the Help menu's
+/// five links.
+func openExternal(_ url: URL?) {
+    guard let url else { return }
+    NSWorkspace.shared.open(url)
+}
+
+func openExternal(_ urlString: String) {
+    openExternal(URL(string: urlString))
 }
