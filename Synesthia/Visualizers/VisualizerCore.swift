@@ -324,16 +324,24 @@ final class VisualizerSettings {
         didSet { save() }
     }
 
+    private let defaults: UserDefaults
+
     private static let storageKey = "VisualizerTunings"
     private static let legacyKey = "VisualizerSettings"
 
-    init() {
-        if let data = UserDefaults.standard.data(forKey: Self.storageKey),
+    /// The store is a parameter so tests can hand in a throwaway suite. The app
+    /// always passes `.standard`, and that default is what keeps the
+    /// screenshots pipeline working: it injects state through the argument
+    /// domain (`open -a … --args -visualizerID nebula`), and `NSArgumentDomain`
+    /// exists only on `.standard`. Don't move the app onto a named suite.
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        if let data = defaults.data(forKey: Self.storageKey),
             let decoded = try? JSONDecoder().decode([String: VisualizerTuning].self, from: data)
         {
             tunings = decoded
         } else {
-            tunings = Self.migratedLegacyTunings()
+            tunings = Self.migratedLegacyTunings(from: defaults)
         }
     }
 
@@ -381,13 +389,19 @@ final class VisualizerSettings {
 
     private func save() {
         guard let data = try? JSONEncoder().encode(tunings) else { return }
-        UserDefaults.standard.set(data, forKey: Self.storageKey)
+        defaults.set(data, forKey: Self.storageKey)
     }
 
     /// Carries the old global sensitivity/speed/palette onto every visualizer so
     /// an upgrade doesn't silently reset the user's look.
-    private static func migratedLegacyTunings() -> [String: VisualizerTuning] {
-        guard let stored = UserDefaults.standard.dictionary(forKey: legacyKey) else { return [:] }
+    ///
+    /// FIXME: this iterates the registry once, at construction time, so a
+    /// visualizer added later through `VisualizerRegistry.register` never
+    /// receives the carry-over. Harmless while everything registers up front;
+    /// the fix is to migrate lazily in `tuning(for:)`, which is a behaviour
+    /// change and belongs with the external-plugin roadmap item.
+    private static func migratedLegacyTunings(from defaults: UserDefaults) -> [String: VisualizerTuning] {
+        guard let stored = defaults.dictionary(forKey: legacyKey) else { return [:] }
         let legacyOptions = stored["options"] as? [String: Double] ?? [:]
         var result: [String: VisualizerTuning] = [:]
         for descriptor in VisualizerRegistry.all {

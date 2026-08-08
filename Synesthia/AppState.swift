@@ -50,7 +50,7 @@ final class AppState {
     /// The opt-in Apple Events layer: transport control and real cover art.
     let remote = PlayerRemote()
     #endif
-    let settings = VisualizerSettings()
+    let settings: VisualizerSettings
 
     private let systemCapture: SystemAudioCapture
     private let inputCapture: InputDeviceCapture
@@ -64,14 +64,14 @@ final class AppState {
     var sourceKind: AudioSourceKind {
         didSet {
             guard sourceKind != oldValue else { return }
-            UserDefaults.standard.set(sourceKind.rawValue, forKey: "sourceKind")
+            defaults.set(sourceKind.rawValue, forKey: Self.sourceKindKey)
             handleSourceChange()
         }
     }
     /// Selected visualizer's descriptor id; the render loop watches this and
     /// swaps visualizers when it changes.
     var visualizerID: String {
-        didSet { UserDefaults.standard.set(visualizerID, forKey: "visualizerID") }
+        didSet { defaults.set(visualizerID, forKey: Self.visualizerIDKey) }
     }
     /// Loudness normalization: the analyzer slowly adapts its dB mappings to
     /// the source's program level, so a quiet mic and loud mastered music
@@ -79,7 +79,7 @@ final class AppState {
     /// Persisted; the analyzer owns the DSP, this just switches it.
     var loudnessNormalizationEnabled: Bool {
         didSet {
-            UserDefaults.standard.set(loudnessNormalizationEnabled, forKey: Self.loudnessKey)
+            defaults.set(loudnessNormalizationEnabled, forKey: Self.loudnessKey)
             analyzer.setAutoGainEnabled(loudnessNormalizationEnabled)
         }
     }
@@ -141,32 +141,42 @@ final class AppState {
     /// The security-scoped resource currently open for `fileURL`, if any.
     private var scopedFileURL: URL?
 
+    /// Where every persisted preference above is read and written. Handed in
+    /// rather than reached for globally so the store has a test surface; the
+    /// app always gets `.standard`, which is also the only domain
+    /// `NSArgumentDomain` injection reaches (`CLAUDE.md` §Screenshots).
+    private let defaults: UserDefaults
+
+    private static let sourceKindKey = "sourceKind"
+    private static let visualizerIDKey = "visualizerID"
     private static let welcomeKey = "hasSeenWelcome"
     private static let bookmarkKey = "audioFileBookmark"
     private static let loudnessKey = "loudnessNormalization"
     private static let playerControlKey = "playerControlEnabled"
 
-    private init() {
+    private init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        settings = VisualizerSettings(defaults: defaults)
         systemCapture = SystemAudioCapture(analyzer: AudioAnalyzer.shared)
         inputCapture = InputDeviceCapture(analyzer: AudioAnalyzer.shared)
         filePlayer = FilePlayer(analyzer: AudioAnalyzer.shared)
         demoPlayer = FilePlayer(analyzer: AudioAnalyzer.shared)
         // First launch defaults to the bundled demo: it needs no permission,
         // so the canvas is alive before anything can be denied.
-        let stored = UserDefaults.standard.string(forKey: "sourceKind") ?? ""
+        let stored = defaults.string(forKey: Self.sourceKindKey) ?? ""
         sourceKind = AudioSourceKind(rawValue: Self.migrated(stored)) ?? .demo
-        let storedViz = UserDefaults.standard.string(forKey: "visualizerID") ?? ""
+        let storedViz = defaults.string(forKey: Self.visualizerIDKey) ?? ""
         visualizerID = VisualizerRegistry.descriptor(id: storedViz)?.id ?? VisualizerRegistry.all[0].id
         // Default on; read via `bool(forKey:)` (not a plain object cast) so
         // the screenshots-style `-loudnessNormalization NO` argument-domain
         // injection keeps working.
         loudnessNormalizationEnabled =
-            UserDefaults.standard.object(forKey: Self.loudnessKey) == nil
+            defaults.object(forKey: Self.loudnessKey) == nil
             ? true
-            : UserDefaults.standard.bool(forKey: Self.loudnessKey)
-        showsWelcome = !UserDefaults.standard.bool(forKey: Self.welcomeKey)
+            : defaults.bool(forKey: Self.loudnessKey)
+        showsWelcome = !defaults.bool(forKey: Self.welcomeKey)
         #if MUSIC_APP_SOURCE
-        playerControlEnabled = UserDefaults.standard.bool(forKey: Self.playerControlKey)
+        playerControlEnabled = defaults.bool(forKey: Self.playerControlKey)
         #endif
         // Reads two stored properties, so it can only run once they all are.
         firstRunDemoPending = showsWelcome && sourceKind == .demo
@@ -174,7 +184,7 @@ final class AppState {
         systemCapture.onExternalStop = { [weak self] in self?.handleSystemCaptureStopped() }
         // didSet doesn't fire during init, so push the stored values once.
         analyzer.setAutoGainEnabled(loudnessNormalizationEnabled)
-        UserDefaults.standard.set(sourceKind.rawValue, forKey: "sourceKind")
+        defaults.set(sourceKind.rawValue, forKey: Self.sourceKindKey)
     }
 
     /// Rewrites a stored source kind that no longer exists.
@@ -492,7 +502,7 @@ final class AppState {
     #if MUSIC_APP_SOURCE
     private func setPlayerControlEnabled(_ enabled: Bool) {
         playerControlEnabled = enabled
-        UserDefaults.standard.set(enabled, forKey: Self.playerControlKey)
+        defaults.set(enabled, forKey: Self.playerControlKey)
         if !enabled { remote.clearArtwork() }
     }
 
@@ -562,7 +572,7 @@ final class AppState {
     /// anything — the demo is the answer to that, and the only thing that
     /// starts audio on a fresh install.
     func completeWelcome() {
-        UserDefaults.standard.set(true, forKey: Self.welcomeKey)
+        defaults.set(true, forKey: Self.welcomeKey)
         showsWelcome = false
         guard firstRunDemoPending else { return }
         firstRunDemoPending = false
@@ -687,18 +697,18 @@ final class AppState {
                 options: .withSecurityScope,
                 includingResourceValuesForKeys: nil,
                 relativeTo: nil)
-            UserDefaults.standard.set(data, forKey: Self.bookmarkKey)
+            defaults.set(data, forKey: Self.bookmarkKey)
         } catch {
             // Not fatal: the file still plays this session, it just won't come
             // back on next launch.
-            UserDefaults.standard.removeObject(forKey: Self.bookmarkKey)
+            defaults.removeObject(forKey: Self.bookmarkKey)
         }
     }
 
     /// Resolves the stored bookmark at launch and opens security-scoped access
     /// to it. Returns nil when there is no bookmark or the file has moved.
     private func resolveBookmarkedFile() -> URL? {
-        guard let data = UserDefaults.standard.data(forKey: Self.bookmarkKey) else { return nil }
+        guard let data = defaults.data(forKey: Self.bookmarkKey) else { return nil }
         var isStale = false
         guard
             let url = try? URL(
@@ -708,7 +718,7 @@ final class AppState {
                 bookmarkDataIsStale: &isStale),
             url.startAccessingSecurityScopedResource()
         else {
-            UserDefaults.standard.removeObject(forKey: Self.bookmarkKey)
+            defaults.removeObject(forKey: Self.bookmarkKey)
             return nil
         }
         scopedFileURL = url
@@ -719,7 +729,7 @@ final class AppState {
                 includingResourceValuesForKeys: nil,
                 relativeTo: nil)
         {
-            UserDefaults.standard.set(fresh, forKey: Self.bookmarkKey)
+            defaults.set(fresh, forKey: Self.bookmarkKey)
         }
         return url
     }
