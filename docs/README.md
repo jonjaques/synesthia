@@ -23,6 +23,16 @@ shaders, Apple Events, sandboxing…) are introduced where they're used.
    reading and driving other apps' playback, window chrome, and the Xcode project's
    non-obvious configuration choices.
 
+## Vocabulary and decisions
+
+- **[CONTEXT.md](../CONTEXT.md)** — the glossary. What a Source, a Player, a Tuning
+  and a Snapshot are, and which words not to use for them. The documents above
+  describe how things work; this one pins down what they're called.
+- **[Decision records](adr/)** — choices that were made against a real alternative,
+  where a reader would otherwise wonder why the code looks like this. The documents
+  above explain the current design; these explain why it isn't the obvious one.
+- **[Plans](plans/)** — proposed refactors not yet carried out, one file each.
+
 ## Source map
 
 ```
