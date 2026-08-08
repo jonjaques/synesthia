@@ -56,13 +56,18 @@ Synesthia/
     │                             buffers, GPU seed/step kernels, instanced sprite draw
     ├── Shaders.metal             ALL shader functions incl. compute kernels, compiled at
     │                             build time (see below)
-    ├── MetalVisualizerView.swift MetalRenderContext (optional), MTKView host, uniforms per
-    │                             frame incl. derived frame state, occlusion pausing,
-    │                             adaptive render scale, Reduce Motion damping
+    ├── MetalVisualizerView.swift MetalRenderContext (optional), MTKView host, the frame loop:
+    │                             visualizer rebuild, occlusion pausing, frame rate, drawable
+    │                             size, command buffer
+    ├── FrameComposer.swift       Snapshot + Tuning → VizUniforms, plus the state that takes
+    │                             (hit edges, counters, Reduce Motion smoother). Takes the
+    │                             clock as values, so it is deterministic and testable
+    ├── RenderScaleLadder.swift   The adaptive-resolution decision + GPUFrameTimer
     └── {Nebula,Tunnel,Aurora,Bars}Visualizer.swift
 
 SynesthiaTests/                   Swift Testing bundle; AudioAnalyzer DSP, VizUniforms layout,
-                                  now-playing parsing/arbitration
+                                  now-playing parsing/arbitration, the audio-source contract,
+                                  PlaybackPolicy, FrameComposer, RenderScaleLadder
 Makefile                          Single entry point for every command (see below)
 VERSION                           "<marketing> (<build>)" — a mirror of project.pbxproj,
                                   rewritten and re-asserted by bump-version.sh

@@ -65,6 +65,8 @@ Synesthia/
     ├── ParticleSystem.swift      GPU-resident particle simulation scaffolding
     ├── Shaders.metal             All GPU shader code (build-time compiled)
     ├── MetalVisualizerView.swift The render loop host
+    ├── FrameComposer.swift       Snapshot + tuning → VizUniforms, deterministic
+    ├── RenderScaleLadder.swift   Adaptive resolution, and the GPU-time measurement
     ├── FullscreenShaderVisualizer.swift
     │                             One fragment shader, nothing else — the shared
     │                             host for shader-only visualizers

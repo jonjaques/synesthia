@@ -40,6 +40,7 @@ sequenceDiagram
     participant C as Coordinator
     participant AS as AppState
     participant AN as AudioAnalyzer
+    participant FC as FrameComposer
     participant V as Active Visualizer
     participant GPU as GPU
 
@@ -50,7 +51,8 @@ sequenceDiagram
     end
     C->>AN: latest()
     AN-->>C: AudioSnapshot (value copy)
-    C->>C: assemble VizUniforms<br>(snapshot + clock + tuning + options)
+    C->>FC: compose(snapshot, tuning, descriptor, clock…)
+    FC-->>C: VizUniforms
     C->>V: draw(in:commandBuffer:uniforms:snapshot:)
     V->>GPU: encode render pass (pipelines, bytes, draw calls)
     C->>GPU: present(drawable), commit()
@@ -65,11 +67,12 @@ Details worth knowing:
   animate even when no UI state changes.
 - **Resolution adapts to GPU load** (dynamic resolution scaling, the same
   trick console engines use). Every command buffer reports its measured GPU
-  time via `addCompletedHandler`; every half second the coordinator compares
-  the average against the frame budget (1 / `preferredFramesPerSecond`) and
-  steps the drawable along a 50–100%-of-native ladder — down when over 85%
-  of budget, up when the predicted cost (area ratio × average) fits under
-  60%, the gap being the hysteresis. `autoResizeDrawable` is off; the
+  time via `addCompletedHandler` into a `GPUFrameTimer`; every half second the
+  coordinator drains that average and hands it to `RenderScaleLadder` with the
+  frame budget (1 / `preferredFramesPerSecond`), which steps the drawable
+  along a 50–100%-of-native ladder — down when over 85% of budget, up when the
+  predicted cost (area ratio × average) fits under 60%, the gap being the
+  hysteresis. `autoResizeDrawable` is off; the
   coordinator owns `drawableSize`, and Core Animation scales the smaller
   drawable up to the window. Fragment cost here is strictly per-pixel (the
   tunnel sphere-traces 60 noise-laden steps for every one), so a 5K
@@ -99,7 +102,7 @@ own MSL source and compile it at load time.
 
 ## The CPU→GPU contract: `VizUniforms`
 
-Each frame the coordinator packs everything a shader might want into a
+Each frame `FrameComposer` packs everything a shader might want into a
 `VizUniforms` struct:
 
 ```mermaid
@@ -139,7 +142,11 @@ because MSL declares it as `float p[16]` and _indexes_ it:
   `u.p[kNebulaTurbulence]` instead of `u.p[3]` plus a comment.
 
 Six fields carry **state the host derives once** rather than making every
-visualizer redo it. The important pair is `beatHit`/`trebleHit`: `beat` and
+visualizer redo it — the host being `FrameComposer`, which keeps the previous
+frame's envelopes and the counters that go with them, and also does the Reduce
+Motion damping (transients cut to a quarter, the animation clock halved, the
+sustained features smoothed with a 0.4 s one-pole so brightness drifts rather
+than strobes). The important pair is `beatHit`/`trebleHit`: `beat` and
 `trebleBeat` are envelopes that decay smoothly, so nothing downstream can tell
 "loud-ish" from "a kick landed on _this_ frame" — and an impulse in a
 simulation has to be applied on exactly one frame. Detecting the rising edge
