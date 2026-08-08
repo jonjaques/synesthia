@@ -45,9 +45,10 @@ classDiagram
     VisualizerDescriptor ..> Visualizer : make() creates
     NebulaVisualizer --> GPUParticleSystem : simulates on
     Visualizer <|.. NebulaVisualizer
-    Visualizer <|.. TunnelVisualizer
-    Visualizer <|.. AuroraVisualizer
+    Visualizer <|.. FullscreenShaderVisualizer
     Visualizer <|.. BarsVisualizer
+    TunnelVisualizer ..> FullscreenShaderVisualizer : descriptor makes
+    AuroraVisualizer ..> FullscreenShaderVisualizer : descriptor makes
     VisualizerSettings ..> VisualizerDescriptor : persists per id
 ```
 
@@ -124,7 +125,8 @@ pulsing with loudness:
 
 ### Spectrum Tunnel (`TunnelVisualizer` + `tunnelFragment`)
 
-Pure fullscreen shader; the Swift class is ~40 lines of pipeline setup. The
+Pure fullscreen shader; there is no Swift class at all, only a descriptor over
+`FullscreenShaderVisualizer` (below). The
 shader sphere-traces a real 3D signed-distance field: a bore of varying
 radius around a centerline that snakes through space, so bends genuinely
 occlude and the far end is never visible. Each angular lane of the wall
@@ -136,7 +138,8 @@ own audio feature.
 
 ### Aurora (`AuroraVisualizer` + `auroraFragment`)
 
-Also a pure fullscreen shader, and the only consumer of the waveform. A
+Also a descriptor over `FullscreenShaderVisualizer`, and the only consumer of
+the waveform. A
 night-sky scene is built in layers (gradient, stars, haze, fog), then N
 horizontal ribbons are drawn; ribbon _i_ is displaced vertically by the
 waveform and brightened by its own slice of the spectrum — lows at the
@@ -260,45 +263,42 @@ panel, the desk, and every unlit lens.
    and the buffer indices it binds are fixed
    (see [rendering.md](rendering.md#gpu-compute-simulation-without-the-cpu)).
 
-2. **Write the class.** Model it on `TunnelVisualizer` — build pipelines in
-   `init` via `makeRenderPipeline`, encode one pass in `draw`:
+2. **Write the descriptor.** If your visualizer is nothing but a fragment
+   shader — as Spectrum Tunnel and Aurora are — you write no Swift class at
+   all. `FullscreenShaderVisualizer` is the host: name your function and it
+   builds the pipeline and encodes the pass, binding uniforms at 0, the bands
+   at 1, and the waveform at 2.
 
    ```swift
-   final class RippleVisualizer: Visualizer {
+   enum RippleVisualizer {
        static let descriptor = VisualizerDescriptor(
            id: "ripple",
            name: "Ripple",
            tagline: "Rings that spread from every beat",
            options: [
                VisualizerOption(id: "count", name: "Rings",
-                                range: 1...12, defaultValue: 6),
+                                range: 1...12, defaultValue: 6),   // arrives as u.p[0]
            ],
-           make: { try RippleVisualizer(device: $0, library: $1, pixelFormat: $2) })
-
-       private let pipeline: MTLRenderPipelineState
-
-       init(device: MTLDevice, library: MTLLibrary, pixelFormat: MTLPixelFormat) throws {
-           pipeline = try makeRenderPipeline(
-               device: device, library: library,
-               vertex: "fullscreenVertex", fragment: "rippleFragment",
-               pixelFormat: pixelFormat)
-       }
-
-       func draw(in view: MTKView, commandBuffer: MTLCommandBuffer,
-                 uniforms: VizUniforms, snapshot: AudioSnapshot) {
-           guard let pass = view.currentRenderPassDescriptor,
-                 let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass) else { return }
-           var u = uniforms   // "count" arrives as u.p0
-           encoder.setRenderPipelineState(pipeline)
-           encoder.setFragmentBytes(&u, length: MemoryLayout<VizUniforms>.stride, index: 0)
-           snapshot.bands.withUnsafeBytes {
-               encoder.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1)
-           }
-           encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
-           encoder.endEncoding()
-       }
+           make: {
+               try FullscreenShaderVisualizer(
+                   fragment: "rippleFragment", device: $0, library: $1, pixelFormat: $2)
+           })
    }
    ```
+
+   Note the fragment name is a _string_, so a typo is a runtime failure, not a
+   build one: `makeRenderPipeline` throws `VisualizerError.missingFunction` and
+   the host swallows it with `try?`, leaving a black canvas. Check a new one by
+   eye.
+
+   **Write a class conforming to `Visualizer` only when you need more than one
+   pass** — compute work before the drawable is acquired, extra bindings, an
+   HDR chain. `BarsVisualizer` and `NebulaVisualizer` are the two worked
+   examples; both build their pipelines in `init` via `makeRenderPipeline` and
+   encode in `draw(in:commandBuffer:uniforms:snapshot:)`. The one rule that is
+   _yours_ to keep in that case is ordering: do the CPU and compute work
+   first, and take `view.currentRenderPassDescriptor` as late as possible,
+   because it blocks until Core Animation hands over a drawable.
 
 3. **Register it.** Add `RippleVisualizer.descriptor` to the array in
    `VisualizerRegistry.all` (or call `VisualizerRegistry.register(_:)` at
