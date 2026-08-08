@@ -1,0 +1,65 @@
+# Paths an agent may never merge on its own.
+#
+# ONE source of truth, read by two independent enforcers:
+#
+#   .github/workflows/healthcheck.yml   the `risk-gate` job — labels the PR
+#   .claude/skills/queue/SKILL.md       the `/queue` loop — refuses to merge
+#
+# Both call scripts/risk-check.sh, so neither can drift from the other, and the
+# loop does not have to trust a label it could have applied itself. A PR whose
+# diff touches any pattern here is a human merge, whatever the issue said.
+#
+# Patterns are fnmatch against repository-relative paths, and `*` crosses `/`
+# — `web/functions/*` covers `web/functions/downloads/[[file]].ts`. Blank lines
+# and #-comments are ignored.
+
+# ---- Code signing, entitlements, sandbox
+# Getting one of these wrong doesn't fail the build; it ships an app that is
+# denied a permission at runtime with no prompt and no error. Nothing in CI
+# would notice, because CI ad-hoc signs.
+*.entitlements
+Synesthia-Direct-Info.plist
+Synesthia/PrivacyInfo.xcprivacy
+
+# ---- Project configuration
+# Nine copies of every build setting across two targets and three
+# configurations, plus the synchronized-group rules that make hand-edits
+# corrupt the project. See CLAUDE.md.
+Synesthia.xcodeproj/*
+
+# ---- Versioning and the release pipeline
+# Releases are human-initiated and human-approved, always. An agent may change
+# this tooling under review; it may never operate it.
+VERSION
+scripts/bump-version.sh
+scripts/build-appstore.sh
+scripts/build-direct.sh
+scripts/make-appcast.sh
+scripts/publish-release.sh
+scripts/release-notes.py
+scripts/release.env
+scripts/sparkle-keys.sh
+docs/releases/*
+
+# ---- The Sparkle serving path
+# A one-word whitelist here 404'd the delta for every copy of 1.2, and the only
+# symptom was a line in each user's log. Reviewed by a person from now on.
+web/functions/*
+web/lib/releases.ts
+web/wrangler.jsonc
+
+# ---- The CPU/GPU contract
+# VizUniforms and the MSL struct must stay byte-identical, and the option block
+# must stay contiguous. Both sides assert it, but a plausible-looking edit that
+# satisfies both asserts can still shift what a shader reads.
+Synesthia/Visualizers/Shaders.metal
+Synesthia/Visualizers/VisualizerCore.swift
+
+# ---- The rules themselves
+# An agent that can widen its own permissions has none.
+.github/*
+.claude/*
+CLAUDE.md
+Makefile
+scripts/risk-check.sh
+scripts/sync-labels.sh

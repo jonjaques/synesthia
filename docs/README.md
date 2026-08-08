@@ -33,6 +33,12 @@ shaders, Apple Events, sandboxing…) are introduced where they're used.
   above explain the current design; these explain why it isn't the obvious one.
 - **[Plans](plans/)** — proposed refactors not yet carried out, one file each.
 
+## Process
+
+- **[Autonomy](autonomy.md)** — how work is queued as GitHub issues and worked
+  unattended, what an agent may merge on its own, and the three queries that show
+  everything waiting on a human. Releases are never autonomous.
+
 ## Source map
 
 ```

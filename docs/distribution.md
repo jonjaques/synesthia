@@ -544,8 +544,15 @@ what would have hidden it.
 ## Shipping a release, end to end
 
 ```bash
+git switch -c release/1.3.0       # bump-version.sh refuses to run on main
 make bump BUMP=minor              # bump + notes + commit + tag (BUMP=patch by default)
-git push --follow-tags            # the tag is local until you do
+git push -u origin release/1.3.0 --follow-tags     # the tag is local until you do
+gh pr create --label area:release --label risk:high
+
+# …review the notes and the diff, wait for green CI, then:
+gh pr merge --merge --delete-branch                # --merge, NEVER --squash
+
+git switch main && git pull
 make direct                       # archive, sign, notarize, staple, DMG
 make appcast                      # fetch live feed, add the new version, sign
 make publish-dry-run              # see exactly what would be uploaded
@@ -555,6 +562,43 @@ make publish-release              # DMGs first, then latest.json, then appcast
 Order matters and the script enforces it. The appcast is the _announcement_: the
 moment it lists a version, installed copies start fetching that URL, so the DMG
 has to be in the bucket first.
+
+### The merge back to main is not optional, and not `--squash`
+
+`bump-version.sh` refuses to run on `main` — a release commit and its notes should
+be reviewable like anything else — so every release is cut on a branch and has to
+be merged back. Nothing used to check that it was, and the checklist above didn't
+even mention it.
+
+**Squash-merging a release branch orphans its tag.** Squashing rewrites the commit,
+so `v<version>` is left pointing at the original, which is now reachable only from
+the release branch — and `--delete-branch` then removes the last ref that could
+reach it. The consequences are quiet and cumulative:
+
+- `git describe` on `main` can't see the release.
+- `bump-version.sh`'s `resolve_base` can't find `refs/tags/v$CUR_MV`, so the next
+  release's notes are drafted against the wrong range.
+- The DMG in R2 corresponds to a commit that is in no branch's history, so "what
+  shipped as 1.2?" has no answer you can `git show`.
+
+`v1.2` is permanently in that state. It can't be repaired without force-pushing a
+tag, which is worse than leaving it, so it is named in the legacy allowlist in
+`.github/workflows/release-integrity.yml` and nothing new belongs on that list.
+
+Two guards now make it structural rather than remembered:
+
+- **`publish-release.sh` refuses to publish** a version whose `v<version>` tag is
+  not an ancestor of `origin/main`. Publishing is the last irreversible step, so
+  it is the right place to insist the release reached mainline. `--allow-unmerged`
+  overrides it for a genuine emergency.
+- **`.github/workflows/release-integrity.yml`** checks, on every push to `main`,
+  on every tag, and weekly: every `v*` tag is an ancestor of `main`, `VERSION`
+  names the newest tag `main` can see, the published appcast lists that version,
+  and every enclosure URL in the feed answers 200 — deltas included. On failure it
+  opens a `needs:human` issue instead of only going red.
+
+Releases are always targeted and approved by a human; agents never cut, tag, build
+or publish one. See `docs/autonomy.md`.
 
 `make appcast` pulls the published `appcast.xml` down before regenerating.
 `generate_appcast` only ever _adds_ to a feed it finds in the archives

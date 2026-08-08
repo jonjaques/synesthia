@@ -1,0 +1,69 @@
+# Promotes a docs/plans/<n>-<slug>.md file into a tracked work item.
+#
+# The plan file stays the design of record — it is in git, it is reviewable, and
+# it already states its own scope, dependencies and branching strategy. This
+# issue carries the *state* (queued / claimed / in review / blocked) and nothing
+# else, so the two can't drift into disagreeing about the design.
+name: Carry out a plan
+description: Turn a docs/plans/*.md file into queued work
+title: "[plan] "
+labels: ["agent:ready"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For work already designed in `docs/plans/`. The plan is the spec — keep
+        this issue short and don't restate it here.
+
+  - type: input
+    id: plan-file
+    attributes:
+      label: Plan file
+      description: Path, relative to the repository root.
+      placeholder: docs/plans/08-injectable-preferences.md
+    validations:
+      required: true
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: One-line summary
+      description: What lands, in a sentence. The plan has the argument.
+      placeholder: UserDefaults stops being reached globally; the store is handed in.
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria beyond the plan
+      description: >
+        Only what the plan does not already state. Leave the default if the
+        plan's own scope section is the whole contract.
+      value: |
+        - [ ] The plan's scope section is implemented in full
+        - [ ] `make healthcheck` passes
+        - [ ] The plan file is updated or deleted — a carried-out plan is not a plan
+    validations:
+      required: true
+
+  - type: input
+    id: depends-on
+    attributes:
+      label: Depends on
+      description: Issue numbers that must be closed first, comma-separated.
+      placeholder: "#8"
+
+  - type: dropdown
+    id: risk
+    attributes:
+      label: Risk
+      description: >
+        `risk-gate` re-derives this from the diff, so a plan that turns out to
+        touch shaders or the pbxproj becomes a human merge regardless.
+      options:
+        - "low — an agent may merge this once CI is green"
+        - "high — a human merges this"
+      default: 1
+    validations:
+      required: true

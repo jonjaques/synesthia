@@ -1,0 +1,106 @@
+# The queue format. An issue filed with this template is what `/queue` picks up
+# and works unattended, so every field exists to answer a question an agent
+# would otherwise have to guess at — and guessing is the failure mode this whole
+# system is meant to remove. See docs/autonomy.md.
+#
+# Acceptance criteria are the contract: the loop is forbidden from editing them
+# to make the work pass. If they turn out to be wrong, it labels the issue
+# needs:human and says so instead.
+name: Agent task
+description: Queue a piece of work for an agent to do unattended
+title: "[task] "
+labels: ["agent:ready"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Anything specified well enough to be finished without you in the room.
+        If a decision is still open, say so under **Open questions** — the agent
+        will stop and ask rather than pick for you.
+
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What should be true afterwards that isn't true now. One paragraph.
+      placeholder: The demo track should keep playing when the window is closed, instead of stopping silently.
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: >
+        The contract. Checkboxes, each independently checkable by someone who
+        didn't write the code. An agent may not reword these to make its work
+        pass — if one is wrong or impossible it stops and says so.
+      value: |
+        - [ ]
+        - [ ]
+        - [ ] `make healthcheck` passes
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope hints
+      description: >
+        Files, types or docs to start from. Not binding — it saves a search, it
+        doesn't fence the work in.
+      placeholder: |
+        Synesthia/AppState.swift — handlePlay, the transport gate
+        docs/plans/06-transport-presentation.md — the design of record
+
+  - type: input
+    id: verification
+    attributes:
+      label: Verification command
+      description: >
+        How the agent proves it worked, beyond the build passing. Leave blank if
+        `make healthcheck` really is the whole story.
+      placeholder: make test && make run
+
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: Out of scope
+      description: >
+        Things an agent would plausibly wander into. Worth a line each — this is
+        cheaper to write than to review.
+      placeholder: |
+        Don't touch the welcome sheet ordering; that's #12.
+        No new visualizer options — the 16-slot cap is nearly full.
+
+  - type: input
+    id: depends-on
+    attributes:
+      label: Depends on
+      description: >
+        Issue numbers that must be closed first, comma-separated. The loop skips
+        this issue until they are.
+      placeholder: "#8, #11"
+
+  - type: dropdown
+    id: risk
+    attributes:
+      label: Risk
+      description: >
+        Whether an agent may merge its own PR once CI is green. `risk-gate` in
+        healthcheck.yml re-derives this from the actual diff and can overrule a
+        low answer, so this is intent, not permission.
+      options:
+        - "low — an agent may merge this once CI is green"
+        - "high — a human merges this"
+      default: 1
+    validations:
+      required: true
+
+  - type: textarea
+    id: open-questions
+    attributes:
+      label: Open questions
+      description: >
+        Anything you haven't decided. Filling this in guarantees the agent stops
+        and asks instead of choosing — which is usually what you want.
