@@ -1,0 +1,68 @@
+# A bug report. Not queued for an agent by default — a bug whose cause is
+# unknown is research, and research is where an unattended agent wastes the most
+# time for the least return. Add agent:ready once the report is concrete enough
+# that fixing it is a task rather than an investigation.
+name: Bug
+description: Something in the app or the release pipeline is wrong
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The build configuration matters more here than in most projects: Debug,
+        Release (App Store) and Direct differ in bundle ID, entitlements, the
+        Music integration and whether Sparkle exists at all. A bug that only
+        reproduces in one of them is a strong clue, not a footnote.
+
+  - type: textarea
+    id: what-happens
+    attributes:
+      label: What happens
+      description: Observed behaviour, and what you expected instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce
+      description: Numbered steps, starting from a launch.
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: configuration
+    attributes:
+      label: Build configuration
+      options:
+        - "Debug (com.jonjaques.Synesthia.debug)"
+        - "Direct — notarized download"
+        - "Release — Mac App Store"
+        - "Unknown / more than one"
+      default: 3
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: From the About window, or `make version` for a local build.
+      placeholder: "1.2.1 (6)"
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: >
+        For update problems, the Sparkle subsystem is where the answer usually
+        is. Paste anything relevant; it is rendered as a code block already.
+      value: |
+        # Sparkle, for update failures:
+        # log stream --style compact --predicate 'subsystem == "org.sparkle-project.Sparkle"'
+      render: shell

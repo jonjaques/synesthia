@@ -3,8 +3,14 @@
 # Publish the direct download: upload the DMGs, the Sparkle appcast, and the
 # latest.json manifest to the R2 bucket that synesthia.app serves them from.
 #
-#   ./scripts/publish-release.sh              # upload
-#   ./scripts/publish-release.sh --dry-run    # print what would be uploaded
+#   ./scripts/publish-release.sh                  # upload
+#   ./scripts/publish-release.sh --dry-run        # print what would be uploaded
+#   ./scripts/publish-release.sh --allow-unmerged # skip the "is it on main?" check
+#
+# The version being published must be tagged and that tag must be an ancestor of
+# origin/main — see "Checking … reached main" below. That is the one guard that
+# makes the merge-back structurally unforgettable rather than a step in a
+# checklist.
 #
 # Nothing here touches the website. The DMGs are deliberately NOT in git and the
 # site is not rebuilt to ship a release — web/functions/ reads all three of
@@ -29,7 +35,16 @@ cd "$REPO_ROOT"
 source "$REPO_ROOT/scripts/release.env"
 
 DRY_RUN=0
-[[ "${1:-}" == "--dry-run" ]] && DRY_RUN=1
+ALLOW_UNMERGED=0
+while [[ $# -gt 0 ]]; do
+	case "$1" in
+		--dry-run) DRY_RUN=1 ;;
+		--allow-unmerged) ALLOW_UNMERGED=1 ;;
+		-h|--help) sed -n '2,/^set -euo/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'; exit 0 ;;
+		*) printf 'unknown option: %s\n' "$1" >&2; exit 2 ;;
+	esac
+	shift
+done
 
 step() { printf '\n\033[1;36m==> %s\033[0m\n' "$1"; }
 fail() { printf '\n\033[1;31mFAILED: %s\033[0m\n' "$1" >&2; exit 1; }
@@ -182,6 +197,63 @@ REFERENCED=$(tail -n +2 <<<"$MANIFEST")
 
 echo "  latest      : $LATEST_SHORT (build $LATEST_BUILD) — $LATEST_FILE"
 echo "  referenced  : $(grep -c . <<<"$REFERENCED") file(s)"
+
+# ------------------------------------------------- the version has to be on main
+#
+# Publishing is the last irreversible step of a release, so it is the right
+# place to insist the release actually reached mainline.
+#
+# bump-version.sh refuses to run on main by design — a release commit and its
+# notes should be reviewable — so every release is cut on a branch and has to be
+# merged back. Nothing used to check that it was. Squash-merging a release
+# branch discards the ancestry, the branch gets deleted, and the tag is left
+# pointing at a commit no branch can reach: `git describe` on main can't see it,
+# `make bump`'s resolve_base can't find it to diff release notes against, and
+# the DMG in R2 corresponds to a commit that is nowhere in the history. `v1.2`
+# is in exactly that state and cannot be repaired without rewriting a tag.
+#
+# Checked here rather than only in CI because CI reports it after the fact,
+# and by then the bytes are already public. This is a precondition, not an
+# alarm. `.github/workflows/release-integrity.yml` still watches for drift.
+step "Checking $LATEST_SHORT reached main"
+RELEASE_TAG="v$LATEST_SHORT"
+if [[ $ALLOW_UNMERGED -eq 1 ]]; then
+	echo "  --allow-unmerged given — skipping the mainline check"
+elif ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+	echo "  not a git worktree — skipping (publishing from an export?)"
+else
+	# Fetch, because the local main can be arbitrarily stale and a stale main is
+	# how this check would produce a confident wrong answer in either direction.
+	git fetch --quiet --tags --force origin main 2>/dev/null \
+		|| echo "  could not fetch origin — comparing against the local refs"
+
+	MAIN_REF=origin/main
+	git rev-parse -q --verify "$MAIN_REF^{commit}" >/dev/null || MAIN_REF=main
+
+	git rev-parse -q --verify "refs/tags/$RELEASE_TAG" >/dev/null \
+		|| fail "the appcast's newest version is $LATEST_SHORT but there is no
+        $RELEASE_TAG tag in this repository.
+
+        Every published version is tagged. Cut the release properly:
+            ./scripts/bump-version.sh <level>
+        or, if the tag exists only on the remote, fetch it."
+
+	if git merge-base --is-ancestor "$RELEASE_TAG" "$MAIN_REF"; then
+		echo "  $RELEASE_TAG is an ancestor of $MAIN_REF"
+	else
+		fail "$RELEASE_TAG is NOT an ancestor of $MAIN_REF — the release has not
+        been merged back to mainline, so publishing it would ship bytes that
+        correspond to a commit no branch points at.
+
+        Merge the release branch first, with a real merge commit:
+            gh pr merge --merge --delete-branch
+
+        NOT --squash: squashing rewrites the commit, which orphans $RELEASE_TAG
+        permanently. That is how v1.2's tag was lost.
+
+        Emergency override: ./scripts/publish-release.sh --allow-unmerged"
+	fi
+fi
 
 # Two piles: what this machine can upload, and what it can only vouch for.
 LOCAL=()

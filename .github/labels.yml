@@ -1,0 +1,86 @@
+# The repository's labels, as data.
+#
+# This is the source of truth; GitHub is the copy. `make sync-labels` applies it
+# and is idempotent, so a label renamed or recoloured by hand in the web UI is
+# put back on the next run. Nothing deletes labels — a label that disappears
+# from this file is left alone in GitHub, because deleting one silently strips
+# it from every issue that carried it.
+#
+# The state labels below drive scripts/../.claude/skills/queue (the `/queue`
+# autonomous loop) and are described in full in docs/autonomy.md. If you change
+# a NAME here, change it there too: the loop matches on the literal string.
+
+# ---------------------------------------------------------------- agent state
+#
+# Exactly one of these at a time. The loop moves an issue through them in order
+# and never skips: an issue with two state labels is a bug in the loop, not a
+# valid state.
+- name: "agent:ready"
+  color: "0e8a16"
+  description: "Specified and unblocked — safe for an agent to start unattended"
+
+- name: "agent:working"
+  color: "fbca04"
+  description: "Claimed by an agent; a comment on the issue names the session"
+
+- name: "agent:review"
+  color: "1d76db"
+  description: "Work is done and a PR is open — waiting on a human review"
+
+- name: "agent:blocked"
+  color: "b60205"
+  description: "An agent stopped here; a comment states exactly what it needs"
+
+# ------------------------------------------------------------ human attention
+#
+# Orthogonal to the state labels, and the one thing worth a notification. Every
+# issue or PR carrying this is waiting on a person and cannot progress without
+# one. docs/autonomy.md has the saved query.
+- name: "needs:human"
+  color: "d93f0b"
+  description: "Blocked on a decision, a credential, or judgment only a human has"
+
+# --------------------------------------------------------------------- risk
+#
+# What an agent may merge on its own. Absence of a label means risk:high — the
+# safe default, so forgetting to label something can never widen permissions.
+#
+# These are a declaration of intent, not the enforcement. The `risk-gate` job in
+# healthcheck.yml re-derives the risk from the actual diff and will overrule a
+# risk:low label on a PR that touches a protected path.
+- name: "risk:low"
+  color: "c2e0c6"
+  description: "An agent may merge this itself once CI is green"
+
+- name: "risk:high"
+  color: "e99695"
+  description: "A human merges this. Signing, releases, shaders, release plumbing"
+
+# --------------------------------------------------------------------- areas
+- name: "area:audio"
+  color: "5319e7"
+  description: "Capture, the analyzer, the FFT, audio sources"
+
+- name: "area:render"
+  color: "5319e7"
+  description: "The Metal render loop, uniforms, frame pacing"
+
+- name: "area:visualizers"
+  color: "5319e7"
+  description: "The plugin contract, shaders, individual visualizers"
+
+- name: "area:macos"
+  color: "5319e7"
+  description: "Permissions, sandboxing, menus, windows, Apple Events"
+
+- name: "area:web"
+  color: "5319e7"
+  description: "The Astro site and the Pages Functions in web/"
+
+- name: "area:release"
+  color: "5319e7"
+  description: "Versioning, notarization, Sparkle, the appcast, R2"
+
+- name: "area:docs"
+  color: "5319e7"
+  description: "docs/, CLAUDE.md, CONTEXT.md, release notes"

@@ -91,6 +91,24 @@ Options are capped at `VizUniforms.parameterCount` (16), and each visualizer
 names its slots with `constant int k…` in Shaders.metal rather than writing
 `u.p[6]` inline.
 
+## Working here as an agent
+
+Work is queued as GitHub issues and tracked entirely in GitHub — labels, no board.
+**[`docs/autonomy.md`](docs/autonomy.md) is the contract; read it before working the queue.**
+The short version:
+
+- `/queue` claims `agent:ready` issues one at a time, opens a PR each, and labels anything
+  needing judgment `needs:human` rather than guessing. One blocked issue never stalls a run.
+- **What you may merge yourself** is decided by `.github/risk-paths.txt`, enforced twice: the
+  `risk-gate` job labels the PR, and the loop runs `scripts/risk-check.sh` itself before
+  merging. Run the script; never read back the label, which you have permission to change.
+- **Releases are targeted and approved by a human, always.** Never run `make bump`,
+  `make direct`, `make appstore`, `make appcast` or `make publish-release`, never create or
+  push a tag, and never open a `release/*` branch — even if an issue asks. Changing the
+  release tooling under review is fine; operating it is not. The runbook is the `release`
+  skill.
+- Acceptance criteria on an issue are a contract. Never reword one to make your work pass.
+
 ## Commands
 
 **The `Makefile` is the single entry point — prefer it over raw `xcodebuild`.** `make` with no target prints the list. Every target is a thin wrapper (the scripts stay runnable directly), so adding a script means adding a target next to it.
@@ -111,6 +129,9 @@ make format           # prettier --write, then `swift format --in-place`
 make demo-track       # python3 scripts/make_demo_loop.py
 make screenshots      # scripts/take-screenshots.sh → web/src/assets/screenshots/<run>
 make check-metadata   # scripts/check-metadata.py
+
+make sync-labels      # apply .github/labels.yml to GitHub (idempotent, never deletes)
+./scripts/risk-check.sh   # may an agent merge this branch? reads .github/risk-paths.txt
 
 make version          # print VERSION — the current marketing version and build number
 make bump BUMP=minor  # cut a release: bump every copy, draft docs/releases/<v>.md, commit, tag
@@ -189,6 +210,8 @@ Capture first, match against the variable: `OUT=$(producer 2>&1 || true)` then `
 **A Pages Function response with no `cache-control` is not uncached — Cloudflare gives a 404 a four-hour Edge TTL.** Every error path in `web/functions/` sent only a content type, so the first request for `/downloads/Synesthia-<v>.dmg` made _before_ the upload landed pinned "Not found" at the edge for hours. That is how 1.2 shipped: the DMG was in R2, byte-identical and correctly signed, while Sparkle kept reporting "An error occurred while downloading the update" — the log line that identifies it is `A network error occurred while downloading … not found (404)` under subsystem `org.sparkle-project.Sparkle`. A HEAD is enough to install the cache entry, which makes it easy to cause from a script that checks whether a file exists before publishing it. Two independent guards now: every error response in `web/functions/` carries `cache-control: no-store` (via `plainError` in `web/lib/releases.ts`), and every probe in `publish-release.sh` appends a `?probe=` nonce so it can only ever miss on a throwaway cache key. Keep both — the first is the fix, the second means a regression in the first can't break a release.
 
 **`/downloads/*` serves DMGs _and_ Sparkle deltas — the whitelist was `.dmg`-only and every 1.2 install ate a 404.** `generate_appcast` emits a `<sparkle:deltas>` enclosure whenever two consecutive DMGs sit in `build/releases` when the feed is built, `publish-release.sh` uploads it like any other referenced artifact, and `isSafeDmgName` in `web/lib/releases.ts` then refused to serve it: `https://synesthia.app/downloads/Synesthia6-5.delta` → 404, for every copy of 1.2, forever. Sparkle 2.9.4 masks it (`Failed to download delta update. Falling back to regular update…`, then the full 4.6 MB enclosure downloads and installs correctly), so the only symptom is a line in each user's log — reproduced by running a 1.2 bundle and streaming `subsystem == "org.sparkle-project.Sparkle"`. The delta is eligible whenever `sparkle:deltaFromSparkleExecutableSize` matches the installed `Sparkle.framework` binary byte-for-byte, which it does for every copy of a given build, so this is not an edge case. Now `isSafeArtifactName` allows `.dmg` and `.delta`, and `publish-release.sh` fetches every URL it uploaded back through the site — the check that was missing, since only the latest DMG was ever probed.
+
+**Squash-merging a release branch orphans its tag, and nothing tells you.** `bump-version.sh` refuses to run on `main` by design, so every release is cut on a branch and has to be merged back. Squashing rewrites the tagged commit; `--delete-branch` then removes the last ref that could reach the original, and `v<version>` points into nothing. `git describe` on `main` stops seeing the release, `resolve_base` drafts the next release's notes against the wrong range, and the DMG in R2 corresponds to a commit in no branch's history. `v1.2` is permanently in that state — repairing it means force-pushing a tag, which is worse, so it is allowlisted in `.github/workflows/release-integrity.yml` and nothing new belongs there. **Release branches merge with `--merge`, never `--squash`** (ordinary work still squashes; it has no tag to orphan). Two guards make this structural: `publish-release.sh` refuses to publish a version whose tag is not an ancestor of `origin/main` (`--allow-unmerged` overrides), and `release-integrity.yml` files a `needs:human` issue when a tag, `VERSION`, or the published feed drift apart.
 
 **Marketing versions are always three components.** `bump-version.sh` used to trim a trailing `.0`, so the series ran 1.1, 1.2, 1.2.1, 1.3 — two shapes, and every consumer that has to _match_ a version (`docs/releases/<version>.md`, the `v<version>` tag, `resolve_base`'s `refs/tags/v$CUR_MV` lookup, `Synesthia-<version>.dmg` in R2 and the appcast enclosure pointing at it) had to handle both, with nothing enforcing the correspondence. It now always prints `major.minor.patch`, and an explicit short version on the command line is padded rather than passed through: `bump-version.sh 2.5` sets `2.5.0`. The pre-1.2.1 names are frozen into R2 filenames and tags and stay as they are.
 

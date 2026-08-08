@@ -48,7 +48,8 @@ endif
         install healthcheck lint format \
         demo-track screenshots check-metadata \
         appstore appstore-upload direct direct-fast bump version \
-        sparkle-keys appcast publish-release publish-dry-run
+        sparkle-keys appcast publish-release publish-dry-run \
+        sync-labels sync-labels-dry-run
 
 help: ## List the available targets
 	@printf '\033[1mSynesthia\033[0m — make targets\n\n'
@@ -140,3 +141,11 @@ publish-dry-run: ## …show what publish-release would upload, without uploading
 
 check-metadata: ## Check docs/app-store-metadata.md against App Store field limits
 	python3 scripts/check-metadata.py
+
+# ==== Project management  (docs/autonomy.md)
+
+sync-labels: ## Apply .github/labels.yml to the repository (idempotent, never deletes)
+	./scripts/sync-labels.sh $(ARGS)
+
+sync-labels-dry-run: ## …show which labels would be created or updated
+	./scripts/sync-labels.sh --dry-run

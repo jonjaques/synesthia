@@ -1,0 +1,239 @@
+name: Release integrity
+
+# Does the record of what we shipped still hold together?
+#
+# Two failures this catches, both of which have already happened here:
+#
+#   1. A release tag that isn't on mainline. `bump-version.sh` refuses to run on
+#      main, so every release is cut on a branch and has to be merged back —
+#      and squash-merging a release branch discards the ancestry, leaving the
+#      tag reachable only from a branch that then gets deleted. `v1.2` is in
+#      exactly that state. `git describe` on main can't see it.
+#
+#   2. A version that exists in git but not to users. The appcast is the only
+#      thing an installed copy reads; a DMG in R2 that the feed doesn't list, or
+#      a feed entry whose enclosure 404s, is a release that silently didn't
+#      happen. That is how 1.2 shipped.
+#
+# Neither is visible from a green PR, and neither surfaces until someone tries
+# to cut the *next* release. So this runs on a schedule as well as on pushes,
+# and when it finds something it opens an issue rather than only going red in a
+# tab nobody has open.
+#
+# It never fails a PR: nothing here is about the change under review.
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  schedule:
+    # Mondays, 14:00 UTC. Weekly is the right cadence for drift that takes a
+    # release to introduce; the schedule exists so a problem is found before the
+    # next release rather than by it.
+    - cron: "0 14 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: release-integrity
+  cancel-in-progress: false
+
+jobs:
+  # ---------------------------------------------------------------- git facts
+  tags:
+    name: Tags reachable from main
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      report: ${{ steps.check.outputs.report }}
+    steps:
+      # Every tag and all of main's history, or `merge-base --is-ancestor`
+      # answers about a truncated graph and reports healthy tags as orphaned.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Check
+        id: check
+        run: |
+          set -euo pipefail
+          git fetch --tags --force origin
+
+          # Releases cut before the merge-back policy existed. v1.2 was
+          # squash-merged, so its tag points at a commit no longer on any
+          # branch; the content shipped and is in main, but the ancestry is
+          # gone and cannot be restored without force-pushing the tag.
+          # Nothing new belongs on this list — if you are tempted to add one,
+          # the merge-back was skipped and the fix is to merge it.
+          LEGACY="v1.0 v1.0.1 v1.1 v1.2"
+
+          FAILED=""
+          for tag in $(git tag --list 'v*' --sort=version:refname); do
+            if grep -qw -- "$tag" <<<"$LEGACY"; then
+              echo "  $tag  skipped (pre-policy)"
+              continue
+            fi
+            if git merge-base --is-ancestor "$tag" origin/main; then
+              echo "  $tag  on mainline"
+            else
+              echo "  $tag  NOT REACHABLE FROM MAIN"
+              FAILED="$FAILED $tag"
+            fi
+          done
+
+          # VERSION is a mirror of project.pbxproj and the quickest way to spot
+          # a release that was tagged but never merged, or merged but never
+          # tagged. It should always name the newest tag main can see.
+          VERSION_MV=$(cut -d' ' -f1 VERSION)
+          DESCRIBED=$(git describe --tags --abbrev=0 --match 'v*' origin/main 2>/dev/null || echo "none")
+          echo "  VERSION says $VERSION_MV; newest tag on main is $DESCRIBED"
+          if [[ "v$VERSION_MV" != "$DESCRIBED" ]]; then
+            FAILED="$FAILED VERSION($VERSION_MV)!=$DESCRIBED"
+          fi
+
+          if [[ -n "$FAILED" ]]; then
+            {
+              echo "report<<EOF"
+              echo "Tags not reachable from \`main\`, or a VERSION/tag mismatch:"
+              echo
+              for item in $FAILED; do echo "- \`$item\`"; done
+              echo
+              echo "A release branch was merged with \`--squash\`, or never merged at all."
+              echo "See docs/distribution.md — release branches merge with \`--merge\`."
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+  # ------------------------------------------------------- what users can get
+  #
+  # Separate job so a network flake on synesthia.app can never mask the git
+  # check above, which is the one that is always knowable.
+  published:
+    name: Published version is reachable
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      report: ${{ steps.check.outputs.report }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+
+      - name: Check
+        id: check
+        run: |
+          set -euo pipefail
+          VERSION_MV=$(cut -d' ' -f1 VERSION)
+          echo "Looking for $VERSION_MV in the published appcast"
+
+          # Every request carries a nonce. A 404 answered here would otherwise
+          # be cached at the edge under the key real clients read — the exact
+          # mechanism that broke 1.2's updates for hours. See CLAUDE.md.
+          NONCE="ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          FEED=$(curl -fsS --max-time 30 --retry 3 --retry-delay 5 \
+                   "https://synesthia.app/appcast.xml?probe=$NONCE" || true)
+
+          if ! grep -q "<rss" <<<"$FEED"; then
+            echo "report<<EOF" >> "$GITHUB_OUTPUT"
+            echo "\`/appcast.xml\` did not return a feed. The Pages Function may not be deployed." >> "$GITHUB_OUTPUT"
+            echo "EOF" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+          if ! grep -qF "<sparkle:shortVersionString>$VERSION_MV<" <<<"$FEED"; then
+            echo "report<<EOF" >> "$GITHUB_OUTPUT"
+            echo "\`VERSION\` on main says **$VERSION_MV**, but the published appcast does not list it." >> "$GITHUB_OUTPUT"
+            echo "" >> "$GITHUB_OUTPUT"
+            echo "Either the release was never published (\`make publish-release\`), or main was" >> "$GITHUB_OUTPUT"
+            echo "bumped for a version that has not shipped yet — which is fine mid-release and" >> "$GITHUB_OUTPUT"
+            echo "resolves itself once \`make publish-release\` runs." >> "$GITHUB_OUTPUT"
+            echo "EOF" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+          # Every enclosure the feed points at, full downloads and deltas alike.
+          # The deltas are the point: they are invisible to anyone reading the
+          # feed casually, they are fetched first by everyone one version
+          # behind, and a 404 on one is recoverable enough that it hid for a
+          # whole release cycle.
+          BAD=""
+          for url in $(grep -o 'url="[^"]*"' <<<"$FEED" | sed 's/url="//;s/"$//'); do
+            CODE=$(curl -s -o /dev/null -w '%{http_code}' --head --max-time 30 "$url?probe=$NONCE" || echo 000)
+            if [[ "$CODE" == "200" ]]; then
+              echo "  200  $url"
+            else
+              echo "  $CODE  $url"
+              BAD="$BAD $url($CODE)"
+            fi
+          done
+
+          if [[ -n "$BAD" ]]; then
+            {
+              echo "report<<EOF"
+              echo "Enclosures in the published appcast that do not return 200:"
+              echo
+              for item in $BAD; do echo "- $item"; done
+              echo
+              echo "Sparkle fetches every one of these. A delta that 404s is survivable —"
+              echo "clients fall back to the full download — but it is still a broken URL"
+              echo "advertised to every user one version behind."
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+  # ------------------------------------------------------------ tell a human
+  #
+  # One issue, reopened and updated rather than duplicated: a weekly schedule
+  # would otherwise file the same report every Monday until someone noticed.
+  report:
+    name: File a needs:human issue
+    runs-on: ubuntu-latest
+    needs: [tags, published]
+    if: always() && (needs.tags.result == 'failure' || needs.published.result == 'failure')
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Open or update the issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAGS_REPORT: ${{ needs.tags.outputs.report }}
+          PUBLISHED_REPORT: ${{ needs.published.outputs.report }}
+        run: |
+          set -euo pipefail
+          TITLE="Release integrity check is failing"
+
+          # Built with printf, not a heredoc. Inside a YAML block scalar the
+          # whole script is indented, and a heredoc terminator has to sit at
+          # column 0 — so `EOF` never matches and the step hangs consuming the
+          # rest of the file. `<<-` only strips tabs, which YAML forbids.
+          BODY=$(printf '%s\n' \
+            "The scheduled release-integrity check found a problem. This is not about any" \
+            "pull request — it is about the state of the tags, \`VERSION\`, and what" \
+            "synesthia.app is actually serving." \
+            "" \
+            "${TAGS_REPORT:-}" \
+            "" \
+            "${PUBLISHED_REPORT:-}" \
+            "" \
+            "---" \
+            "[Run](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}) · re-run it" \
+            "after fixing to close this out. Workflow: \`.github/workflows/release-integrity.yml\`")
+
+          EXISTING=$(gh issue list --state all --label "area:release" --search "$TITLE in:title" \
+                       --json number,state --jq '.[0].number // empty')
+
+          if [[ -n "$EXISTING" ]]; then
+            gh issue reopen "$EXISTING" 2>/dev/null || true
+            gh issue comment "$EXISTING" --body "$BODY"
+            echo "Updated #$EXISTING"
+          else
+            gh issue create --title "$TITLE" --body "$BODY" \
+              --label "needs:human" --label "area:release" --label "risk:high"
+          fi
