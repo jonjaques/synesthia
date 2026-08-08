@@ -47,17 +47,18 @@ final class NebulaVisualizer: Visualizer {
         name: "Nebula",
         tagline: "A hundred thousand particles orbiting a bass core, galaxy disc, and comet halo",
         options: [
-            VisualizerOption(id: "density", name: "Density", range: 0.1...1.0, defaultValue: 0.7),
-            VisualizerOption(id: "glow", name: "Glow", range: 0.4...2.5, defaultValue: 1.0),
-            VisualizerOption(id: "trails", name: "Trails", range: 0.0...2.0, defaultValue: 0.9),
+            VisualizerOption(id: "density", name: "Density", range: 0.1...1.0, defaultValue: 0.7, slot: 0),
+            VisualizerOption(id: "glow", name: "Glow", range: 0.4...2.5, defaultValue: 1.0, slot: 1),
+            VisualizerOption(id: "trails", name: "Trails", range: 0.0...2.0, defaultValue: 0.9, slot: 2),
             VisualizerOption(
-                id: "turbulence", name: "Turbulence", range: 0.0...2.5, defaultValue: 1.0),
-            VisualizerOption(id: "swirl", name: "Swirl", range: 0.0...2.5, defaultValue: 1.0),
-            VisualizerOption(id: "orbits", name: "Orbit speed", range: 0.0...2.5, defaultValue: 1.0),
-            VisualizerOption(id: "spread", name: "Spread", range: 0.0...2.0, defaultValue: 1.0),
-            VisualizerOption(id: "halos", name: "Halos", range: 0.0...2.0, defaultValue: 1.0),
-            VisualizerOption(id: "impact", name: "Impact", range: 0.0...2.0, defaultValue: 1.0),
-            VisualizerOption(id: "form", name: "Form", range: 0.0...2.0, defaultValue: 1.0),
+                id: "turbulence", name: "Turbulence", range: 0.0...2.5, defaultValue: 1.0, slot: 3),
+            VisualizerOption(id: "swirl", name: "Swirl", range: 0.0...2.5, defaultValue: 1.0, slot: 4),
+            VisualizerOption(
+                id: "orbits", name: "Orbit speed", range: 0.0...2.5, defaultValue: 1.0, slot: 5),
+            VisualizerOption(id: "spread", name: "Spread", range: 0.0...2.0, defaultValue: 1.0, slot: 6),
+            VisualizerOption(id: "halos", name: "Halos", range: 0.0...2.0, defaultValue: 1.0, slot: 7),
+            VisualizerOption(id: "impact", name: "Impact", range: 0.0...2.0, defaultValue: 1.0, slot: 8),
+            VisualizerOption(id: "form", name: "Form", range: 0.0...2.0, defaultValue: 1.0, slot: 9),
         ],
         make: { try NebulaVisualizer(device: $0, library: $1, pixelFormat: $2) })
 

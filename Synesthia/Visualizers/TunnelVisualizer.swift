@@ -20,12 +20,13 @@ enum TunnelVisualizer {
         name: "Spectrum Tunnel",
         tagline: "Fly through a winding cave the music carves as you go",
         options: [
-            VisualizerOption(id: "twist", name: "Twist", range: 0.0...3.0, defaultValue: 1.0),
-            VisualizerOption(id: "glow", name: "Glow", range: 0.3...2.5, defaultValue: 1.0),
-            VisualizerOption(id: "bend", name: "Bend", range: 0.0...2.0, defaultValue: 1.0),
-            VisualizerOption(id: "pulse", name: "Pulse", range: 0.0...2.0, defaultValue: 1.0),
-            VisualizerOption(id: "ripple", name: "Ripple", range: 0.0...2.0, defaultValue: 1.0),
-            VisualizerOption(id: "fog", name: "Fog", range: 0.0...2.0, defaultValue: 1.0),
+            VisualizerOption(id: "twist", name: "Twist", range: 0.0...3.0, defaultValue: 1.0, slot: 0),
+            VisualizerOption(id: "glow", name: "Glow", range: 0.3...2.5, defaultValue: 1.0, slot: 1),
+            VisualizerOption(id: "bend", name: "Bend", range: 0.0...2.0, defaultValue: 1.0, slot: 2),
+            VisualizerOption(id: "pulse", name: "Pulse", range: 0.0...2.0, defaultValue: 1.0, slot: 3),
+            VisualizerOption(
+                id: "ripple", name: "Ripple", range: 0.0...2.0, defaultValue: 1.0, slot: 4),
+            VisualizerOption(id: "fog", name: "Fog", range: 0.0...2.0, defaultValue: 1.0, slot: 5),
         ],
         make: {
             try FullscreenShaderVisualizer(

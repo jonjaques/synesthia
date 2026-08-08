@@ -159,22 +159,35 @@ struct VisualizerOption: Identifiable {
     let range: ClosedRange<Double>
     let defaultValue: Double
     let kind: Kind
+    /// Which of the shader's `p[16]` slots this option lands in.
+    ///
+    /// **Declared, not inferred from array position.** The shader names the
+    /// same number in its own `constant int k…` table and nothing else connects
+    /// the two, so reordering this array — the natural thing to do to move a
+    /// slider up the popover — used to remap every shader constant for that
+    /// visualizer silently, with no build error and no test failure.
+    ///
+    /// Deliberately has no default: a `slot: Int = 0` would let a new option
+    /// collide with an existing one just as quietly.
+    let slot: Int
 
     init(
         id: String, name: String, range: ClosedRange<Double>, defaultValue: Double,
-        kind: Kind = .slider
+        kind: Kind = .slider, slot: Int
     ) {
         self.id = id
         self.name = name
         self.range = range
         self.defaultValue = defaultValue
         self.kind = kind
+        self.slot = slot
     }
 
     /// An on/off option, stored as 0 or 1.
-    static func toggle(id: String, name: String, defaultOn: Bool) -> VisualizerOption {
+    static func toggle(id: String, name: String, defaultOn: Bool, slot: Int) -> VisualizerOption {
         VisualizerOption(
-            id: id, name: name, range: 0...1, defaultValue: defaultOn ? 1 : 0, kind: .toggle)
+            id: id, name: name, range: 0...1, defaultValue: defaultOn ? 1 : 0, kind: .toggle,
+            slot: slot)
     }
 }
 
@@ -203,6 +216,14 @@ struct VisualizerDescriptor: Identifiable {
         assert(
             options.count <= VizUniforms.parameterCount,
             "\(id) declares \(options.count) options; only \(VizUniforms.parameterCount) reach the shader")
+        assert(
+            options.allSatisfy { (0..<VizUniforms.parameterCount).contains($0.slot) },
+            "\(id) declares an option outside the \(VizUniforms.parameterCount) shader slots")
+        // Two options in one slot is silent data loss: the second write wins
+        // and the first control does nothing.
+        assert(
+            Set(options.map(\.slot)).count == options.count,
+            "\(id) declares two options in the same shader slot")
         self.id = id
         self.name = name
         self.tagline = tagline

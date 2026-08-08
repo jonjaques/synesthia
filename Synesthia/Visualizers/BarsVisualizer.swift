@@ -26,19 +26,47 @@ import MetalKit
 /// (each pixel only evaluates the widgets of the zone it lands in) rather
 /// than the raymarch the tunnel does.
 final class BarsVisualizer: Visualizer {
+    /// Shader slots for this visualizer's options, mirroring the `kBarsOpt…`
+    /// constants in Shaders.metal. Same idea as `Slot` below, applied to the
+    /// option block instead of the state buffer — and the reason the descriptor
+    /// declares `slot:` by name rather than relying on the array's order.
+    /// `optionSlotsMatchTheShaderConstants` pins these against the MSL table.
+    private enum Opt {
+        static let columns = 0
+        static let segments = 1
+        static let peakHold = 2
+        static let glow = 3
+        static let showDesk = 4
+        static let desk = 5
+        static let channels = 6
+        static let meters = 7
+    }
+
     static let descriptor = VisualizerDescriptor(
         id: "bars",
         name: "Bars",
         tagline: "A producer's console: a wall of LED meters, VU needles, and moving faders",
         options: [
-            VisualizerOption(id: "columns", name: "Columns", range: 8...64, defaultValue: 40),
-            VisualizerOption(id: "segments", name: "LED segments", range: 0...40, defaultValue: 22),
-            VisualizerOption(id: "peaks", name: "Peak hold", range: 0.0...2.0, defaultValue: 1.0),
-            VisualizerOption(id: "glow", name: "Glow", range: 0.3...2.5, defaultValue: 1.0),
-            .toggle(id: "deskPanel", name: "Show desk panel", defaultOn: true),
-            VisualizerOption(id: "desk", name: "Desk", range: 0.0...1.0, defaultValue: 0.6),
-            VisualizerOption(id: "channels", name: "Channels", range: 4...16, defaultValue: 8),
-            VisualizerOption(id: "meters", name: "Meters", range: 0.0...2.0, defaultValue: 1.0),
+            VisualizerOption(
+                id: "columns", name: "Columns", range: 8...64, defaultValue: 40, slot: Opt.columns),
+            VisualizerOption(
+                id: "segments", name: "LED segments", range: 0...40, defaultValue: 22,
+                slot: Opt.segments),
+            VisualizerOption(
+                id: "peaks", name: "Peak hold", range: 0.0...2.0, defaultValue: 1.0,
+                slot: Opt.peakHold),
+            VisualizerOption(
+                id: "glow", name: "Glow", range: 0.3...2.5, defaultValue: 1.0, slot: Opt.glow),
+            .toggle(
+                id: "deskPanel", name: "Show desk panel", defaultOn: true, slot: Opt.showDesk),
+            VisualizerOption(
+                id: "desk", name: "Desk", range: 0.0...1.0, defaultValue: 0.6, slot: Opt.desk),
+            VisualizerOption(
+                id: "channels", name: "Channels", range: 4...16, defaultValue: 8,
+                slot: Opt.channels),
+            VisualizerOption(
+                id: "meters", name: "Meters", range: 0.0...2.0, defaultValue: 1.0,
+                slot: Opt.meters),
         ],
         make: { try BarsVisualizer(device: $0, library: $1, pixelFormat: $2) })
 
@@ -116,11 +144,11 @@ final class BarsVisualizer: Visualizer {
     }
 
     static func columns(_ u: VizUniforms) -> Int {
-        min(max(Int(u.p0.rounded()), 8), AudioSnapshot.bandCount)
+        min(max(Int(u[parameter: Opt.columns].rounded()), 8), AudioSnapshot.bandCount)
     }
 
     static func channels(_ u: VizUniforms) -> Int {
-        min(max(Int(u.p6.rounded()), 4), maxChannels)
+        min(max(Int(u[parameter: Opt.channels].rounded()), 4), maxChannels)
     }
 
     // MARK: - Meter simulation
@@ -153,7 +181,7 @@ final class BarsVisualizer: Visualizer {
         // fast it accelerates once it does — caps drop slowly at first and
         // then run, like a real PPM's release. At 0 they collapse onto the
         // bars, and the shader fades them out entirely on the same slider.
-        let holdAmount = min(max(u.p2, 0), 2)
+        let holdAmount = min(max(u[parameter: Opt.peakHold], 0), 2)
         let hangTime = 0.85 * holdAmount
         let fallAcceleration = 0.55 / max(holdAmount, 0.25)
 
