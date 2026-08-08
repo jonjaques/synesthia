@@ -98,7 +98,26 @@ Read the dry run before approving the real one. Things worth actually looking at
 the announcement and must go last. It hard-fails if a filename is already published with
 different bytes, and now also if the tag hasn't reached main.
 
-## 5. Confirm users can actually get it
+## 5. Mirror it to GitHub Releases
+
+```bash
+make mirror-release   # or: make mirror-release V=1.2.1
+```
+
+Creates or updates the GitHub Release for `v<version>`: title `Synesthia <version>`, body
+verbatim from `docs/releases/<version>.md`, `Synesthia-<version>.dmg` attached.
+
+**This is a mirror and it comes after publishing, never instead of it.** R2 is authoritative
+— Sparkle reads `synesthia.app/appcast.xml` and downloads from `synesthia.app/downloads/…`,
+and nothing about that changes. The GitHub Release exists so somebody who lands on the
+repository can see what shipped and when; the Releases tab was empty.
+
+The script refuses to run until the DMG answers 200 from the site, refuses a tag that isn't
+an ancestor of `origin/main`, and refuses to attach a DMG whose SHA-256 differs from the
+published one — so it cannot advertise bytes that differ from what Sparkle serves. Re-running
+is safe; it edits the existing release and `--clobber`s the asset.
+
+## 6. Confirm users can actually get it
 
 The publish script probes every URL it uploaded. Beyond that:
 
@@ -127,11 +146,14 @@ directory and let Sparkle update it, watching
 
 Every step is idempotent and re-running is the recovery. What state you're in:
 
-| Symptom                                    | Where you are          | Do                                              |
-| ------------------------------------------ | ---------------------- | ----------------------------------------------- |
-| Tag exists, no PR                          | after 1                | push and open the PR                            |
-| PR merged, no DMG                          | after 2                | `make direct`                                   |
-| DMG built, feed unchanged                  | after 3                | `make appcast`                                  |
-| Feed uploaded, a URL 404s                  | after 4                | re-run `make publish-release`                   |
-| `publish-release` refuses: tag not on main | 2 was skipped          | merge the release branch, then re-run           |
-| Sparkle reports a download error           | published, edge cached | check `release-integrity`; probe with `?probe=` |
+| Symptom                                    | Where you are          | Do                                                                                 |
+| ------------------------------------------ | ---------------------- | ---------------------------------------------------------------------------------- |
+| Tag exists, no PR                          | after 1                | push and open the PR                                                               |
+| PR merged, no DMG                          | after 2                | `make direct`                                                                      |
+| DMG built, feed unchanged                  | after 3                | `make appcast`                                                                     |
+| Feed uploaded, a URL 404s                  | after 4                | re-run `make publish-release`                                                      |
+| `publish-release` refuses: tag not on main | 2 was skipped          | merge the release branch, then re-run                                              |
+| Published, Releases tab still empty        | after 4, before 5      | `make mirror-release`                                                              |
+| `mirror-release` refuses: DMG 404s         | 4 was skipped          | `make publish-release` first — R2 comes first                                      |
+| `mirror-release` refuses: SHA mismatch     | stale local DMG        | republish, or delete `build/releases/*.dmg` and re-run to mirror what is published |
+| Sparkle reports a download error           | published, edge cached | check `release-integrity`; probe with `?probe=`                                    |
