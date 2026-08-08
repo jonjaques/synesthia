@@ -31,7 +31,9 @@ shaders, Apple Events, sandboxing…) are introduced where they're used.
 - **[Decision records](adr/)** — choices that were made against a real alternative,
   where a reader would otherwise wonder why the code looks like this. The documents
   above explain the current design; these explain why it isn't the obvious one.
-- **[Plans](plans/)** — proposed refactors not yet carried out, one file each.
+- **Plans** (`docs/plans/`) — proposed refactors not yet carried out, one file each.
+  A carried-out plan is deleted rather than annotated, so this is always a list of
+  work still to do — and it is empty right now, hence no link.
 
 ## Process
 

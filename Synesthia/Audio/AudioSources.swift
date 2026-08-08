@@ -444,6 +444,13 @@ final class InputDeviceCapture: AudioSource {
         // engine stays nominally alive but no buffers arrive, so without this
         // the app holds the display awake and renders a frozen canvas forever
         // — the one failure of the four sources that nothing was watching for.
+        //
+        // Deliberately unconditional: macOS posts this for route changes that
+        // a capture-only engine may well survive, so it can stop a source that
+        // was fine. That direction is the cheap one — the banner says what
+        // happened and ⌘L starts it again — while the other direction is the
+        // silent freeze this exists to end.
+        //
         // Delivered on `.main`, but hopped anyway rather than depending on
         // that (same reasoning as `NotificationRelay`).
         configurationObserver = NotificationCenter.default.addObserver(
