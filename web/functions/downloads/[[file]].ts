@@ -1,7 +1,8 @@
 import {
+  contentTypeFor,
   DOWNLOAD_PREFIX,
   IMMUTABLE,
-  isSafeDmgName,
+  isSafeArtifactName,
   matchesEtag,
   parseRange,
   plainError,
@@ -14,6 +15,11 @@ import {
  * --download-url-prefix https://synesthia.app/downloads/`), so they must stay
  * on the apex domain and must stay stable forever: an appcast entry for an old
  * version is still live for anyone who hasn't updated in a year.
+ *
+ * "The artifact" is not only the DMG. A feed item may carry a <sparkle:deltas>
+ * block whose enclosures live under this same prefix — `Synesthia6-5.delta` —
+ * and those are fetched *first* by anyone on the version the patch starts from.
+ * See isSafeArtifactName: serving only .dmg here meant every such request 404'd.
  *
  * Range support is here for interrupted browser downloads. Sparkle doesn't need
  * it, but a 15 MB DMG on hotel Wi-Fi does.
@@ -31,7 +37,7 @@ export const onRequest: PagesFunction<Env> = async (ctx) => {
   const name =
     segments.length === 1 ? decodeURIComponent(segments[0] ?? "") : "";
 
-  if (!isSafeDmgName(name)) {
+  if (!isSafeArtifactName(name)) {
     return notFound();
   }
 
@@ -131,7 +137,7 @@ function baseHeaders(object: R2Object, name: string): Headers {
   headers.set("etag", object.httpEtag);
   headers.set("cache-control", IMMUTABLE);
   headers.set("accept-ranges", "bytes");
-  headers.set("content-type", "application/x-apple-diskimage");
+  headers.set("content-type", contentTypeFor(name));
   // Without this Safari helpfully renames the download to the route name.
   headers.set("content-disposition", `attachment; filename="${name}"`);
   return headers;

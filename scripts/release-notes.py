@@ -13,8 +13,8 @@ release notes. Markdown looks like the obvious choice — it is what we want in
 git — but it is *not* embedded in the feed: only HTML without DOCTYPE/body tags
 is inlined as CDATA. A markdown file becomes a `<sparkle:releaseNotesLink>`
 instead, which would mean uploading a second artifact per release and teaching
-`web/functions/downloads/[[file]].ts` to serve something other than a `.dmg`
-(`isSafeDmgName` rejects everything else today). Embedding an HTML fragment
+`web/functions/downloads/[[file]].ts` to serve a third file type
+(`isSafeArtifactName` allows only `.dmg` and `.delta`). Embedding an HTML fragment
 keeps a release a single upload.
 
 So the notes are authored as markdown in `docs/releases/<version>.md` — good for

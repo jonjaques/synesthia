@@ -445,17 +445,40 @@ else
 	echo "     answering instead. Check the latest deployment succeeded."
 fi
 
-# The one URL every user in the feed is about to be sent to. A failed upload
-# would otherwise only surface as a support email, so probe it — informationally,
-# because a 404 cached at the edge from before the upload is a plausible false
-# alarm and re-running the script is the fix either way.
-LATEST_CODE=$(http_code "$DOWNLOAD_BASE/$LATEST_FILE")
-if [[ "$LATEST_CODE" == "200" ]]; then
-	echo "  $DOWNLOAD_BASE/$LATEST_FILE → 200"
-else
-	echo "  $DOWNLOAD_BASE/$LATEST_FILE → $LATEST_CODE (expected 200)"
-	echo "     Re-run this script; the upload may not have completed."
-fi
+# Everything this run put in the bucket, fetched back through the site.
+#
+# The ABSENT files were probed before upload; these were not, and the difference
+# used to matter. `Synesthia6-5.delta` uploaded cleanly, sat in R2 intact and
+# correctly signed, and 404'd for every client — because the Pages Function's
+# filename whitelist only recognised `.dmg`. Nothing in the pipeline looked at a
+# delta URL after writing it, so the only symptom was a line in each user's
+# Sparkle log; the updates still landed, via the full 4.6 MB enclosure.
+#
+# Informational, not fatal: a 404 cached at the edge from a probe made before
+# the upload is a plausible false alarm, and re-running is the fix either way.
+#
+# The latest DMG is always checked, even on a republish that uploaded nothing:
+# it is the one URL every user in the feed is about to be sent to.
+VERIFY_URLS=(${LOCAL_URLS[@]+"${LOCAL_URLS[@]}"})
+# Herestring, never `printf … | grep -q`: grep exits on first match, printf dies
+# of SIGPIPE, pipefail turns that into a non-zero pipeline — and this one is
+# read by `||`, so a match would be misread as "not present" and the latest DMG
+# would be probed twice.
+VERIFY_LIST=$(printf '%s\n' ${VERIFY_URLS[@]+"${VERIFY_URLS[@]}"})
+grep -qxF "$DOWNLOAD_BASE/$LATEST_FILE" <<<"$VERIFY_LIST" \
+	|| VERIFY_URLS+=("$DOWNLOAD_BASE/$LATEST_FILE")
+
+for url in "${VERIFY_URLS[@]}"; do
+	CODE=$(http_code "$url")
+	if [[ "$CODE" == "200" ]]; then
+		echo "  $url → 200"
+	else
+		echo "  $url → $CODE (expected 200)"
+		echo "     Uploaded, but not being served. Re-run this script; if it stays"
+		echo "     non-200, the Pages Function is rejecting the name — see"
+		echo "     isSafeArtifactName in web/lib/releases.ts."
+	fi
+done
 
 # No -L: /download must answer with a redirect, not render something.
 DL_CODE=$(curl -s -o /dev/null -w '%{http_code}' "$SITE_URL/download" || echo "000")

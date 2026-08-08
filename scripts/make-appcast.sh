@@ -62,8 +62,8 @@ step "Staging release notes"
 #
 # HTML, not the .md that generate_appcast also accepts: a markdown file is NOT
 # embedded, it becomes a <sparkle:releaseNotesLink>, which means a second
-# artifact to upload per release and a Pages Function that serves something
-# other than a .dmg (isSafeDmgName rejects everything else). The notes are
+# artifact to upload per release and a Pages Function that serves a third file
+# type (isSafeArtifactName allows only .dmg and .delta). The notes are
 # authored as markdown in docs/releases/<version>.md and rendered here; see
 # scripts/release-notes.py.
 #

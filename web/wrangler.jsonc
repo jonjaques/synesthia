@@ -6,7 +6,7 @@
   //
   //   /appcast.xml     the Sparkle feed          (R2: appcast.xml)
   //   /download        302 to the current DMG    (R2: latest.json)
-  //   /downloads/*.dmg the DMGs themselves       (R2: downloads/…)
+  //   /downloads/*     DMGs and Sparkle deltas   (R2: downloads/…)
   //
   // Publishing a new version is therefore `make publish-release` — an R2 upload,
   // with no site rebuild and no commit. See docs/distribution.md.
