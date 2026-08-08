@@ -352,8 +352,7 @@ final class AppState {
             if !(detectedTrack?.isPlaying ?? false), !isCapturing {
                 await startSystemCapture()
             }
-            remote.togglePlayPause(player)
-            reportAutomationRefusal(for: player)
+            report(remote.togglePlayPause(player))
             return
         }
         #endif
@@ -425,8 +424,7 @@ final class AppState {
     func nextTrack() {
         #if MUSIC_APP_SOURCE
         if showsTransport, let player = detectedPlayer {
-            remote.nextTrack(player)
-            reportAutomationRefusal(for: player)
+            report(remote.nextTrack(player))
             return
         }
         #endif
@@ -436,8 +434,7 @@ final class AppState {
     func previousTrack() {
         #if MUSIC_APP_SOURCE
         if showsTransport, let player = detectedPlayer {
-            remote.previousTrack(player)
-            reportAutomationRefusal(for: player)
+            report(remote.previousTrack(player))
             return
         }
         #endif
@@ -472,19 +469,20 @@ final class AppState {
         guard let player = playerControlOffer else { return }
         setPlayerControlEnabled(true)
         // The seed doubles as the permission probe: it either comes back with
-        // what's playing, or trips `automationDenied`.
-        if let update = remote.seed(player) {
-            nowPlayingObserver.ingest(update, from: player)
-        }
-        if remote.automationDenied {
-            // Roll the opt-in back so the menu offers it again rather than
-            // leaving the app in a state that claims control it doesn't have.
+        // what's playing, or tells us why it couldn't.
+        switch remote.seed(player) {
+        case .success(let update):
+            if let update { nowPlayingObserver.ingest(update, from: player) }
+            if let track = nowPlayingObserver.current?.track {
+                handleTrackChange(player: player, track: track)
+            }
+        case .failure(let error):
+            // Any failure rolls the opt-in back — the menu should offer it
+            // again rather than leave the app claiming control it doesn't
+            // have — but only the message says *why*, so "Music isn't running"
+            // no longer sends the user to a permission they already granted.
             setPlayerControlEnabled(false)
-            setStatus(
-                "Synesthia isn't allowed to control \(player.name). Enable it in System Settings › Privacy & Security › Automation."
-            )
-        } else if let track = nowPlayingObserver.current?.track {
-            handleTrackChange(player: player, track: track)
+            setStatus(error.message)
         }
         #endif
     }
@@ -496,14 +494,20 @@ final class AppState {
         if !enabled { remote.clearArtwork() }
     }
 
-    /// Surfaces a refused Apple Event once, as a banner. Deliberately *not* a
+    /// Surfaces a failed Apple Event once, as a banner. Deliberately *not* a
     /// `blockedPermission` card: control is an enhancement, and the canvas is
     /// still perfectly alive without it.
-    private func reportAutomationRefusal(for player: MediaPlayer) {
-        guard remote.automationDenied else { return }
-        setStatus(
-            "Synesthia isn't allowed to control \(player.name). Enable it in System Settings › Privacy & Security › Automation."
-        )
+    ///
+    /// Replaces the call-then-check convention, where every transport call had
+    /// to be followed by a second line nothing enforced — forget it and the
+    /// failure was silent. The result carries the answer, so there is no
+    /// second line to forget.
+    private func report(_ result: Result<some Any, PlayerRemoteError>) {
+        guard case .failure(let error) = result else { return }
+        setStatus(error.message)
+        // Only a real refusal rolls the opt-in back. A player that isn't
+        // running, or a script that threw, leaves the grant alone.
+        if error.revokesPlayerControl { setPlayerControlEnabled(false) }
     }
 
     /// Asks every running scriptable player what it's playing. Only runs when
@@ -513,7 +517,10 @@ final class AppState {
     private func seedConnectedPlayers() {
         guard playerControlEnabled else { return }
         for player in MediaPlayer.all where player.isScriptable && player.isRunning {
-            if let update = remote.seed(player) {
+            // Best-effort: a player that has since quit, or one we were
+            // refused, shouldn't raise a banner during a background sweep the
+            // user didn't ask for.
+            if case .success(let update) = remote.seed(player), let update {
                 nowPlayingObserver.ingest(update, from: player)
             }
         }
