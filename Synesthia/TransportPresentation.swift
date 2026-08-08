@@ -81,6 +81,20 @@ struct TransportPresentation {
     /// sheet — which explains what each permission buys *before* macOS asks —
     /// is the granting path.
     func isAvailable(_ kind: AudioSourceKind) -> Bool {
+        Self.isAvailable(
+            kind, screenAudioGranted: screenAudioGranted, microphoneStatus: microphoneStatus)
+    }
+
+    /// The same rule, for a caller that holds the permission state but not a
+    /// presentation — `PlaybackPolicy`, deciding whether returning from System
+    /// Settings should retry the blocked source. It reads this rather than
+    /// restating it, because three independent derivations of "can this source
+    /// produce audio" is exactly what this type was made to end.
+    static func isAvailable(
+        _ kind: AudioSourceKind,
+        screenAudioGranted: Bool,
+        microphoneStatus: AVAuthorizationStatus
+    ) -> Bool {
         switch kind {
         case .demo, .audioFile:
             true

@@ -89,11 +89,14 @@ final class AppState {
     /// engine immediately — the engine itself only reads the ID at start.
     var selectedInputDeviceID: AudioDeviceID? {
         didSet {
+            // The engine reads its device id at `start` only, so keeping the
+            // two in step here is what makes "restart the source" enough.
+            inputCapture.deviceID = selectedInputDeviceID
             guard selectedInputDeviceID != oldValue, sourceKind == .inputDevice, isLive
             else { return }
             Task {
                 inputCapture.stop()
-                await startInputCapture()
+                await startCapture()
             }
         }
     }
@@ -195,8 +198,27 @@ final class AppState {
     /// really listening to all along (Music.app exposes no audio stream, so it
     /// went through the same ScreenCaptureKit tap). Anyone whose last session
     /// used it lands on the source that still behaves identically.
-    private static func migrated(_ stored: String) -> String {
+    ///
+    /// Internal rather than private only so it can be tested: it is the one
+    /// piece of this class that runs before anything else exists, and it runs
+    /// exactly once per install.
+    static func migrated(_ stored: String) -> String {
         stored == "musicApp" ? AudioSourceKind.systemAudio.rawValue : stored
+    }
+
+    /// The decisions this class makes, as a value that can be asked about them
+    /// without performing any of them. Rebuilt on every read — it is a
+    /// snapshot of right now, and a stale one would be a bug.
+    private var policy: PlaybackPolicy {
+        PlaybackPolicy(
+            sourceKind: sourceKind,
+            isLive: isLive,
+            screenAudioGranted: screenAudioGranted,
+            microphoneStatus: microphoneStatus,
+            blockedPermission: blockedPermission,
+            hasFile: fileURL != nil,
+            showsWelcome: showsWelcome,
+            firstRunDemoPending: firstRunDemoPending)
     }
 
     // MARK: - The four sources
@@ -251,19 +273,11 @@ final class AppState {
         nowPlayingObserver.start()
         seedConnectedPlayers()
         // First run: the canvas stays quiet until the welcome sheet is
-        // answered. Starting the demo underneath it means the app makes noise
-        // before the user has been told anything, and a source that needs a
-        // permission would raise the system prompt before its pitch has been
-        // read — which is the whole reason the sheet exists. `completeWelcome`
-        // and `selectSource` pick this up again.
-        guard !showsWelcome else { return }
-        switch sourceKind {
-        case .demo:
-            startDemo()
-        case .systemAudio:
-            Task { await startSystemCapture() }
-        case .inputDevice, .audioFile:
-            break
+        // answered (`.waitForWelcome`). `completeWelcome` and `selectSource`
+        // pick this up again.
+        switch policy.startupAction() {
+        case .start: Task { await startActiveSource() }
+        case .waitForWelcome, .doNothing: break
         }
     }
 
@@ -396,7 +410,7 @@ final class AppState {
             // capture after granting the permission, and toggling would pause
             // their music.
             if !(detectedTrack?.isPlaying ?? false), !isLive {
-                await startSystemCapture()
+                await startCapture()
             }
             report(remote.togglePlayPause(player))
             return
@@ -419,10 +433,14 @@ final class AppState {
             syncLiveState()
             return
         }
+        await startActiveSource()
+    }
+
+    /// Brings the active source up, whichever it is.
+    private func startActiveSource() async {
         switch sourceKind {
         case .demo: startDemo()
-        case .systemAudio: await startSystemCapture()
-        case .inputDevice: await startInputCapture()
+        case .systemAudio, .inputDevice: await startCapture()
         case .audioFile: startFileSource()
         }
     }
@@ -553,15 +571,9 @@ final class AppState {
     /// `completeWelcome` — an explicit choice is what retires the demo that
     /// Continue would otherwise start.
     func selectSource(_ kind: AudioSourceKind) {
+        let resolution = policy.welcomeResolution(chose: kind)
         firstRunDemoPending = false
-        guard kind == sourceKind else {
-            sourceKind = kind
-            return
-        }
-        // Same source as the one already selected. On first run nothing was
-        // ever started (see `onAppear`), so `didSet` won't fire and the sheet
-        // would dismiss onto a dead canvas; bring the source up by hand.
-        if !isLive { handleSourceChange() }
+        apply(resolution)
     }
 
     /// Dismisses the welcome sheet for good. On first run, reaching here with
@@ -571,9 +583,25 @@ final class AppState {
     func completeWelcome() {
         defaults.set(true, forKey: Self.welcomeKey)
         showsWelcome = false
-        guard firstRunDemoPending else { return }
+        let resolution = policy.welcomeResolution(chose: nil)
         firstRunDemoPending = false
-        startDemo()
+        apply(resolution)
+    }
+
+    private func apply(_ resolution: PlaybackPolicy.WelcomeResolution) {
+        switch resolution {
+        case .startDemo:
+            startDemo()
+        case .switchSource(let kind):
+            sourceKind = kind
+        case .bringUpCurrent:
+            // On first run nothing was ever started (see `onAppear`), so
+            // `sourceKind`'s `didSet` won't fire and the sheet would dismiss
+            // onto a dead canvas.
+            handleSourceChange()
+        case .doNothing:
+            break
+        }
     }
 
     /// Reopens the explainer from the Help menu.
@@ -597,12 +625,7 @@ final class AppState {
     /// source was blocked and is now allowed, retry capture unprompted.
     func handleAppActivation() {
         refreshPermissions()
-        guard let blocked = blockedPermission,
-            sourceKind.requiredPermission == blocked,
-            transport.isAvailable(sourceKind),
-            !isLive
-        else { return }
-        toggleSource()
+        if case .retryCapture = policy.activationAction() { toggleSource() }
     }
 
     /// "Try Again" on the permission card.
@@ -644,19 +667,29 @@ final class AppState {
         syncLiveState()
     }
 
-    private func startInputCapture() async {
-        // The engine reads this at `start` only, which is why changing the
-        // device while listening restarts the source rather than assigning.
-        inputCapture.deviceID = selectedInputDeviceID
+    /// Starts one of the two sources the app *listens* to. They fail in the
+    /// same three ways — a permission the user has to grant, a first attempt
+    /// that a freshly granted permission loses, and everything else — so the
+    /// reading of a failure lives in `PlaybackPolicy` and this performs it.
+    private func startCapture(isRetry: Bool = false) async {
+        guard !activeSource.isRunning else { return }
         do {
-            try await inputCapture.start()
+            try await activeSource.start()
+            statusMessage = nil
             blockedPermission = nil
-        } catch {
             refreshPermissions()
-            if case AudioSourceError.microphoneDenied = error {
-                blockedPermission = .microphone
-            } else {
-                setStatus(error.localizedDescription)
+        } catch {
+            // Before asking: the answer turns on whether the permission is in
+            // hand *now*, which is exactly what a failed start casts doubt on.
+            refreshPermissions()
+            switch policy.startFailure(for: error, isRetry: isRetry) {
+            case .blocked(let permission):
+                blockedPermission = permission
+            case .retryQuietly:
+                try? await Task.sleep(for: .milliseconds(350))
+                await startCapture(isRetry: true)
+            case .banner(let message):
+                setStatus(message)
             }
         }
         syncLiveState()
@@ -769,48 +802,24 @@ final class AppState {
             statusMessage = nil
             blockedPermission = nil
 
-            switch sourceKind {
-            case .demo:
-                startDemo()
-            case .systemAudio:
-                // Detection keeps running across source changes, but a player
-                // that has been sitting paused since before the switch will not
-                // re-announce itself, so ask.
-                seedConnectedPlayers()
-                await startSystemCapture()
-            case .inputDevice:
+            switch policy.bringUpAction() {
+            case .start:
+                if sourceKind == .systemAudio {
+                    // Detection keeps running across source changes, but a
+                    // Player that has been sitting paused since before the
+                    // switch will not re-announce itself, so ask. Scoped to
+                    // this source because asking means an Apple Event.
+                    seedConnectedPlayers()
+                }
+                await startActiveSource()
+            case .refreshDevices:
                 inputDevices = AudioInputDeviceList.all()
-            case .audioFile:
-                // Only when there is a file: an empty file source raises the
-                // open panel, which nobody asked for by switching sources.
-                if fileURL != nil { startFileSource() }
+            case .loadAndPlayFile:
+                startFileSource()
+            case .doNothing:
+                break
             }
         }
-    }
-
-    private func startSystemCapture(isRetry: Bool = false) async {
-        guard !systemCapture.isRunning else { return }
-        do {
-            try await systemCapture.start()
-            statusMessage = nil
-            blockedPermission = nil
-            refreshPermissions()
-        } catch {
-            refreshPermissions()
-            if !screenAudioGranted {
-                // Missing permission isn't a transient error: show the
-                // explainer card instead of a banner.
-                blockedPermission = .screenAndSystemAudio
-            } else if !isRetry {
-                // A freshly granted permission can fail its first attempt
-                // (see CLAUDE.md); retry once, quietly, before surfacing.
-                try? await Task.sleep(for: .milliseconds(350))
-                await startSystemCapture(isRetry: true)
-            } else {
-                setStatus("Couldn't start listening to system audio: \(error.localizedDescription)")
-            }
-        }
-        syncLiveState()
     }
 
     // MARK: - Power

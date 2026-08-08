@@ -45,6 +45,8 @@ shaders, Apple Events, sandboxing…) are introduced where they're used.
 Synesthia/
 ├── SynesthiaApp.swift            App entry point; window + menu commands
 ├── AppState.swift                Central state hub and composition root
+├── PlaybackPolicy.swift          Its decisions, extracted pure and testable
+├── TransportPresentation.swift   What the UI says about the current source
 ├── ContentView.swift             The window's UI: canvas + floating chrome
 ├── WelcomeView.swift             First-run explainer: sources and permissions
 ├── WindowChrome.swift            Strips the title bar off the AppKit window

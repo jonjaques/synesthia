@@ -24,6 +24,10 @@ Synesthia/
 │                                 menu commands
 ├── AppState.swift                @Observable hub: source switching, transport, permissions status,
 │                                 now-playing merge + the opt-in player-control gate
+├── PlaybackPolicy.swift          The decisions AppState makes, as a pure value: how a failed
+│                                 start reads, what launch starts, how the welcome sheet ends
+├── TransportPresentation.swift   What the menu and chrome *say* about the current source, plus
+│                                 the one availability rule; pure, so it is assertable
 ├── ContentView.swift             Canvas + auto-hiding ControlsBar + NowPlayingBadge/ArtworkTile
 │                                 + OptionsPanel
 ├── SettingsView.swift            App-wide Settings window: Normalize Loudness toggle
