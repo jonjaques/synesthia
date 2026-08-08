@@ -60,9 +60,10 @@ gh pr merge --merge --delete-branch
 **`--merge`, never `--squash`.** Squashing rewrites the commit the tag points at, so the tag
 is left reachable only from a branch that the merge then deletes. `git describe` on main
 stops seeing it, `bump-version.sh`'s `resolve_base` can't find it to diff the next release's
-notes against, and the DMG in R2 corresponds to a commit nowhere in the history. `v1.2` is
-permanently in that state; it is the reason `publish-release.sh` now refuses to publish a
-version whose tag isn't an ancestor of `origin/main`.
+notes against, and the DMG in R2 corresponds to a commit nowhere in the history. `v1.2` spent
+a release in that state and had to be repaired by force-pushing the tag; it is the reason
+`publish-release.sh` now refuses to publish a version whose tag isn't an ancestor of
+`origin/main`.
 
 ## 3. Build, sign, notarize
 

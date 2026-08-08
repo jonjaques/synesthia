@@ -63,13 +63,19 @@ jobs:
           set -euo pipefail
           git fetch --tags --force origin
 
-          # Releases cut before the merge-back policy existed. v1.2 was
-          # squash-merged, so its tag points at a commit no longer on any
-          # branch; the content shipped and is in main, but the ancestry is
-          # gone and cannot be restored without force-pushing the tag.
-          # Nothing new belongs on this list — if you are tempted to add one,
-          # the merge-back was skipped and the fix is to merge it.
-          LEGACY="v1.0 v1.0.1 v1.1 v1.2"
+          # 1.0, 1.0.1 and 1.1 shipped before this repo tagged releases at all
+          # — they exist in the appcast and in R2 but have no tag, so this list
+          # only matters if someone later creates one retroactively, pointing
+          # who-knows-where.
+          #
+          # v1.2 is deliberately NOT here. It was squash-merged and its tag was
+          # orphaned; it has since been re-tagged onto 944b50a, the squash
+          # commit on main whose tree is byte-identical to the original. It is
+          # on mainline and must stay there.
+          #
+          # Nothing new belongs on this list. If you are tempted to add one, the
+          # merge-back was skipped and the fix is to merge it.
+          LEGACY="v1.0 v1.0.1 v1.1"
 
           FAILED=""
           for tag in $(git tag --list 'v*' --sort=version:refname); do
