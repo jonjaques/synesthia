@@ -17,7 +17,7 @@ flowchart LR
     subgraph sources["Audio sources (background threads)"]
         SCK["SystemAudioCapture<br>(ScreenCaptureKit)"]
         MIC["InputDeviceCapture<br>(AVAudioEngine tap)"]
-        FILE["FilePlayer<br>(AVAudioEngine + tap)"]
+        FILE["FileSource<br>(AVAudioEngine + tap)"]
     end
 
     subgraph analysis["Analysis (lock-guarded, any thread)"]

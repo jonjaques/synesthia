@@ -109,7 +109,7 @@ struct SynesthiaApp: App {
                 Divider()
 
                 Button(appState.transport.captureMenuTitle) {
-                    appState.toggleCapture()
+                    appState.toggleSource()
                 }
                 .keyboardShortcut("l")
 

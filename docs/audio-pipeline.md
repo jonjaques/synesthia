@@ -39,6 +39,18 @@ flowchart TD
     FILEP --> AN
 ```
 
+They also all answer to one interface. `AudioSource` is four methods —
+`isRunning`, `onStopped`, `start()`, `stop()` — and it exists because
+`AppState` needs nothing else from an engine, while the engines themselves
+have nothing else in common. `RestartableSource` refines it with `restart()`
+for the two sources the app plays itself; "previous track" means nothing to a
+microphone.
+
+That interface is what lets `AppState` keep _one_ published `isLive` flag
+mirroring `activeSource.isRunning`, instead of the three booleans it used to
+sync by hand at eight call sites, and it is where the answer to "the device
+went away" now lives for every source rather than only for ScreenCaptureKit.
+
 ### System audio — `SystemAudioCapture`
 
 macOS has no plain "record the system output" API. The sanctioned route is
@@ -77,7 +89,12 @@ setting the device ID on the input node's underlying Core Audio unit;
 device _enumeration_ is done separately in `AudioInputDeviceList` with the
 Core Audio C API.
 
-### Audio file — `FilePlayer`
+An `AVAudioEngineConfigurationChange` observer is what turns an unplugged
+interface into a reported stop. The engine stays nominally alive when its
+device disappears, so without it the app holds the display awake and renders
+a frozen canvas.
+
+### Audio file — `FileSource`
 
 Also `AVAudioEngine`, but for playback: `player → mainMixerNode → speakers`,
 with the analyzer's tap on the mixer — i.e. the visuals analyze exactly the

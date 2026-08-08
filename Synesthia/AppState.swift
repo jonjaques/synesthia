@@ -54,10 +54,10 @@ final class AppState {
 
     private let systemCapture: SystemAudioCapture
     private let inputCapture: InputDeviceCapture
-    private let filePlayer: FilePlayer
-    /// Separate from `filePlayer` so switching between the demo and a chosen
+    private let fileSource: FileSource
+    /// Separate from `fileSource` so switching between the demo and a chosen
     /// file doesn't make them fight over one engine's loaded file.
-    private let demoPlayer: FilePlayer
+    private let demoSource: FileSource
 
     /// The active audio source; persisted, and switching it retargets all
     /// the capture machinery (see `handleSourceChange`).
@@ -89,24 +89,23 @@ final class AppState {
     /// engine immediately — the engine itself only reads the ID at start.
     var selectedInputDeviceID: AudioDeviceID? {
         didSet {
-            guard selectedInputDeviceID != oldValue, sourceKind == .inputDevice, isCapturing
+            guard selectedInputDeviceID != oldValue, sourceKind == .inputDevice, isLive
             else { return }
             Task {
                 inputCapture.stop()
-                do {
-                    try await inputCapture.start(deviceID: selectedInputDeviceID)
-                } catch {
-                    isCapturing = false
-                    setStatus(error.localizedDescription)
-                }
+                await startInputCapture()
             }
         }
     }
     private(set) var fileURL: URL?
-    private(set) var isCapturing = false { didSet { refreshPowerAssertion() } }
-    /// Mirrors `FilePlayer.isPlaying`; the player isn't observable on its own.
-    private(set) var isFilePlaying = false { didSet { refreshPowerAssertion() } }
-    private(set) var isDemoPlaying = false { didSet { refreshPowerAssertion() } }
+    /// Whether audio is flowing into the analyzer right now — true both for the
+    /// sources the app plays itself and the ones it listens to (see CONTEXT.md,
+    /// "Live"). Mirrors `activeSource.isRunning` for SwiftUI: the engines are
+    /// not `@Observable` — `SystemAudioCapture` is an `NSObject` SCK delegate,
+    /// and the macro on an NSObject subclass is a fight not worth having — so
+    /// the single fact the UI needs is republished here, from one place instead
+    /// of three properties synced at eight call sites.
+    private(set) var isLive = false { didSet { refreshPowerAssertion() } }
     /// Transient user-facing error/hint, shown as a banner and auto-cleared.
     var statusMessage: String?
     /// Drives the first-run explainer sheet.
@@ -159,8 +158,8 @@ final class AppState {
         settings = VisualizerSettings(defaults: defaults)
         systemCapture = SystemAudioCapture(analyzer: AudioAnalyzer.shared)
         inputCapture = InputDeviceCapture(analyzer: AudioAnalyzer.shared)
-        filePlayer = FilePlayer(analyzer: AudioAnalyzer.shared)
-        demoPlayer = FilePlayer(analyzer: AudioAnalyzer.shared)
+        fileSource = FileSource(analyzer: AudioAnalyzer.shared)
+        demoSource = FileSource(analyzer: AudioAnalyzer.shared)
         // First launch defaults to the bundled demo: it needs no permission,
         // so the canvas is alive before anything can be denied.
         let stored = defaults.string(forKey: Self.sourceKindKey) ?? ""
@@ -181,7 +180,9 @@ final class AppState {
         // Reads two stored properties, so it can only run once they all are.
         firstRunDemoPending = showsWelcome && sourceKind == .demo
         fileURL = resolveBookmarkedFile()
-        systemCapture.onExternalStop = { [weak self] in self?.handleSystemCaptureStopped() }
+        for kind in AudioSourceKind.allCases {
+            source(for: kind).onStopped = { [weak self] in self?.handleSourceStopped(kind) }
+        }
         // didSet doesn't fire during init, so push the stored values once.
         analyzer.setAutoGainEnabled(loudnessNormalizationEnabled)
         defaults.set(sourceKind.rawValue, forKey: Self.sourceKindKey)
@@ -198,17 +199,45 @@ final class AppState {
         stored == "musicApp" ? AudioSourceKind.systemAudio.rawValue : stored
     }
 
-    /// The SCK stream died without us stopping it (permission revoked, display
-    /// reconfigured). Without this the app would keep the display awake and
-    /// render at full rate while showing a frozen, silent canvas.
-    private func handleSystemCaptureStopped() {
-        guard isCapturing else { return }
-        isCapturing = false
+    // MARK: - The four sources
+
+    /// The one remaining place the source taxonomy is spelled out.
+    private func source(for kind: AudioSourceKind) -> any AudioSource {
+        switch kind {
+        case .demo: demoSource
+        case .systemAudio: systemCapture
+        case .inputDevice: inputCapture
+        case .audioFile: fileSource
+        }
+    }
+
+    private var activeSource: any AudioSource { source(for: sourceKind) }
+
+    private var allSources: [any AudioSource] { AudioSourceKind.allCases.map(source(for:)) }
+
+    /// Republishes the active source's own answer for SwiftUI. Every start and
+    /// stop is followed by one of these; nothing else writes `isLive`.
+    private func syncLiveState() {
+        isLive = activeSource.isRunning
+    }
+
+    /// A source died without us stopping it: the SCK stream torn down
+    /// (permission revoked, display reconfigured), or an input device
+    /// unplugged. Without this the app would keep the display awake and render
+    /// at full rate while showing a frozen, silent canvas.
+    ///
+    /// A source that isn't the active one has nothing to resync — it was
+    /// already stopped when the source changed.
+    private func handleSourceStopped(_ kind: AudioSourceKind) {
+        guard kind == sourceKind, isLive else { return }
+        syncLiveState()
         refreshPermissions()
-        if screenAudioGranted {
-            setStatus("Stopped listening to system audio. Press ⌘L to start again.")
+        if let permission = kind.requiredPermission, !transport.isAvailable(kind) {
+            blockedPermission = permission
         } else {
-            blockedPermission = .screenAndSystemAudio
+            // Lower-cased source label, so this reads "…to system audio." and
+            // "…to audio input." off the same vocabulary the menu uses.
+            setStatus("Stopped listening to \(kind.label.lowercased()). Press ⌘L to start again.")
         }
     }
 
@@ -241,42 +270,32 @@ final class AppState {
     // MARK: - Derived UI state
 
     /// Transport state — only meaningful for sources we can actually drive.
+    ///
+    /// Two senses used to be tangled together in a four-case switch. Now there
+    /// is exactly one place they differ: wherever transport is on screen this
+    /// is the *Player's* state, and everywhere else it is ours.
     var isPlaying: Bool {
-        switch sourceKind {
-        case .demo: isDemoPlaying
-        case .systemAudio:
-            // Once transport is on screen the buttons drive the *player*, so
-            // they have to show the player's state, not ours.
-            showsTransport ? (detectedTrack?.isPlaying ?? false) : isCapturing
-        case .inputDevice: isCapturing
-        case .audioFile: isFilePlaying
-        }
+        // Once transport is on screen the buttons drive the *Player*, so they
+        // have to show the Player's state, not ours.
+        if sourceKind == .systemAudio, showsTransport { return detectedTrack?.isPlaying ?? false }
+        return isLive
     }
 
     /// Everything the menu bar and the canvas chrome need to *say* about the
     /// current source and which sources are offerable, in one pure value.
     ///
     /// Built fresh on every read rather than stored: reading it from inside a
-    /// view `body` touches `sourceKind`, `isDemoPlaying` and the permission
-    /// flags through the `@Observable` accessors, so SwiftUI registers exactly
-    /// the dependencies the old scattered switches did. A cached copy would
-    /// freeze them.
+    /// view `body` touches `sourceKind`, `isLive` and the permission flags
+    /// through the `@Observable` accessors, so SwiftUI registers exactly the
+    /// dependencies the old scattered switches did. A cached copy would freeze
+    /// them.
     var transport: TransportPresentation {
         TransportPresentation(
             sourceKind: sourceKind,
-            isLive: isCaptureActive,
+            isLive: isLive,
             screenAudioGranted: screenAudioGranted,
             microphoneStatus: microphoneStatus,
             visualizerID: visualizerID)
-    }
-
-    /// Whether audio is currently flowing into the analyzer.
-    var isCaptureActive: Bool {
-        switch sourceKind {
-        case .demo: isDemoPlaying
-        case .systemAudio, .inputDevice: isCapturing
-        case .audioFile: isFilePlaying
-        }
     }
 
     /// The player Synesthia can see, if any. Scoped to the system-audio source
@@ -343,7 +362,7 @@ final class AppState {
             return NowPlayingInfo(
                 title: DemoTrack.title, artist: DemoTrack.subtitle, album: "",
                 artwork: nil, player: nil, playerIcon: nil,
-                isPlaying: isDemoPlaying, symbol: "music.quarternote.3",
+                isPlaying: isLive, symbol: "music.quarternote.3",
                 seed: DemoTrack.title)
         }
         return nil
@@ -376,75 +395,35 @@ final class AppState {
             // *not* playing: if it is, the user may just be re-attaching
             // capture after granting the permission, and toggling would pause
             // their music.
-            if !(detectedTrack?.isPlaying ?? false), !isCapturing {
+            if !(detectedTrack?.isPlaying ?? false), !isLive {
                 await startSystemCapture()
             }
             report(remote.togglePlayPause(player))
             return
         }
         #endif
-        await handleCaptureToggle()
+        await handleSourceToggle()
     }
 
-    /// Start/stop the audio capture feeding the analyzer, independent of transport.
-    func toggleCapture() {
-        Task { await handleCaptureToggle() }
+    /// Start/stop the audio feeding the analyzer, independent of transport.
+    func toggleSource() {
+        Task { await handleSourceToggle() }
     }
 
-    private func handleCaptureToggle() async {
-        switch sourceKind {
-        case .demo:
-            if isDemoPlaying {
-                demoPlayer.pause()
-                isDemoPlaying = false
-            } else {
-                startDemo()
-            }
-        case .systemAudio:
-            await toggleSystemCapture()
-        case .inputDevice:
-            if isCapturing {
-                inputCapture.stop()
-                isCapturing = false
-            } else {
-                do {
-                    try await inputCapture.start(deviceID: selectedInputDeviceID)
-                    isCapturing = true
-                    blockedPermission = nil
-                } catch {
-                    refreshPermissions()
-                    if case AudioSourceError.microphoneDenied = error {
-                        blockedPermission = .microphone
-                    } else {
-                        setStatus(error.localizedDescription)
-                    }
-                }
-            }
-        case .audioFile:
-            if let fileURL {
-                do {
-                    // After a relaunch the bookmark restored fileURL, but the
-                    // player has nothing loaded yet.
-                    if filePlayer.currentURL != fileURL {
-                        try filePlayer.load(url: fileURL)
-                    }
-                    try filePlayer.togglePlayPause()
-                    isFilePlaying = filePlayer.isPlaying
-                } catch {
-                    setStatus(error.localizedDescription)
-                }
-            } else {
-                openFilePanel()
-            }
+    /// Stopping is the same act for every source, so it goes through the
+    /// interface. Starting still isn't — each one has its own preparation and
+    /// its own way of failing.
+    private func handleSourceToggle() async {
+        guard !activeSource.isRunning else {
+            await activeSource.stop()
+            syncLiveState()
+            return
         }
-    }
-
-    private func toggleSystemCapture() async {
-        if isCapturing {
-            await systemCapture.stop()
-            isCapturing = false
-        } else {
-            await startSystemCapture()
+        switch sourceKind {
+        case .demo: startDemo()
+        case .systemAudio: await startSystemCapture()
+        case .inputDevice: await startInputCapture()
+        case .audioFile: startFileSource()
         }
     }
 
@@ -455,7 +434,7 @@ final class AppState {
             return
         }
         #endif
-        restartCurrentPlayer()
+        restartCurrentSource()
     }
 
     func previousTrack() {
@@ -465,20 +444,14 @@ final class AppState {
             return
         }
         #endif
-        restartCurrentPlayer()
+        restartCurrentSource()
     }
 
-    private func restartCurrentPlayer() {
-        switch sourceKind {
-        case .audioFile:
-            try? filePlayer.restart()
-            isFilePlaying = filePlayer.isPlaying
-        case .demo:
-            try? demoPlayer.restart()
-            isDemoPlaying = demoPlayer.isPlaying
-        default:
-            break
-        }
+    /// Sends the active source back to the top, when it is the kind of source
+    /// that has a top. A microphone isn't.
+    private func restartCurrentSource() {
+        try? (activeSource as? any RestartableSource)?.restart()
+        syncLiveState()
     }
 
     // MARK: - Player control (opt-in Apple Events)
@@ -588,7 +561,7 @@ final class AppState {
         // Same source as the one already selected. On first run nothing was
         // ever started (see `onAppear`), so `didSet` won't fire and the sheet
         // would dismiss onto a dead canvas; bring the source up by hand.
-        if !isCaptureActive { handleSourceChange() }
+        if !isLive { handleSourceChange() }
     }
 
     /// Dismisses the welcome sheet for good. On first run, reaching here with
@@ -627,16 +600,16 @@ final class AppState {
         guard let blocked = blockedPermission,
             sourceKind.requiredPermission == blocked,
             transport.isAvailable(sourceKind),
-            !isCaptureActive
+            !isLive
         else { return }
-        toggleCapture()
+        toggleSource()
     }
 
     /// "Try Again" on the permission card.
     func retryBlockedSource() {
         refreshPermissions()
-        guard blockedPermission != nil, !isCaptureActive else { return }
-        toggleCapture()
+        guard blockedPermission != nil, !isLive else { return }
+        toggleSource()
     }
 
     // MARK: - Demo
@@ -646,13 +619,13 @@ final class AppState {
     func playDemo() {
         firstRunDemoPending = false
         if sourceKind == .demo {
-            if !isDemoPlaying { startDemo() }
+            if !isLive { startDemo() }
         } else {
             sourceKind = .demo
         }
     }
 
-    // MARK: - Demo playback
+    // MARK: - Bringing a source up
 
     private func startDemo() {
         guard let url = DemoTrack.url else {
@@ -660,15 +633,52 @@ final class AppState {
             return
         }
         do {
-            if demoPlayer.currentURL != url {
-                try demoPlayer.load(url: url)
+            if demoSource.currentURL != url {
+                try demoSource.load(url: url)
             }
-            try demoPlayer.play()
-            isDemoPlaying = demoPlayer.isPlaying
+            try demoSource.play()
             statusMessage = nil
         } catch {
             setStatus("Couldn't play the demo track: \(error.localizedDescription)")
         }
+        syncLiveState()
+    }
+
+    private func startInputCapture() async {
+        // The engine reads this at `start` only, which is why changing the
+        // device while listening restarts the source rather than assigning.
+        inputCapture.deviceID = selectedInputDeviceID
+        do {
+            try await inputCapture.start()
+            blockedPermission = nil
+        } catch {
+            refreshPermissions()
+            if case AudioSourceError.microphoneDenied = error {
+                blockedPermission = .microphone
+            } else {
+                setStatus(error.localizedDescription)
+            }
+        }
+        syncLiveState()
+    }
+
+    /// Plays the chosen file, or asks for one if there isn't one yet.
+    private func startFileSource() {
+        guard let fileURL else {
+            openFilePanel()
+            return
+        }
+        do {
+            // After a relaunch the bookmark restored fileURL, but the source
+            // has nothing loaded yet.
+            if fileSource.currentURL != fileURL {
+                try fileSource.load(url: fileURL)
+            }
+            try fileSource.play()
+        } catch {
+            setStatus(error.localizedDescription)
+        }
+        syncLiveState()
     }
 
     // MARK: - File source
@@ -681,15 +691,15 @@ final class AppState {
         panel.message = "Choose an audio file to visualize"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
-            try filePlayer.load(url: url)
+            try fileSource.load(url: url)
             adoptFile(url)
             sourceKind = .audioFile
-            try filePlayer.play()
-            isFilePlaying = filePlayer.isPlaying
+            try fileSource.play()
             statusMessage = nil
         } catch {
             setStatus("Couldn't open \(url.lastPathComponent): \(error.localizedDescription)")
         }
+        syncLiveState()
     }
 
     /// Records the chosen file and stores a security-scoped bookmark, which is
@@ -747,19 +757,14 @@ final class AppState {
 
     // MARK: - Source plumbing
 
-    /// Tears everything down (all engines stopped, analyzer cleared so the
+    /// Tears everything down (all sources stopped, analyzer cleared so the
     /// old source's tail doesn't linger) and brings up whatever the new
-    /// source needs. Stopping every engine unconditionally is simpler and
-    /// safer than tracking which one was running.
+    /// source needs. Stopping every source unconditionally is still simpler
+    /// than tracking which one was running, and now it is one line.
     private func handleSourceChange() {
         Task {
-            await systemCapture.stop()
-            inputCapture.stop()
-            filePlayer.pause()
-            demoPlayer.pause()
-            isFilePlaying = false
-            isDemoPlaying = false
-            isCapturing = false
+            for source in allSources { await source.stop() }
+            syncLiveState()
             analyzer.reset()
             statusMessage = nil
             blockedPermission = nil
@@ -776,24 +781,17 @@ final class AppState {
             case .inputDevice:
                 inputDevices = AudioInputDeviceList.all()
             case .audioFile:
-                if let fileURL {
-                    // After a relaunch the bookmark gave us a URL but the
-                    // player has nothing loaded yet.
-                    if filePlayer.currentURL != fileURL {
-                        try? filePlayer.load(url: fileURL)
-                    }
-                    try? filePlayer.play()
-                    isFilePlaying = filePlayer.isPlaying
-                }
+                // Only when there is a file: an empty file source raises the
+                // open panel, which nobody asked for by switching sources.
+                if fileURL != nil { startFileSource() }
             }
         }
     }
 
     private func startSystemCapture(isRetry: Bool = false) async {
-        guard !isCapturing else { return }
+        guard !systemCapture.isRunning else { return }
         do {
             try await systemCapture.start()
-            isCapturing = true
             statusMessage = nil
             blockedPermission = nil
             refreshPermissions()
@@ -812,6 +810,7 @@ final class AppState {
                 setStatus("Couldn't start listening to system audio: \(error.localizedDescription)")
             }
         }
+        syncLiveState()
     }
 
     // MARK: - Power
@@ -821,7 +820,7 @@ final class AppState {
     /// just as importantly, releases it the moment nothing is playing so an
     /// idle window isn't holding the machine awake.
     private func refreshPowerAssertion() {
-        let shouldHold = isCaptureActive
+        let shouldHold = isLive
         if shouldHold, powerAssertion == nil {
             powerAssertion = ProcessInfo.processInfo.beginActivity(
                 options: [.idleDisplaySleepDisabled, .userInitiated],

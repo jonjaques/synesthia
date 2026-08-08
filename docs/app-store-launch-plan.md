@@ -221,7 +221,7 @@ Ordered by what blocks the most.
 Kept because each cost real time and each is the kind of thing that recurs. The
 durable rules live in `CLAUDE.md`; this is the index.
 
-- **Every `FilePlayer` launch crashed.** `SWIFT_DEFAULT_ACTOR_ISOLATION =
+- **Every `FileSource` launch crashed.** `SWIFT_DEFAULT_ACTOR_ISOLATION =
 MainActor` makes an inline closure main-actor isolated; AVAudioEngine calls tap
   blocks on a realtime thread, so Swift 6's check trapped on the first buffer.
   The same defect sat in `scheduleFile`'s completion handler and would have

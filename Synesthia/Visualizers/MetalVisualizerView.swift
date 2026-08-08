@@ -261,7 +261,7 @@ struct MetalVisualizerView: NSViewRepresentable {
             let wanted: Int
             if !NSApp.isActive {
                 wanted = min(30, displayMax)
-            } else if !appState.isCaptureActive {
+            } else if !appState.isLive {
                 wanted = min(30, displayMax)
             } else {
                 wanted = displayMax

@@ -161,6 +161,35 @@ enum AudioSourceError: LocalizedError {
     }
 }
 
+// MARK: - The source interface
+
+/// One place audio can come from, as the app drives it.
+///
+/// The engines underneath are genuinely different — ScreenCaptureKit, an
+/// AVAudioEngine input node, an AVAudioPlayerNode graph — but `AppState` only
+/// ever needs to start one, stop it, ask whether it is running, and hear about
+/// it dying on its own. Before this existed, "is it running" was answered by
+/// three booleans on `AppState` that were kept in step by hand at eight call
+/// sites, and only one engine could report an external stop at all — so
+/// unplugging a USB interface left the app claiming to be listening forever.
+protocol AudioSource: AnyObject {
+    var isRunning: Bool { get }
+    /// Fired when the source stopped without being asked to — permission
+    /// revoked, display reconfigured, interface unplugged. Never for a normal
+    /// `stop()`.
+    var onStopped: (() -> Void)? { get set }
+
+    func start() async throws
+    func stop() async
+}
+
+/// Sources this app plays itself, which can therefore be sent back to the top.
+/// Separate from `AudioSource` because "previous track" means nothing to a
+/// microphone.
+protocol RestartableSource: AudioSource {
+    func restart() throws
+}
+
 // MARK: - System audio (ScreenCaptureKit)
 
 /// Captures the Mac's system audio output (everything except this app) and
@@ -172,7 +201,7 @@ enum AudioSourceError: LocalizedError {
 /// screen capture of the main display — shrunk to 2×2 px at 5 fps, with the
 /// video frames thrown away — purely to get the audio leg. That's also why
 /// the permission users must grant is "Screen & System Audio Recording".
-final class SystemAudioCapture: NSObject, SCStreamDelegate, SCStreamOutput {
+final class SystemAudioCapture: NSObject, SCStreamDelegate, SCStreamOutput, AudioSource {
     private let analyzer: AudioAnalyzer
     private var stream: SCStream?
     /// Serial queue SCK delivers sample buffers on (off the main thread).
@@ -180,9 +209,9 @@ final class SystemAudioCapture: NSObject, SCStreamDelegate, SCStreamOutput {
     private(set) var isRunning = false
     /// Called (on the main actor) after the stream is torn down *externally* —
     /// permission revoked, display reconfigured — never for a normal `stop()`.
-    /// Lets the owner resync `isCapturing`, the power assertion, and the UI,
-    /// which would otherwise all stay stuck claiming capture is live.
-    var onExternalStop: (() -> Void)?
+    /// Lets the owner resync `isLive`, the power assertion, and the UI, which
+    /// would otherwise all stay stuck claiming audio is flowing.
+    var onStopped: (() -> Void)?
 
     init(analyzer: AudioAnalyzer) {
         self.analyzer = analyzer
@@ -270,7 +299,7 @@ final class SystemAudioCapture: NSObject, SCStreamDelegate, SCStreamOutput {
         guard let stream, ObjectIdentifier(stream) == stopped else { return }
         self.stream = nil
         isRunning = false
-        onExternalStop?()
+        onStopped?()
     }
 }
 
@@ -363,16 +392,23 @@ enum AudioInputDeviceList {
 /// is a callback handed every buffer flowing through that node. Nothing is
 /// connected downstream, so the input is analyzed but never played back
 /// (no feedback squeal when using the built-in mic).
-final class InputDeviceCapture {
+final class InputDeviceCapture: AudioSource {
     private let analyzer: AudioAnalyzer
     private var engine: AVAudioEngine?
     private(set) var isRunning = false
+    /// Which device to open. Read at `start`; changing it while running has no
+    /// effect until the next one, which is why `AppState` restarts the source
+    /// rather than assigning and hoping.
+    var deviceID: AudioDeviceID?
+    var onStopped: (() -> Void)?
+    /// Watches for the device disappearing underneath a running engine.
+    private var configurationObserver: NSObjectProtocol?
 
     init(analyzer: AudioAnalyzer) {
         self.analyzer = analyzer
     }
 
-    func start(deviceID: AudioDeviceID?) async throws {
+    func start() async throws {
         guard engine == nil else { return }
         // Triggers the microphone-permission prompt (TCC) on first use.
         let granted = await AVCaptureDevice.requestAccess(for: .audio)
@@ -404,9 +440,28 @@ final class InputDeviceCapture {
         try engine.start()
         self.engine = engine
         isRunning = true
+        // The device went away (unplugged, or switched by the system). The
+        // engine stays nominally alive but no buffers arrive, so without this
+        // the app holds the display awake and renders a frozen canvas forever
+        // — the one failure of the four sources that nothing was watching for.
+        // Delivered on `.main`, but hopped anyway rather than depending on
+        // that (same reasoning as `NotificationRelay`).
+        configurationObserver = NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.isRunning else { return }
+                self.stop()
+                self.onStopped?()
+            }
+        }
     }
 
     func stop() {
+        if let configurationObserver {
+            NotificationCenter.default.removeObserver(configurationObserver)
+            self.configurationObserver = nil
+        }
         engine?.inputNode.removeTap(onBus: 0)
         engine?.stop()
         engine = nil
@@ -414,16 +469,19 @@ final class InputDeviceCapture {
     }
 }
 
-// MARK: - Local file player
+// MARK: - Local file source
 
 /// Plays a local audio file out the default output device while feeding the
-/// analyzer from a tap, so the visuals track exactly what you hear.
+/// analyzer from a tap, so the visuals track exactly what you hear. Backs both
+/// the audio-file source and the bundled demo track.
 ///
-/// The engine graph is `player → mainMixerNode → (output)`; the analyzer tap
-/// sits on the mixer, i.e. post-mix, right before the speakers. The file
-/// loops forever: each time playback of one scheduled pass completes, the
-/// completion handler schedules the next (see `scheduleLoop`).
-final class FilePlayer {
+/// A *Source*, not a Player: Player means an external media app this one can
+/// see (see CONTEXT.md). The engine graph is `player → mainMixerNode →
+/// (output)`; the analyzer tap sits on the mixer, i.e. post-mix, right before
+/// the speakers. The file loops forever: each time playback of one scheduled
+/// pass completes, the completion handler schedules the next (see
+/// `scheduleLoop`).
+final class FileSource {
     private let analyzer: AudioAnalyzer
     private let engine = AVAudioEngine()
     private let player = AVAudioPlayerNode()
@@ -431,14 +489,17 @@ final class FilePlayer {
     private var tapInstalled = false
     private(set) var currentURL: URL?
     private(set) var isPlaying = false
+    /// Part of the `AudioSource` contract, and never fired: this source stops
+    /// only when asked to, and the loop means it never runs out of audio.
+    var onStopped: (() -> Void)?
     /// Whether the player still holds scheduled audio. `player.isPlaying` is
     /// false both when *paused* (queue intact) and when *stopped* (queue
     /// cleared); scheduling on resume-from-pause would queue a duplicate pass
     /// of the file on top of the paused one's remainder.
     private var hasQueuedAudio = false
-    /// Bumped whenever the queue is cleared (`stop()` / `load()`), so a loop
-    /// completion fired by the *old* queue can tell it's stale and must not
-    /// schedule into the new one.
+    /// Bumped whenever the queue is cleared (`clearQueue()` / `load()`), so a
+    /// loop completion fired by the *old* queue can tell it's stale and must
+    /// not schedule into the new one.
     private var generation = 0
 
     init(analyzer: AudioAnalyzer) {
@@ -448,7 +509,7 @@ final class FilePlayer {
     }
 
     func load(url: URL) throws {
-        stop()
+        clearQueue()
         let file = try AVAudioFile(forReading: url)
         self.file = file
         currentURL = url
@@ -483,7 +544,16 @@ final class FilePlayer {
         isPlaying = false
     }
 
-    func stop() {
+    /// Drops whatever is still scheduled, so the next `play()` starts the file
+    /// from the top.
+    ///
+    /// Was `stop()`. Renamed when `AudioSource` arrived, because the
+    /// interface's `stop()` means "stop producing audio" — which for this
+    /// source is `pause()`, keeping the position. Left as `stop()` it would
+    /// have become the protocol witness silently, and every source switch
+    /// would have started discarding the queue with no compile error and no
+    /// test failure.
+    private func clearQueue() {
         player.stop()
         generation += 1
         hasQueuedAudio = false
@@ -497,7 +567,7 @@ final class FilePlayer {
     /// Jump back to the start of the file (used as "previous/next track").
     func restart() throws {
         guard file != nil else { throw AudioSourceError.noFileLoaded }
-        stop()
+        clearQueue()
         try play()
     }
 
@@ -528,4 +598,14 @@ final class FilePlayer {
             }
         }
     }
+}
+
+extension FileSource: RestartableSource {
+    var isRunning: Bool { isPlaying }
+
+    func start() async throws { try play() }
+
+    /// `pause()`, not `clearQueue()`: stopping this source means silencing it,
+    /// and switching away and back should resume where it left off.
+    func stop() async { pause() }
 }

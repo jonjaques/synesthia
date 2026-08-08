@@ -22,7 +22,7 @@ import AVFoundation
 struct TransportPresentation {
     let sourceKind: AudioSourceKind
     /// Whether audio is flowing into the analyzer right now. Fed from
-    /// `AppState.isCaptureActive`.
+    /// `AppState.isLive`.
     let isLive: Bool
     let screenAudioGranted: Bool
     let microphoneStatus: AVAuthorizationStatus
