@@ -50,7 +50,7 @@ final class AppState {
     /// The opt-in Apple Events layer: transport control and real cover art.
     let remote = PlayerRemote()
     #endif
-    let settings = VisualizerSettings()
+    let settings: VisualizerSettings
 
     private let systemCapture: SystemAudioCapture
     private let inputCapture: InputDeviceCapture
@@ -64,14 +64,14 @@ final class AppState {
     var sourceKind: AudioSourceKind {
         didSet {
             guard sourceKind != oldValue else { return }
-            UserDefaults.standard.set(sourceKind.rawValue, forKey: "sourceKind")
+            defaults.set(sourceKind.rawValue, forKey: Self.sourceKindKey)
             handleSourceChange()
         }
     }
     /// Selected visualizer's descriptor id; the render loop watches this and
     /// swaps visualizers when it changes.
     var visualizerID: String {
-        didSet { UserDefaults.standard.set(visualizerID, forKey: "visualizerID") }
+        didSet { defaults.set(visualizerID, forKey: Self.visualizerIDKey) }
     }
     /// Loudness normalization: the analyzer slowly adapts its dB mappings to
     /// the source's program level, so a quiet mic and loud mastered music
@@ -79,7 +79,7 @@ final class AppState {
     /// Persisted; the analyzer owns the DSP, this just switches it.
     var loudnessNormalizationEnabled: Bool {
         didSet {
-            UserDefaults.standard.set(loudnessNormalizationEnabled, forKey: Self.loudnessKey)
+            defaults.set(loudnessNormalizationEnabled, forKey: Self.loudnessKey)
             analyzer.setAutoGainEnabled(loudnessNormalizationEnabled)
         }
     }
@@ -141,32 +141,42 @@ final class AppState {
     /// The security-scoped resource currently open for `fileURL`, if any.
     private var scopedFileURL: URL?
 
+    /// Where every persisted preference above is read and written. Handed in
+    /// rather than reached for globally so the store has a test surface; the
+    /// app always gets `.standard`, which is also the only domain
+    /// `NSArgumentDomain` injection reaches (`CLAUDE.md` §Screenshots).
+    private let defaults: UserDefaults
+
+    private static let sourceKindKey = "sourceKind"
+    private static let visualizerIDKey = "visualizerID"
     private static let welcomeKey = "hasSeenWelcome"
     private static let bookmarkKey = "audioFileBookmark"
     private static let loudnessKey = "loudnessNormalization"
     private static let playerControlKey = "playerControlEnabled"
 
-    private init() {
+    private init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        settings = VisualizerSettings(defaults: defaults)
         systemCapture = SystemAudioCapture(analyzer: AudioAnalyzer.shared)
         inputCapture = InputDeviceCapture(analyzer: AudioAnalyzer.shared)
         filePlayer = FilePlayer(analyzer: AudioAnalyzer.shared)
         demoPlayer = FilePlayer(analyzer: AudioAnalyzer.shared)
         // First launch defaults to the bundled demo: it needs no permission,
         // so the canvas is alive before anything can be denied.
-        let stored = UserDefaults.standard.string(forKey: "sourceKind") ?? ""
+        let stored = defaults.string(forKey: Self.sourceKindKey) ?? ""
         sourceKind = AudioSourceKind(rawValue: Self.migrated(stored)) ?? .demo
-        let storedViz = UserDefaults.standard.string(forKey: "visualizerID") ?? ""
+        let storedViz = defaults.string(forKey: Self.visualizerIDKey) ?? ""
         visualizerID = VisualizerRegistry.descriptor(id: storedViz)?.id ?? VisualizerRegistry.all[0].id
         // Default on; read via `bool(forKey:)` (not a plain object cast) so
         // the screenshots-style `-loudnessNormalization NO` argument-domain
         // injection keeps working.
         loudnessNormalizationEnabled =
-            UserDefaults.standard.object(forKey: Self.loudnessKey) == nil
+            defaults.object(forKey: Self.loudnessKey) == nil
             ? true
-            : UserDefaults.standard.bool(forKey: Self.loudnessKey)
-        showsWelcome = !UserDefaults.standard.bool(forKey: Self.welcomeKey)
+            : defaults.bool(forKey: Self.loudnessKey)
+        showsWelcome = !defaults.bool(forKey: Self.welcomeKey)
         #if MUSIC_APP_SOURCE
-        playerControlEnabled = UserDefaults.standard.bool(forKey: Self.playerControlKey)
+        playerControlEnabled = defaults.bool(forKey: Self.playerControlKey)
         #endif
         // Reads two stored properties, so it can only run once they all are.
         firstRunDemoPending = showsWelcome && sourceKind == .demo
@@ -174,7 +184,7 @@ final class AppState {
         systemCapture.onExternalStop = { [weak self] in self?.handleSystemCaptureStopped() }
         // didSet doesn't fire during init, so push the stored values once.
         analyzer.setAutoGainEnabled(loudnessNormalizationEnabled)
-        UserDefaults.standard.set(sourceKind.rawValue, forKey: "sourceKind")
+        defaults.set(sourceKind.rawValue, forKey: Self.sourceKindKey)
     }
 
     /// Rewrites a stored source kind that no longer exists.
@@ -241,6 +251,23 @@ final class AppState {
         case .inputDevice: isCapturing
         case .audioFile: isFilePlaying
         }
+    }
+
+    /// Everything the menu bar and the canvas chrome need to *say* about the
+    /// current source and which sources are offerable, in one pure value.
+    ///
+    /// Built fresh on every read rather than stored: reading it from inside a
+    /// view `body` touches `sourceKind`, `isDemoPlaying` and the permission
+    /// flags through the `@Observable` accessors, so SwiftUI registers exactly
+    /// the dependencies the old scattered switches did. A cached copy would
+    /// freeze them.
+    var transport: TransportPresentation {
+        TransportPresentation(
+            sourceKind: sourceKind,
+            isLive: isCaptureActive,
+            screenAudioGranted: screenAudioGranted,
+            microphoneStatus: microphoneStatus,
+            visualizerID: visualizerID)
     }
 
     /// Whether audio is currently flowing into the analyzer.
@@ -352,8 +379,7 @@ final class AppState {
             if !(detectedTrack?.isPlaying ?? false), !isCapturing {
                 await startSystemCapture()
             }
-            remote.togglePlayPause(player)
-            reportAutomationRefusal(for: player)
+            report(remote.togglePlayPause(player))
             return
         }
         #endif
@@ -425,8 +451,7 @@ final class AppState {
     func nextTrack() {
         #if MUSIC_APP_SOURCE
         if showsTransport, let player = detectedPlayer {
-            remote.nextTrack(player)
-            reportAutomationRefusal(for: player)
+            report(remote.nextTrack(player))
             return
         }
         #endif
@@ -436,8 +461,7 @@ final class AppState {
     func previousTrack() {
         #if MUSIC_APP_SOURCE
         if showsTransport, let player = detectedPlayer {
-            remote.previousTrack(player)
-            reportAutomationRefusal(for: player)
+            report(remote.previousTrack(player))
             return
         }
         #endif
@@ -472,19 +496,20 @@ final class AppState {
         guard let player = playerControlOffer else { return }
         setPlayerControlEnabled(true)
         // The seed doubles as the permission probe: it either comes back with
-        // what's playing, or trips `automationDenied`.
-        if let update = remote.seed(player) {
-            nowPlayingObserver.ingest(update, from: player)
-        }
-        if remote.automationDenied {
-            // Roll the opt-in back so the menu offers it again rather than
-            // leaving the app in a state that claims control it doesn't have.
+        // what's playing, or tells us why it couldn't.
+        switch remote.seed(player) {
+        case .success(let update):
+            if let update { nowPlayingObserver.ingest(update, from: player) }
+            if let track = nowPlayingObserver.current?.track {
+                handleTrackChange(player: player, track: track)
+            }
+        case .failure(let error):
+            // Any failure rolls the opt-in back — the menu should offer it
+            // again rather than leave the app claiming control it doesn't
+            // have — but only the message says *why*, so "Music isn't running"
+            // no longer sends the user to a permission they already granted.
             setPlayerControlEnabled(false)
-            setStatus(
-                "Synesthia isn't allowed to control \(player.name). Enable it in System Settings › Privacy & Security › Automation."
-            )
-        } else if let track = nowPlayingObserver.current?.track {
-            handleTrackChange(player: player, track: track)
+            setStatus(error.message)
         }
         #endif
     }
@@ -492,18 +517,24 @@ final class AppState {
     #if MUSIC_APP_SOURCE
     private func setPlayerControlEnabled(_ enabled: Bool) {
         playerControlEnabled = enabled
-        UserDefaults.standard.set(enabled, forKey: Self.playerControlKey)
+        defaults.set(enabled, forKey: Self.playerControlKey)
         if !enabled { remote.clearArtwork() }
     }
 
-    /// Surfaces a refused Apple Event once, as a banner. Deliberately *not* a
+    /// Surfaces a failed Apple Event once, as a banner. Deliberately *not* a
     /// `blockedPermission` card: control is an enhancement, and the canvas is
     /// still perfectly alive without it.
-    private func reportAutomationRefusal(for player: MediaPlayer) {
-        guard remote.automationDenied else { return }
-        setStatus(
-            "Synesthia isn't allowed to control \(player.name). Enable it in System Settings › Privacy & Security › Automation."
-        )
+    ///
+    /// Replaces the call-then-check convention, where every transport call had
+    /// to be followed by a second line nothing enforced — forget it and the
+    /// failure was silent. The result carries the answer, so there is no
+    /// second line to forget.
+    private func report(_ result: Result<some Any, PlayerRemoteError>) {
+        guard case .failure(let error) = result else { return }
+        setStatus(error.message)
+        // Only a real refusal rolls the opt-in back. A player that isn't
+        // running, or a script that threw, leaves the grant alone.
+        if error.revokesPlayerControl { setPlayerControlEnabled(false) }
     }
 
     /// Asks every running scriptable player what it's playing. Only runs when
@@ -513,7 +544,10 @@ final class AppState {
     private func seedConnectedPlayers() {
         guard playerControlEnabled else { return }
         for player in MediaPlayer.all where player.isScriptable && player.isRunning {
-            if let update = remote.seed(player) {
+            // Best-effort: a player that has since quit, or one we were
+            // refused, shouldn't raise a banner during a background sweep the
+            // user didn't ask for.
+            if case .success(let update) = remote.seed(player), let update {
                 nowPlayingObserver.ingest(update, from: player)
             }
         }
@@ -562,7 +596,7 @@ final class AppState {
     /// anything — the demo is the answer to that, and the only thing that
     /// starts audio on a fresh install.
     func completeWelcome() {
-        UserDefaults.standard.set(true, forKey: Self.welcomeKey)
+        defaults.set(true, forKey: Self.welcomeKey)
         showsWelcome = false
         guard firstRunDemoPending else { return }
         firstRunDemoPending = false
@@ -575,8 +609,7 @@ final class AppState {
     }
 
     func openPermissionSettings(_ permission: PrivacyPermission) {
-        guard let url = permission.settingsURL else { return }
-        NSWorkspace.shared.open(url)
+        openExternal(permission.settingsURL)
     }
 
     // MARK: - Permissions
@@ -586,23 +619,6 @@ final class AppState {
         microphoneStatus = AVCaptureDevice.authorizationStatus(for: .audio)
     }
 
-    /// Whether a source could produce audio right now, permission-wise.
-    /// Locked sources appear disabled in the source picker; the welcome
-    /// sheet — which explains what each permission buys *before* macOS asks —
-    /// is the granting path.
-    func isSourceAvailable(_ kind: AudioSourceKind) -> Bool {
-        switch kind {
-        case .demo, .audioFile:
-            true
-        case .systemAudio:
-            screenAudioGranted
-        case .inputDevice:
-            // .notDetermined stays available: selecting the source is what
-            // triggers the system prompt.
-            microphoneStatus != .denied && microphoneStatus != .restricted
-        }
-    }
-
     /// The app came back to the foreground — which is the moment a user
     /// returns from System Settings. Re-read TCC state and, if the active
     /// source was blocked and is now allowed, retry capture unprompted.
@@ -610,7 +626,7 @@ final class AppState {
         refreshPermissions()
         guard let blocked = blockedPermission,
             sourceKind.requiredPermission == blocked,
-            isSourceAvailable(sourceKind),
+            transport.isAvailable(sourceKind),
             !isCaptureActive
         else { return }
         toggleCapture()
@@ -687,18 +703,18 @@ final class AppState {
                 options: .withSecurityScope,
                 includingResourceValuesForKeys: nil,
                 relativeTo: nil)
-            UserDefaults.standard.set(data, forKey: Self.bookmarkKey)
+            defaults.set(data, forKey: Self.bookmarkKey)
         } catch {
             // Not fatal: the file still plays this session, it just won't come
             // back on next launch.
-            UserDefaults.standard.removeObject(forKey: Self.bookmarkKey)
+            defaults.removeObject(forKey: Self.bookmarkKey)
         }
     }
 
     /// Resolves the stored bookmark at launch and opens security-scoped access
     /// to it. Returns nil when there is no bookmark or the file has moved.
     private func resolveBookmarkedFile() -> URL? {
-        guard let data = UserDefaults.standard.data(forKey: Self.bookmarkKey) else { return nil }
+        guard let data = defaults.data(forKey: Self.bookmarkKey) else { return nil }
         var isStale = false
         guard
             let url = try? URL(
@@ -708,7 +724,7 @@ final class AppState {
                 bookmarkDataIsStale: &isStale),
             url.startAccessingSecurityScopedResource()
         else {
-            UserDefaults.standard.removeObject(forKey: Self.bookmarkKey)
+            defaults.removeObject(forKey: Self.bookmarkKey)
             return nil
         }
         scopedFileURL = url
@@ -719,7 +735,7 @@ final class AppState {
                 includingResourceValuesForKeys: nil,
                 relativeTo: nil)
         {
-            UserDefaults.standard.set(fresh, forKey: Self.bookmarkKey)
+            defaults.set(fresh, forKey: Self.bookmarkKey)
         }
         return url
     }
@@ -826,4 +842,19 @@ final class AppState {
             if !Task.isCancelled { self?.statusMessage = nil }
         }
     }
+}
+
+/// Hands a URL to the system — a web page from the Help menu, or an
+/// `x-apple.systempreferences:` deep link into the pane a permission lives in.
+///
+/// One wrapper because there were two: `AppState.openPermissionSettings` and a
+/// private `SynesthiaApp.open(_:)` that did the same thing for the Help menu's
+/// five links.
+func openExternal(_ url: URL?) {
+    guard let url else { return }
+    NSWorkspace.shared.open(url)
+}
+
+func openExternal(_ urlString: String) {
+    openExternal(URL(string: urlString))
 }

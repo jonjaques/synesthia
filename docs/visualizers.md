@@ -45,9 +45,10 @@ classDiagram
     VisualizerDescriptor ..> Visualizer : make() creates
     NebulaVisualizer --> GPUParticleSystem : simulates on
     Visualizer <|.. NebulaVisualizer
-    Visualizer <|.. TunnelVisualizer
-    Visualizer <|.. AuroraVisualizer
+    Visualizer <|.. FullscreenShaderVisualizer
     Visualizer <|.. BarsVisualizer
+    TunnelVisualizer ..> FullscreenShaderVisualizer : descriptor makes
+    AuroraVisualizer ..> FullscreenShaderVisualizer : descriptor makes
     VisualizerSettings ..> VisualizerDescriptor : persists per id
 ```
 
@@ -73,19 +74,33 @@ values in `p[0…15]`) and hands you the full `snapshot` for bulk data (64-band
 spectrum, 256-point waveform).
 
 **Everything else is automatic.** Declare options in the descriptor and they
-appear in the Options popover, arrive in the shader's `p` array in declaration
-order, and persist per-visualizer (`VisualizerSettings` keys tunings by
+appear in the Options popover, arrive in the shader's `p` array at the slot each
+one names, and persist per-visualizer (`VisualizerSettings` keys tunings by
 descriptor id — switching visualizers restores each one's own look, including
 its palette). An option is a slider unless you build it with
-`.toggle(id:name:defaultOn:)`, which draws a switch and delivers 0 or 1 in
+`.toggle(id:name:defaultOn:slot:)`, which draws a switch and delivers 0 or 1 in
 the same slot — test it with `> 0.5` in the shader.
 
-There are `VizUniforms.parameterCount` (16) slots. Name the ones you use at the
-top of your shader section rather than indexing by number:
+There are `VizUniforms.parameterCount` (16) slots, and **every option declares
+which one it lands in**. Name the same numbers at the top of your shader section
+rather than indexing by hand:
 
 ```metal
 constant int kNebulaTurbulence = 3;   // …then u.p[kNebulaTurbulence]
 ```
+
+```swift
+VisualizerOption(id: "turbulence", name: "Turbulence",
+                 range: 0.0...2.5, defaultValue: 1.0, slot: 3)
+```
+
+`slot` has no default, so a new option cannot silently collide with an existing
+one — the compiler asks. It used to be inferred from the option's position in
+the array, which meant reordering the popover remapped every shader constant for
+that visualizer with no build error and no test failure. Two tests in
+`VizUniformsTests` now pin the Swift slots against the MSL table; the table in
+`optionSlotsMatchTheShaderConstants` is hand-transcribed from `Shaders.metal` on
+purpose, so don't rewrite it in terms of the descriptors.
 
 The uniform block also carries **per-frame state the host derives once**, so no
 visualizer has to keep it itself:
@@ -124,7 +139,8 @@ pulsing with loudness:
 
 ### Spectrum Tunnel (`TunnelVisualizer` + `tunnelFragment`)
 
-Pure fullscreen shader; the Swift class is ~40 lines of pipeline setup. The
+Pure fullscreen shader; there is no Swift class at all, only a descriptor over
+`FullscreenShaderVisualizer` (below). The
 shader sphere-traces a real 3D signed-distance field: a bore of varying
 radius around a centerline that snakes through space, so bends genuinely
 occlude and the far end is never visible. Each angular lane of the wall
@@ -136,7 +152,8 @@ own audio feature.
 
 ### Aurora (`AuroraVisualizer` + `auroraFragment`)
 
-Also a pure fullscreen shader, and the only consumer of the waveform. A
+Also a descriptor over `FullscreenShaderVisualizer`, and the only consumer of
+the waveform. A
 night-sky scene is built in layers (gradient, stars, haze, fog), then N
 horizontal ribbons are drawn; ribbon _i_ is displaced vertically by the
 waveform and brightened by its own slice of the spectrum — lows at the
@@ -260,45 +277,42 @@ panel, the desk, and every unlit lens.
    and the buffer indices it binds are fixed
    (see [rendering.md](rendering.md#gpu-compute-simulation-without-the-cpu)).
 
-2. **Write the class.** Model it on `TunnelVisualizer` — build pipelines in
-   `init` via `makeRenderPipeline`, encode one pass in `draw`:
+2. **Write the descriptor.** If your visualizer is nothing but a fragment
+   shader — as Spectrum Tunnel and Aurora are — you write no Swift class at
+   all. `FullscreenShaderVisualizer` is the host: name your function and it
+   builds the pipeline and encodes the pass, binding uniforms at 0, the bands
+   at 1, and the waveform at 2.
 
    ```swift
-   final class RippleVisualizer: Visualizer {
+   enum RippleVisualizer {
        static let descriptor = VisualizerDescriptor(
            id: "ripple",
            name: "Ripple",
            tagline: "Rings that spread from every beat",
            options: [
                VisualizerOption(id: "count", name: "Rings",
-                                range: 1...12, defaultValue: 6),
+                                range: 1...12, defaultValue: 6),   // arrives as u.p[0]
            ],
-           make: { try RippleVisualizer(device: $0, library: $1, pixelFormat: $2) })
-
-       private let pipeline: MTLRenderPipelineState
-
-       init(device: MTLDevice, library: MTLLibrary, pixelFormat: MTLPixelFormat) throws {
-           pipeline = try makeRenderPipeline(
-               device: device, library: library,
-               vertex: "fullscreenVertex", fragment: "rippleFragment",
-               pixelFormat: pixelFormat)
-       }
-
-       func draw(in view: MTKView, commandBuffer: MTLCommandBuffer,
-                 uniforms: VizUniforms, snapshot: AudioSnapshot) {
-           guard let pass = view.currentRenderPassDescriptor,
-                 let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass) else { return }
-           var u = uniforms   // "count" arrives as u.p0
-           encoder.setRenderPipelineState(pipeline)
-           encoder.setFragmentBytes(&u, length: MemoryLayout<VizUniforms>.stride, index: 0)
-           snapshot.bands.withUnsafeBytes {
-               encoder.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1)
-           }
-           encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
-           encoder.endEncoding()
-       }
+           make: {
+               try FullscreenShaderVisualizer(
+                   fragment: "rippleFragment", device: $0, library: $1, pixelFormat: $2)
+           })
    }
    ```
+
+   Note the fragment name is a _string_, so a typo is a runtime failure, not a
+   build one: `makeRenderPipeline` throws `VisualizerError.missingFunction` and
+   the host swallows it with `try?`, leaving a black canvas. Check a new one by
+   eye.
+
+   **Write a class conforming to `Visualizer` only when you need more than one
+   pass** — compute work before the drawable is acquired, extra bindings, an
+   HDR chain. `BarsVisualizer` and `NebulaVisualizer` are the two worked
+   examples; both build their pipelines in `init` via `makeRenderPipeline` and
+   encode in `draw(in:commandBuffer:uniforms:snapshot:)`. The one rule that is
+   _yours_ to keep in that case is ordering: do the CPU and compute work
+   first, and take `view.currentRenderPassDescriptor` as late as possible,
+   because it blocks until Core Animation hands over a drawable.
 
 3. **Register it.** Add `RippleVisualizer.descriptor` to the array in
    `VisualizerRegistry.all` (or call `VisualizerRegistry.register(_:)` at
@@ -314,6 +328,11 @@ from the descriptor.
 - **≤ `VizUniforms.parameterCount` options** (16) — only those slots reach the
   shader, and a descriptor that declares more silently loses the extras (there
   is a debug assertion, and a test that every registered visualizer fits).
+- **Every option names its `slot`, and no two share one.** Both are debug
+  assertions in `VisualizerDescriptor.init` and tests in `VizUniformsTests`.
+  Never renumber a slot to tidy things up: tunings persist by option _id_, so
+  persistence survives, but the shader reads by slot — a renumber moves a
+  user's stored value onto a different constant on their next launch.
 - **Scale motion by `uniforms.speed`, response by `uniforms.sensitivity`,
   and color through `cosPalette(t, u.palette)`** so the shared controls
   behave consistently across visualizers.

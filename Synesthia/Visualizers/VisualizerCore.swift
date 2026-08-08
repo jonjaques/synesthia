@@ -159,22 +159,35 @@ struct VisualizerOption: Identifiable {
     let range: ClosedRange<Double>
     let defaultValue: Double
     let kind: Kind
+    /// Which of the shader's `p[16]` slots this option lands in.
+    ///
+    /// **Declared, not inferred from array position.** The shader names the
+    /// same number in its own `constant int k…` table and nothing else connects
+    /// the two, so reordering this array — the natural thing to do to move a
+    /// slider up the popover — used to remap every shader constant for that
+    /// visualizer silently, with no build error and no test failure.
+    ///
+    /// Deliberately has no default: a `slot: Int = 0` would let a new option
+    /// collide with an existing one just as quietly.
+    let slot: Int
 
     init(
         id: String, name: String, range: ClosedRange<Double>, defaultValue: Double,
-        kind: Kind = .slider
+        kind: Kind = .slider, slot: Int
     ) {
         self.id = id
         self.name = name
         self.range = range
         self.defaultValue = defaultValue
         self.kind = kind
+        self.slot = slot
     }
 
     /// An on/off option, stored as 0 or 1.
-    static func toggle(id: String, name: String, defaultOn: Bool) -> VisualizerOption {
+    static func toggle(id: String, name: String, defaultOn: Bool, slot: Int) -> VisualizerOption {
         VisualizerOption(
-            id: id, name: name, range: 0...1, defaultValue: defaultOn ? 1 : 0, kind: .toggle)
+            id: id, name: name, range: 0...1, defaultValue: defaultOn ? 1 : 0, kind: .toggle,
+            slot: slot)
     }
 }
 
@@ -203,6 +216,14 @@ struct VisualizerDescriptor: Identifiable {
         assert(
             options.count <= VizUniforms.parameterCount,
             "\(id) declares \(options.count) options; only \(VizUniforms.parameterCount) reach the shader")
+        assert(
+            options.allSatisfy { (0..<VizUniforms.parameterCount).contains($0.slot) },
+            "\(id) declares an option outside the \(VizUniforms.parameterCount) shader slots")
+        // Two options in one slot is silent data loss: the second write wins
+        // and the first control does nothing.
+        assert(
+            Set(options.map(\.slot)).count == options.count,
+            "\(id) declares two options in the same shader slot")
         self.id = id
         self.name = name
         self.tagline = tagline
@@ -324,16 +345,24 @@ final class VisualizerSettings {
         didSet { save() }
     }
 
+    private let defaults: UserDefaults
+
     private static let storageKey = "VisualizerTunings"
     private static let legacyKey = "VisualizerSettings"
 
-    init() {
-        if let data = UserDefaults.standard.data(forKey: Self.storageKey),
+    /// The store is a parameter so tests can hand in a throwaway suite. The app
+    /// always passes `.standard`, and that default is what keeps the
+    /// screenshots pipeline working: it injects state through the argument
+    /// domain (`open -a … --args -visualizerID nebula`), and `NSArgumentDomain`
+    /// exists only on `.standard`. Don't move the app onto a named suite.
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        if let data = defaults.data(forKey: Self.storageKey),
             let decoded = try? JSONDecoder().decode([String: VisualizerTuning].self, from: data)
         {
             tunings = decoded
         } else {
-            tunings = Self.migratedLegacyTunings()
+            tunings = Self.migratedLegacyTunings(from: defaults)
         }
     }
 
@@ -381,13 +410,19 @@ final class VisualizerSettings {
 
     private func save() {
         guard let data = try? JSONEncoder().encode(tunings) else { return }
-        UserDefaults.standard.set(data, forKey: Self.storageKey)
+        defaults.set(data, forKey: Self.storageKey)
     }
 
     /// Carries the old global sensitivity/speed/palette onto every visualizer so
     /// an upgrade doesn't silently reset the user's look.
-    private static func migratedLegacyTunings() -> [String: VisualizerTuning] {
-        guard let stored = UserDefaults.standard.dictionary(forKey: legacyKey) else { return [:] }
+    ///
+    /// FIXME: this iterates the registry once, at construction time, so a
+    /// visualizer added later through `VisualizerRegistry.register` never
+    /// receives the carry-over. Harmless while everything registers up front;
+    /// the fix is to migrate lazily in `tuning(for:)`, which is a behaviour
+    /// change and belongs with the external-plugin roadmap item.
+    private static func migratedLegacyTunings(from defaults: UserDefaults) -> [String: VisualizerTuning] {
+        guard let stored = defaults.dictionary(forKey: legacyKey) else { return [:] }
         let legacyOptions = stored["options"] as? [String: Double] ?? [:]
         var result: [String: VisualizerTuning] = [:]
         for descriptor in VisualizerRegistry.all {

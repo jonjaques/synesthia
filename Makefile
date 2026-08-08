@@ -9,6 +9,7 @@
 #   DESTINATION     xcodebuild -destination for `make test`
 #   ARGS            Extra flags forwarded to the script a target wraps
 #   BUMP            patch (default) | minor | major | an explicit version, for `make bump`
+#   V               Version for `make mirror-release`; defaults to the one in VERSION
 
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
@@ -23,6 +24,9 @@ CONFIGURATION ?= Debug
 DESTINATION   ?= platform=macOS
 ARGS          ?=
 BUMP          ?= patch
+# Empty by default: mirror-github-release.sh falls back to VERSION when given
+# no argument, which is what you want right after a release.
+V             ?=
 
 # Where xcodebuild actually put Synesthia.app for $(CONFIGURATION). Resolved
 # lazily (`=`, not `:=`) so targets that never need it don't pay the ~2 s.
@@ -49,6 +53,7 @@ endif
         demo-track screenshots check-metadata \
         appstore appstore-upload direct direct-fast bump version \
         sparkle-keys appcast publish-release publish-dry-run \
+        mirror-release mirror-release-dry-run \
         sync-labels sync-labels-dry-run
 
 help: ## List the available targets
@@ -138,6 +143,12 @@ publish-release: ## Upload the DMGs, appcast and latest.json to the R2 bucket
 
 publish-dry-run: ## …show what publish-release would upload, without uploading
 	./scripts/publish-release.sh --dry-run
+
+mirror-release: ## Mirror a published version to GitHub Releases (V=1.2.1; R2 stays authoritative)
+	./scripts/mirror-github-release.sh $(V) $(ARGS)
+
+mirror-release-dry-run: ## …show what mirror-release would write, without writing it
+	./scripts/mirror-github-release.sh $(V) --dry-run
 
 check-metadata: ## Check docs/app-store-metadata.md against App Store field limits
 	python3 scripts/check-metadata.py
