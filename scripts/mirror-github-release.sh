@@ -162,8 +162,13 @@ fi
 # literally fetched from there.
 step "Resolving $DMG_NAME against R2"
 LOCAL_DMG="$RELEASES_DIR/$DMG_NAME"
-FETCHED=""
-cleanup() { [[ -z "$FETCHED" ]] || rm -f "$FETCHED"; }
+# A temp DIRECTORY, so the download can keep the real filename. `gh release
+# upload file#label` sets the asset's *display label*, not its name — the name
+# is always the file's basename — so downloading to a bare mktemp file would
+# publish an asset called `synesthia-mirror-dmg.XXXXXX`, and that name is what
+# the download URL is built from.
+WORKDIR=""
+cleanup() { [[ -z "$WORKDIR" ]] || rm -rf "$WORKDIR"; }
 trap cleanup EXIT
 
 PUBLISHED_STATUS=$(curl -sS -o /dev/null -w '%{http_code}' --head --max-time 30 \
@@ -184,7 +189,8 @@ fi
 
 # Downloaded whether or not a local copy exists: this is the artifact the
 # comparison is against, and for a backfill it is also the artifact uploaded.
-FETCHED=$(mktemp -t synesthia-mirror-dmg)
+WORKDIR=$(mktemp -d -t synesthia-mirror)
+FETCHED="$WORKDIR/$DMG_NAME"
 curl -fsSL --max-time 300 -o "$FETCHED" "$(probe_url "$DMG_URL")" \
 	|| fail "could not download $DMG_URL"
 PUBLISHED_SHA=$(shasum -a 256 "$FETCHED" | cut -d' ' -f1)
@@ -256,10 +262,12 @@ fi
 # replace rather than fail. The bytes were proven identical above, so this is
 # never a silent substitution.
 #
-# The upload is named explicitly (`file#name`) so the backfill path — which
-# attaches a mktemp file — still produces `Synesthia-<version>.dmg` on the
-# release rather than `synesthia-mirror-dmg.XXXX`.
-gh release upload "$TAG" "$ASSET#$DMG_NAME" --clobber
+# No `#label` suffix: that sets the display label, while the asset NAME — which
+# is what the download URL is built from — always comes from the basename. Both
+# paths above therefore hand this a file already called $DMG_NAME.
+[[ "$(basename "$ASSET")" == "$DMG_NAME" ]] \
+	|| fail "internal error: about to upload $(basename "$ASSET") as the asset name"
+gh release upload "$TAG" "$ASSET" --clobber
 
 step "Mirrored"
 echo "  Release : $(gh release view "$TAG" --json url --jq .url)"
