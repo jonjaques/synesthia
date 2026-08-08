@@ -61,8 +61,15 @@ fi
 # uses stdin for the program itself, so a `<<<"$CHANGED"` on the same call is
 # read as more source and the script sees an empty file list — which reports
 # `low` for every change, i.e. the gate fails open. It did exactly that once.
-CHANGED_FILE=$(mktemp -t synesthia-risk-changed)
-HITS_FILE=$(mktemp -t synesthia-risk-hits)
+#
+# An explicit XXXXXX template, not `mktemp -t prefix`. Every other script here
+# uses the `-t` form and is right to — they only ever run on macOS, where BSD
+# mktemp appends the random part for you. This one also runs on ubuntu-latest in
+# the risk-gate job, and GNU coreutils treats the argument as a literal template:
+# no X's, "too few X's in template", exit 1. The step then failed with no output
+# at all, because the error went to the stderr file the script redirects.
+CHANGED_FILE=$(mktemp "${TMPDIR:-/tmp}/synesthia-risk-changed.XXXXXX")
+HITS_FILE=$(mktemp "${TMPDIR:-/tmp}/synesthia-risk-hits.XXXXXX")
 cleanup() { rm -f "$CHANGED_FILE" "$HITS_FILE"; }
 trap cleanup EXIT
 printf '%s\n' "$CHANGED" >"$CHANGED_FILE"

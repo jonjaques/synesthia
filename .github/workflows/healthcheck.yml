@@ -49,8 +49,17 @@ jobs:
           # stderr to a file and then echoed, rather than `2> >(tee …)`: process
           # substitution is asynchronous, so the summary can be written before
           # the tee has flushed and the reasoning comes out empty at random.
-          RESULT=$(./scripts/risk-check.sh --base "$BASE" 2>/tmp/why)
+          # `|| STATUS=$?` rather than letting `set -e` abort: on a failure the
+          # script's own diagnosis is sitting in /tmp/why, and aborting here
+          # would throw it away and leave a step that failed with no output.
+          # That happened — a GNU/BSD `mktemp` difference, invisible in the log.
+          STATUS=0
+          RESULT=$(./scripts/risk-check.sh --base "$BASE" 2>/tmp/why) || STATUS=$?
           cat /tmp/why >&2
+          if [[ $STATUS -ne 0 ]]; then
+            echo "::error::risk-check.sh exited $STATUS — the gate could not classify this PR."
+            exit $STATUS
+          fi
           echo "result=$RESULT" >> "$GITHUB_OUTPUT"
           {
             echo "## Risk gate: \`$RESULT\`"
