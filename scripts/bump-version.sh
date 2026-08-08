@@ -4,11 +4,16 @@
 # notes, then commit and tag — pausing for you to approve before anything is
 # written.
 #
-#   ./scripts/bump-version.sh patch      # 1.0   -> 1.0.1
-#   ./scripts/bump-version.sh minor      # 1.0.1 -> 1.1
-#   ./scripts/bump-version.sh major      # 1.1   -> 2.0
-#   ./scripts/bump-version.sh 2.5        # set it explicitly
+#   ./scripts/bump-version.sh patch      # 1.2.1 -> 1.2.2
+#   ./scripts/bump-version.sh minor      # 1.2.2 -> 1.3.0
+#   ./scripts/bump-version.sh major      # 1.3.0 -> 2.0.0
+#   ./scripts/bump-version.sh 2.5        # set it explicitly (normalized to 2.5.0)
 #   ./scripts/bump-version.sh patch --dry-run
+#
+# The marketing version is always three components. A short form given on the
+# command line is padded, never emitted: `2.5` sets MARKETING_VERSION = 2.5.0.
+# Releases before 1.2.1 were cut as `1.0`, `1.1`, `1.2` — those names are frozen
+# into R2 filenames and tags and stay as they are; nothing new is cut that way.
 #
 # Options:
 #   --dry-run        show the plan (and draft the notes) but write nothing
@@ -199,9 +204,20 @@ elif re.fullmatch(r'\d+(\.\d+){0,2}', level):
 else:
     sys.exit(f'unknown level "{level}" — use patch, minor, major, or an explicit version')
 
-# CFBundleShortVersionString takes 1-3 components; a trailing .0 is noise, so
-# 1.1.0 renders as "1.1". A patch release keeps all three.
-print(f'{major}.{minor}.{patch}' if patch else f'{major}.{minor}')
+# ALWAYS three components, including the trailing .0.
+#
+# This used to print `f'{major}.{minor}'` whenever patch was 0, on the reasoning
+# that "1.1.0" is noise — CFBundleShortVersionString accepts 1-3 components, so
+# both are legal. What it actually produced was a version line that changes
+# shape depending on the level: 1.1, 1.2, then 1.2.1, then 1.3 again. Every
+# consumer that has to *match* a version then has two forms to handle —
+# docs/releases/<version>.md, the v<version> tag, resolve_base's lookup of
+# refs/tags/v$CUR_MV, Synesthia-<version>.dmg in R2 and the appcast enclosure
+# URL that points at it. Nothing enforced the correspondence, so a mismatch
+# would surface as a missing file at publish time rather than here.
+#
+# Three components always, so the shape never changes. 1.2.1 -> 1.3.0, not 1.3.
+print(f'{major}.{minor}.{patch}')
 PY
 ) || fail "could not compute the new version"
 

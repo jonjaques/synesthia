@@ -33,14 +33,53 @@ export interface Latest {
 }
 
 /**
- * DMG filenames we are willing to look up.
+ * Filenames under downloads/ we are willing to look up.
  *
  * Deliberately a whitelist rather than a `..` check: the bucket only ever holds
- * flat `Synesthia-<version>.dmg` files, so anything containing a slash, a dot
- * segment, or a percent-escape is a probe rather than a real request.
+ * flat `Synesthia-<version>.dmg` and `Synesthia<new>-<old>.delta` files, so
+ * anything containing a slash, a dot segment, or a percent-escape is a probe
+ * rather than a real request.
+ *
+ * `.delta` belongs here and its omission was a shipped bug. generate_appcast
+ * emits a <sparkle:deltas> enclosure whenever two consecutive DMGs are present
+ * when the feed is built, publish-release.sh uploads it like any other
+ * referenced artifact — and this route then refused to serve it, because the
+ * only extension it recognised was the one a *human* downloads. Every copy of
+ * 1.2 therefore requested Synesthia6-5.delta, got a 404, and only reached 1.2.1
+ * via Sparkle's fall-back to the full enclosure. That fall-back is why it was
+ * invisible: the update completed, 4.6 MB at a time, and the failure existed
+ * only in the app's log.
+ */
+export function isSafeArtifactName(name: string): boolean {
+  return (
+    /^[A-Za-z0-9][A-Za-z0-9._-]*\.(dmg|delta)$/.test(name) &&
+    !name.includes("..")
+  );
+}
+
+/**
+ * …and of those, the ones a browser may be redirected to.
+ *
+ * /download hands a human a file to double-click, so it must resolve to a DMG
+ * even though the same bucket prefix now also holds deltas — which are useless
+ * on their own and would be a confusing thing to hand someone.
  */
 export function isSafeDmgName(name: string): boolean {
-  return /^[A-Za-z0-9][A-Za-z0-9._-]*\.dmg$/.test(name) && !name.includes("..");
+  return isSafeArtifactName(name) && name.endsWith(".dmg");
+}
+
+/**
+ * Content type for an artifact, keyed off the extension the whitelist above
+ * already vouched for.
+ *
+ * The delta's type matches what generate_appcast writes into the enclosure;
+ * Sparkle doesn't check it, but a mismatch between the feed and the response is
+ * the kind of thing that costs an afternoon later.
+ */
+export function contentTypeFor(name: string): string {
+  return name.endsWith(".dmg")
+    ? "application/x-apple-diskimage"
+    : "application/octet-stream";
 }
 
 export type ParsedRange =
