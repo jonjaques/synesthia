@@ -63,9 +63,12 @@ Synesthia/
     ├── ParticleSystem.swift      GPU-resident particle simulation scaffolding
     ├── Shaders.metal             All GPU shader code (build-time compiled)
     ├── MetalVisualizerView.swift The render loop host
+    ├── FullscreenShaderVisualizer.swift
+    │                             One fragment shader, nothing else — the shared
+    │                             host for shader-only visualizers
     ├── NebulaVisualizer.swift    GPU-compute particle-cloud visualizer
-    ├── TunnelVisualizer.swift    Spectrum-tunnel visualizer
-    ├── AuroraVisualizer.swift    Waveform-ribbon visualizer
+    ├── TunnelVisualizer.swift    Spectrum-tunnel descriptor
+    ├── AuroraVisualizer.swift    Waveform-ribbon descriptor
     └── BarsVisualizer.swift      Studio-console visualizer
 
 SynesthiaTests/                   Swift Testing bundle; AudioAnalyzer + uniforms-layout coverage

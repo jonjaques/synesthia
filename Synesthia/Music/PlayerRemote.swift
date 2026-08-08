@@ -33,9 +33,9 @@ final class PlayerRemote {
     /// Which track `artwork` belongs to, so a stale image is never shown
     /// against a new song.
     private(set) var artworkIdentity: String?
-    /// Set when macOS refused automation (error -1743) or the player wasn't
-    /// running (-600), so the UI can explain the fix.
-    private(set) var automationDenied = false
+    /// Which players have refused us, keyed by player. Written only by a real
+    /// refusal (-1743) — see `PlayerDenials`.
+    private var denials = PlayerDenials()
 
     /// Artwork can lag a track change, especially when streaming, so a few
     /// attempts are allowed per track before giving up.
@@ -49,17 +49,28 @@ final class PlayerRemote {
     /// Resume or pause. Unlike the old Music-only path this never tries to
     /// *start* a stopped player: transport is only offered once a track has
     /// been detected, so there is always something to resume.
-    func togglePlayPause(_ player: MediaPlayer) {
-        run(Scripts.togglePlayPause(player), on: player)
+    ///
+    /// The three transport calls return the outcome rather than setting a flag
+    /// for the caller to remember to read afterwards. `@discardableResult` only
+    /// so a future best-effort caller can opt out deliberately; every call site
+    /// in `AppState` passes the result through `report(_:)`.
+    @discardableResult
+    func togglePlayPause(_ player: MediaPlayer) -> Result<Void, PlayerRemoteError> {
+        run(Scripts.togglePlayPause(player), on: player).map { _ in () }
     }
 
-    func nextTrack(_ player: MediaPlayer) {
-        run(Scripts.nextTrack(player), on: player)
+    @discardableResult
+    func nextTrack(_ player: MediaPlayer) -> Result<Void, PlayerRemoteError> {
+        run(Scripts.nextTrack(player), on: player).map { _ in () }
     }
 
-    func previousTrack(_ player: MediaPlayer) {
-        run(Scripts.previousTrack(player), on: player)
+    @discardableResult
+    func previousTrack(_ player: MediaPlayer) -> Result<Void, PlayerRemoteError> {
+        run(Scripts.previousTrack(player), on: player).map { _ in () }
     }
+
+    /// Whether this specific player has refused an Apple Event.
+    func isDenied(_ player: MediaPlayer) -> Bool { denials.isDenied(player) }
 
     // MARK: - Seeding
 
@@ -69,24 +80,34 @@ final class PlayerRemote {
     /// broadcasts only on a *transition*, so launching Synesthia into
     /// already-playing music otherwise shows no badge until the next song.
     ///
-    /// Returns nil when the player isn't running, automation is refused, or the
-    /// answer came back empty — Spotify's scripting interface has a long
-    /// history of intermittently returning a blank title, and publishing that
-    /// would replace a good badge with an empty one.
-    @discardableResult
-    func seed(_ player: MediaPlayer) -> PlayerUpdate? {
-        guard player.isScriptable, player.isRunning,
-            let source = Scripts.nowPlaying(player),
-            let text = run(source, on: player)?.stringValue
-        else { return nil }
-        let parts = text.components(separatedBy: "\n")
-        guard let state = parts.first else { return nil }
-        if state == "stopped" { return .stopped }
-        guard parts.count >= 5, !parts[1].isEmpty else { return nil }
-        return .track(
-            NowPlayingTrack(
-                title: parts[1], artist: parts[2], album: parts[3],
-                identity: parts[4], isPlaying: state == "playing"))
+    /// The three ways this used to return `nil` are now three different
+    /// answers: `.failure(.notRunning)`, `.failure(.notPermitted)`, and
+    /// `.success(nil)` for a blank reply. That last one is not a failure —
+    /// Spotify's scripting interface has a long history of intermittently
+    /// returning an empty title, and publishing it would replace a good badge
+    /// with an empty one, but it says nothing about our permissions.
+    func seed(_ player: MediaPlayer) -> Result<PlayerUpdate?, PlayerRemoteError> {
+        guard player.isScriptable, player.isRunning else {
+            return .failure(.notRunning(player))
+        }
+        guard let source = Scripts.nowPlaying(player) else {
+            return .failure(.scriptFailed(player, code: nil))
+        }
+        switch run(source, on: player) {
+        case .failure(let error):
+            return .failure(error)
+        case .success(let descriptor):
+            guard let text = descriptor.stringValue else { return .success(nil) }
+            let parts = text.components(separatedBy: "\n")
+            guard let state = parts.first else { return .success(nil) }
+            if state == "stopped" { return .success(.stopped) }
+            guard parts.count >= 5, !parts[1].isEmpty else { return .success(nil) }
+            return .success(
+                .track(
+                    NowPlayingTrack(
+                        title: parts[1], artist: parts[2], album: parts[3],
+                        identity: parts[4], isPlaying: state == "playing")))
+        }
     }
 
     // MARK: - Artwork
@@ -112,8 +133,12 @@ final class PlayerRemote {
             player.isRunning, let source = Scripts.artwork(player)
         else { return }
         artworkAttempts += 1
-        guard let data = run(source, on: player)?.data, !data.isEmpty,
-            let image = NSImage(data: data)
+        // Artwork is best-effort and already capped at three attempts, so a
+        // failure here is dropped on purpose rather than banner-ed — but taken
+        // explicitly, so "we ignore this" is visible instead of implied.
+        guard case .success(let descriptor) = run(source, on: player),
+            !descriptor.data.isEmpty,
+            let image = NSImage(data: descriptor.data)
         else { return }
         artwork = image
     }
@@ -126,30 +151,34 @@ final class PlayerRemote {
 
     // MARK: - Scripting
 
-    /// Compiles (once) and runs a snippet, translating the two interesting
-    /// failure codes into `automationDenied`: -1743 is the user refusing the
-    /// Automation permission (errAEEventNotPermitted), -600 is the target app
-    /// not running (procNotFound).
-    @discardableResult
-    private func run(_ source: String?, on player: MediaPlayer) -> NSAppleEventDescriptor? {
-        guard let source else { return nil }
+    /// Compiles (once) and runs a snippet, handing the outcome back rather
+    /// than interpreting it. What an error *means* is `PlayerRemoteError`'s
+    /// job, and what to do about it is the caller's; this only records a real
+    /// refusal against the player it came from.
+    private func run(
+        _ source: String?, on player: MediaPlayer
+    ) -> Result<NSAppleEventDescriptor, PlayerRemoteError> {
+        guard let source else { return .failure(.scriptFailed(player, code: nil)) }
         let script: NSAppleScript
         if let cached = compiledScripts[source] {
             script = cached
         } else {
-            guard let fresh = NSAppleScript(source: source) else { return nil }
+            guard let fresh = NSAppleScript(source: source) else {
+                return .failure(.scriptFailed(player, code: nil))
+            }
             compiledScripts[source] = fresh
             script = fresh
         }
         var error: NSDictionary?
         let result = script.executeAndReturnError(&error)
         if let error {
-            let code = error[NSAppleScript.errorNumber] as? Int
-            automationDenied = (code == -1743 || code == -600)
-            return nil
+            let failure = PlayerRemoteError(
+                errorNumber: error[NSAppleScript.errorNumber] as? Int, player: player)
+            denials.record(failure, for: player)
+            return .failure(failure)
         }
-        automationDenied = false
-        return result
+        denials.clear(player)
+        return .success(result)
     }
 }
 

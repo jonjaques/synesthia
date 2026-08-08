@@ -225,8 +225,12 @@ struct MetalVisualizerView: NSViewRepresentable {
             uniforms.sensitivity = Float(tuning.sensitivity)
             uniforms.speed = Float(tuning.speed)
             uniforms.palette = Float(tuning.paletteIndex)
-            for (index, option) in descriptor.options.prefix(VizUniforms.parameterCount).enumerated() {
-                uniforms.setParameter(index, to: Float(tuning.value(for: option)))
+            // Each option names its own slot, so the popover's order is free to
+            // change without remapping what the shader reads. `setParameter` is
+            // bounds-checked, so a runtime-registered plugin declaring a slot
+            // outside the block loses that option rather than trapping.
+            for option in descriptor.options {
+                uniforms.setParameter(option.slot, to: Float(tuning.value(for: option)))
             }
             applyFrameState(to: &uniforms, snapshot: snapshot, now: now)
             applyReduceMotionIfNeeded(to: &uniforms, dt: dt)

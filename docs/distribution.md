@@ -557,11 +557,45 @@ make direct                       # archive, sign, notarize, staple, DMG
 make appcast                      # fetch live feed, add the new version, sign
 make publish-dry-run              # see exactly what would be uploaded
 make publish-release              # DMGs first, then latest.json, then appcast
+make mirror-release               # …and mirror it to the GitHub Releases tab
 ```
 
 Order matters and the script enforces it. The appcast is the _announcement_: the
 moment it lists a version, installed copies start fetching that URL, so the DMG
 has to be in the bucket first.
+
+### The GitHub Release is a mirror, and comes last
+
+`make mirror-release` creates (or updates) the GitHub Release for `v<version>` —
+title `Synesthia <version>`, body taken verbatim from `docs/releases/<version>.md`,
+with `Synesthia-<version>.dmg` attached. `make mirror-release V=1.2.1` names a
+version explicitly; with no `V` it reads `VERSION`.
+
+It exists because a release otherwise lives in three places — a tag, a notes file,
+and a DMG in R2 — and is discoverable from none of them. Someone who lands on the
+repository sees an empty Releases tab, with no way to tell what shipped, when, or
+with what notes.
+
+**R2 stays authoritative.** Sparkle's appcast points at `synesthia.app/downloads/…`
+and always will; the GitHub Release is for humans, never a source Sparkle reads.
+That is why it runs _after_ `publish-release` and why the script refuses to run at
+all until the DMG answers 200 from the site — there is nothing to mirror until the
+thing being mirrored exists.
+
+Two guards, the same two `publish-release.sh` applies, because they are the same
+two lies told somewhere more visible:
+
+- **`v<version>` must be an ancestor of `origin/main`.** A GitHub Release for an
+  orphaned tag is a download button on a version whose source is unfindable.
+  `--allow-unmerged` overrides.
+- **The attached DMG must be byte-identical to the one R2 serves**, compared by
+  SHA-256 against the bytes fetched back through the site. Two download buttons
+  for one version handing out different bytes is worse than one download button.
+  When the DMG isn't in `build/releases` — a backfill, a fresh clone — the
+  published bytes are what gets attached, so the two cannot disagree.
+
+Idempotent like everything else here: re-running edits the existing release
+rather than failing, and the asset upload uses `--clobber`.
 
 ### The merge back to main is not optional, and not `--squash`
 
