@@ -145,6 +145,53 @@ struct VizUniformsTests {
         #expect(VisualizerRegistry.all.count == before)
     }
 
+    // MARK: - The option-slot contract
+
+    @Test func everyOptionSlotIsUniqueAndInRange() {
+        for descriptor in VisualizerRegistry.all {
+            let slots = descriptor.options.map(\.slot)
+            #expect(Set(slots).count == slots.count, "\(descriptor.id) reuses a slot")
+            #expect(
+                slots.allSatisfy { (0..<VizUniforms.parameterCount).contains($0) },
+                "\(descriptor.id) declares a slot outside the block: \(slots)")
+        }
+    }
+
+    /// Pins the Swift side against the `constant int k…` tables in
+    /// Shaders.metal. If a descriptor is reordered or a shader constant is
+    /// renumbered, exactly one of the two moves and this fails — which is the
+    /// whole point of the plan that added `VisualizerOption.slot`.
+    ///
+    /// **The table below is hand-transcribed from Shaders.metal on purpose**
+    /// (`kTunnel…` :193–198, `kAurora…` :417–419, `kNebula…` :578–587,
+    /// `kBarsOpt…` :1228–1235). Do not "simplify" it into
+    /// `descriptor.options.enumerated()` — that would restate the Swift side
+    /// against itself and assert nothing at all.
+    @Test func optionSlotsMatchTheShaderConstants() {
+        let expected: [String: [String: Int]] = [
+            "aurora": ["layers": 0, "height": 1, "stars": 2],
+            "tunnel": ["twist": 0, "glow": 1, "bend": 2, "pulse": 3, "ripple": 4, "fog": 5],
+            "nebula": [
+                "density": 0, "glow": 1, "trails": 2, "turbulence": 3, "swirl": 4,
+                "orbits": 5, "spread": 6, "halos": 7, "impact": 8, "form": 9,
+            ],
+            "bars": [
+                "columns": 0, "segments": 1, "peaks": 2, "glow": 3,
+                "deskPanel": 4, "desk": 5, "channels": 6, "meters": 7,
+            ],
+        ]
+        for (id, table) in expected {
+            guard let descriptor = VisualizerRegistry.descriptor(id: id) else {
+                Issue.record("\(id) is no longer registered")
+                continue
+            }
+            for option in descriptor.options {
+                #expect(option.slot == table[option.id], "\(id).\(option.id) moved slot")
+            }
+            #expect(descriptor.options.count == table.count, "\(id) gained or lost an option")
+        }
+    }
+
     /// The other struct that exists twice. Nebula's particle state is declared
     /// in MSL (`NebulaParticle`, with its own `static_assert`) and mirrored in
     /// Swift only so the buffer stride comes from a layout; this pins the two

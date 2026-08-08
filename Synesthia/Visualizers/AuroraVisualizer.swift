@@ -19,9 +19,10 @@ final class AuroraVisualizer: Visualizer {
         name: "Aurora",
         tagline: "One ribbon per instrument, under a sky that flashes with the drums",
         options: [
-            VisualizerOption(id: "layers", name: "Ribbons", range: 2...8, defaultValue: 8),
-            VisualizerOption(id: "height", name: "Wave height", range: 0.05...0.6, defaultValue: 0.28),
-            VisualizerOption(id: "stars", name: "Stars", range: 0.0...2.0, defaultValue: 1.0),
+            VisualizerOption(id: "layers", name: "Ribbons", range: 2...8, defaultValue: 8, slot: 0),
+            VisualizerOption(
+                id: "height", name: "Wave height", range: 0.05...0.6, defaultValue: 0.28, slot: 1),
+            VisualizerOption(id: "stars", name: "Stars", range: 0.0...2.0, defaultValue: 1.0, slot: 2),
         ],
         make: { try AuroraVisualizer(device: $0, library: $1, pixelFormat: $2) })
 

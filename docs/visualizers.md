@@ -73,19 +73,33 @@ values in `p[0…15]`) and hands you the full `snapshot` for bulk data (64-band
 spectrum, 256-point waveform).
 
 **Everything else is automatic.** Declare options in the descriptor and they
-appear in the Options popover, arrive in the shader's `p` array in declaration
-order, and persist per-visualizer (`VisualizerSettings` keys tunings by
+appear in the Options popover, arrive in the shader's `p` array at the slot each
+one names, and persist per-visualizer (`VisualizerSettings` keys tunings by
 descriptor id — switching visualizers restores each one's own look, including
 its palette). An option is a slider unless you build it with
-`.toggle(id:name:defaultOn:)`, which draws a switch and delivers 0 or 1 in
+`.toggle(id:name:defaultOn:slot:)`, which draws a switch and delivers 0 or 1 in
 the same slot — test it with `> 0.5` in the shader.
 
-There are `VizUniforms.parameterCount` (16) slots. Name the ones you use at the
-top of your shader section rather than indexing by number:
+There are `VizUniforms.parameterCount` (16) slots, and **every option declares
+which one it lands in**. Name the same numbers at the top of your shader section
+rather than indexing by hand:
 
 ```metal
 constant int kNebulaTurbulence = 3;   // …then u.p[kNebulaTurbulence]
 ```
+
+```swift
+VisualizerOption(id: "turbulence", name: "Turbulence",
+                 range: 0.0...2.5, defaultValue: 1.0, slot: 3)
+```
+
+`slot` has no default, so a new option cannot silently collide with an existing
+one — the compiler asks. It used to be inferred from the option's position in
+the array, which meant reordering the popover remapped every shader constant for
+that visualizer with no build error and no test failure. Two tests in
+`VizUniformsTests` now pin the Swift slots against the MSL table; the table in
+`optionSlotsMatchTheShaderConstants` is hand-transcribed from `Shaders.metal` on
+purpose, so don't rewrite it in terms of the descriptors.
 
 The uniform block also carries **per-frame state the host derives once**, so no
 visualizer has to keep it itself:
@@ -314,6 +328,11 @@ from the descriptor.
 - **≤ `VizUniforms.parameterCount` options** (16) — only those slots reach the
   shader, and a descriptor that declares more silently loses the extras (there
   is a debug assertion, and a test that every registered visualizer fits).
+- **Every option names its `slot`, and no two share one.** Both are debug
+  assertions in `VisualizerDescriptor.init` and tests in `VizUniformsTests`.
+  Never renumber a slot to tidy things up: tunings persist by option _id_, so
+  persistence survives, but the shader reads by slot — a renumber moves a
+  user's stored value onto a different constant on their next launch.
 - **Scale motion by `uniforms.speed`, response by `uniforms.sensitivity`,
   and color through `cosPalette(t, u.palette)`** so the shared controls
   behave consistently across visualizers.
