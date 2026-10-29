@@ -7,8 +7,9 @@ name: Release integrity
 #   1. A release tag that isn't on mainline. `bump-version.sh` refuses to run on
 #      main, so every release is cut on a branch and has to be merged back —
 #      and squash-merging a release branch discards the ancestry, leaving the
-#      tag reachable only from a branch that then gets deleted. `v1.2` is in
-#      exactly that state. `git describe` on main can't see it.
+#      tag reachable only from a branch that then gets deleted, where
+#      `git describe` on main can't see it. `v1.2` was left in exactly that
+#      state until its tag was moved onto mainline (see the Check step below).
 #
 #   2. A version that exists in git but not to users. The appcast is the only
 #      thing an installed copy reads; a DMG in R2 that the feed doesn't list, or
@@ -63,17 +64,26 @@ jobs:
           set -euo pipefail
           git fetch --tags --force origin
 
-          # Releases cut before the merge-back policy existed. v1.2 was
-          # squash-merged, so its tag points at a commit no longer on any
-          # branch; the content shipped and is in main, but the ancestry is
-          # gone and cannot be restored without force-pushing the tag.
-          # Nothing new belongs on this list — if you are tempted to add one,
-          # the merge-back was skipped and the fix is to merge it.
-          LEGACY="v1.0 v1.0.1 v1.1 v1.2"
+          # 1.0, 1.0.1 and 1.1 shipped before this repo tagged releases at all
+          # — they exist in the appcast and in R2 but have no tag, so this list
+          # only matters if someone later creates one retroactively, pointing
+          # who-knows-where.
+          #
+          # v1.2 is deliberately NOT here. It was squash-merged and its tag was
+          # orphaned; it has since been re-tagged onto 944b50a, the squash
+          # commit on main whose tree is byte-identical to the original. It is
+          # on mainline and must stay there.
+          #
+          # Nothing new belongs on this list. If you are tempted to add one, the
+          # merge-back was skipped and the fix is to merge it.
+          LEGACY="v1.0 v1.0.1 v1.1"
 
           FAILED=""
           for tag in $(git tag --list 'v*' --sort=version:refname); do
-            if grep -qw -- "$tag" <<<"$LEGACY"; then
+            # Whole-token string match, not `grep -w`: grep treats the tag as a
+            # regex and `-w` breaks words at `.`, so a tag such as `v1` would
+            # match the `v1` in `v1.0` and silently skip the mainline check.
+            if [[ " $LEGACY " == *" $tag "* ]]; then
               echo "  $tag  skipped (pre-policy)"
               continue
             fi

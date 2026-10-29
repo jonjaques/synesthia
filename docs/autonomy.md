@@ -113,9 +113,11 @@ Two guards back this up rather than relying on the rule being remembered:
   rather than only going red in a tab nobody has open. It runs on pushes to `main`, on tag
   pushes, and weekly.
 
-Both exist because `v1.2` is permanently orphaned: its release branch was squash-merged,
-which rewrote the tagged commit, and the branch was then deleted. Release branches merge with
-`--merge`, never `--squash`.
+Both exist because `v1.2` was orphaned: its release branch was squash-merged, which rewrote
+the tagged commit, and the branch was then deleted. It has since been re-tagged onto the
+squash commit on `main` — safe only because the two trees were byte-identical — at the cost
+of force-pushing a published tag. Release branches merge with `--merge`, never `--squash`,
+so there is never a second one to repair.
 
 ## Labels
 

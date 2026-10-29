@@ -208,9 +208,10 @@ echo "  referenced  : $(grep -c . <<<"$REFERENCED") file(s)"
 # merged back. Nothing used to check that it was. Squash-merging a release
 # branch discards the ancestry, the branch gets deleted, and the tag is left
 # pointing at a commit no branch can reach: `git describe` on main can't see it,
-# `make bump`'s resolve_base can't find it to diff release notes against, and
-# the DMG in R2 corresponds to a commit that is nowhere in the history. `v1.2`
-# is in exactly that state and cannot be repaired without rewriting a tag.
+# `make bump`'s resolve_base diffs the next release's notes against the wrong
+# range, and the DMG in R2 corresponds to a commit that is nowhere in the
+# history. `v1.2` was left in exactly that state and could only be repaired by
+# force-pushing a rewritten tag (docs/distribution.md has the details).
 #
 # Checked here rather than only in CI because CI reports it after the fact,
 # and by then the bytes are already public. This is a precondition, not an
