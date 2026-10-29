@@ -610,14 +610,31 @@ the release branch — and `--delete-branch` then removes the last ref that coul
 reach it. The consequences are quiet and cumulative:
 
 - `git describe` on `main` can't see the release.
-- `bump-version.sh`'s `resolve_base` can't find `refs/tags/v$CUR_MV`, so the next
-  release's notes are drafted against the wrong range.
+- `bump-version.sh`'s `resolve_base` still finds `refs/tags/v$CUR_MV` — the tag
+  ref exists, it just isn't an ancestor of anything — so the next release's notes
+  are drafted against `v$CUR_MV..HEAD`, which pulls the whole squash commit, i.e.
+  everything the previous release already shipped, back into the range.
 - The DMG in R2 corresponds to a commit that is in no branch's history, so "what
-  shipped as 1.2?" has no answer you can `git show`.
+  shipped as `<version>`?" has no answer you can `git show`.
 
-`v1.2` is permanently in that state. It can't be repaired without force-pushing a
-tag, which is worse than leaving it, so it is named in the legacy allowlist in
-`.github/workflows/release-integrity.yml` and nothing new belongs on that list.
+`v1.2` was in exactly that state until it was repaired: the tag was moved off
+`3d148c3` (the orphaned release commit) onto `944b50a`, the squash commit on
+`main` that shipped as 1.2, and force-pushed. That was only safe because
+`git diff 3d148c3 944b50a` was **empty** — the two trees are byte-identical, so
+nothing about what shipped changed. The check has to compare the tag's _old_
+target against the candidate _before_ the tag moves; once it has moved,
+`git diff v1.2 944b50a` is empty by construction and proves nothing. Don't make a
+habit of rewriting published tags; the point of the guards below is that there is
+never a second one to repair.
+
+A clone that fetched the old `v1.2` keeps it: git refuses to move an existing tag,
+so a plain `git fetch --tags` there fails with `would clobber existing tag` until
+it is run once with `--force`. (The release scripts and the integrity workflow
+already fetch tags with `--force`.)
+
+1.0, 1.0.1 and 1.1 have no tags at all — they predate tagging — and `v1.0`,
+`v1.0.1` and `v1.1` are allowlisted in `.github/workflows/release-integrity.yml`
+only so a retroactive tag can't fail the check. Nothing new belongs on that list.
 
 Two guards now make it structural rather than remembered:
 

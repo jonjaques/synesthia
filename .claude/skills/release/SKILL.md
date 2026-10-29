@@ -59,10 +59,12 @@ gh pr merge --merge --delete-branch
 
 **`--merge`, never `--squash`.** Squashing rewrites the commit the tag points at, so the tag
 is left reachable only from a branch that the merge then deletes. `git describe` on main
-stops seeing it, `bump-version.sh`'s `resolve_base` can't find it to diff the next release's
-notes against, and the DMG in R2 corresponds to a commit nowhere in the history. `v1.2` is
-permanently in that state; it is the reason `publish-release.sh` now refuses to publish a
-version whose tag isn't an ancestor of `origin/main`.
+stops seeing it, `bump-version.sh`'s `resolve_base` still picks the tag up but diffs the next
+release's notes against a range that drags the whole squash commit back in, and the DMG in R2
+corresponds to a commit nowhere in the history. `v1.2` spent a release in that state and had
+to be repaired by force-pushing the tag (see **Never**); it is the reason
+`publish-release.sh` now refuses to publish a version whose tag isn't an ancestor of
+`origin/main`.
 
 ## 3. Build, sign, notarize
 
@@ -136,7 +138,9 @@ directory and let Sparkle update it, watching
   stale, not because a PR said "ready to ship". Jon targets and approves every release.
 - **Never `--squash` a release branch.** See step 2.
 - **Never `git tag -f` or force-push a tag.** An orphaned tag is annoying; a rewritten one
-  breaks anyone who already fetched it.
+  breaks anyone who already fetched it — their `git fetch --tags` rejects the update until
+  re-run with `--force`. `v1.2`'s repair (step 2) was a one-off, safe only because the old and
+  new targets had byte-identical trees; it is not a precedent, and it is never an agent's call.
 - **Never pass `--allow-unmerged` to `publish-release.sh`** unless he explicitly asks for it,
   in that session, having been told what it skips.
 - **Never `-y` the notes.**
