@@ -232,7 +232,7 @@ Settings that shape how you _work_ on this codebase — violating these is the
 fastest way to break the build (details and history in `CLAUDE.md`):
 
 - **Shader source lives in `Shaders.metal`**, compiled at build time now
-  that the Metal Toolchain component (26.6) is installed. (It previously had
+  that the Metal Toolchain component is installed (once per Xcode release). (It previously had
   to be a Swift string compiled at launch because the toolchain was missing;
   external plugins may still use that `makeLibrary(source:)` path.)
 - **Never hand-edit file references in `project.pbxproj`.** The project uses

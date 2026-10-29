@@ -9,7 +9,7 @@ macos
 Two design surfaces, one product record (confirmed scope):
 
 - **The app** — native macOS, SwiftUI + Metal. `SDKROOT = macosx`, deployment
-  target **macOS 15.0**, built against the macOS 26 SDK. No iOS or Catalyst
+  target **macOS 15.0**, built against the macOS 27 SDK. No iOS or Catalyst
   target exists. Native macOS conventions (menu bar commands, Settings scene,
   window/fullscreen behavior, keyboard shortcuts, TCC permission flow) are
   product constraints, not stylistic choices. No shipped Impeccable native
