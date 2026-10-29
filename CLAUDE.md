@@ -6,8 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Synesthia is a macOS-only SwiftUI + Metal music visualizer (`SDKROOT = macosx`, no iOS/Catalyst target). It captures audio (system audio via ScreenCaptureKit, mic/line-in via AVAudioEngine, or a local file), runs an FFT, and renders pluggable Metal visualizers. See README.md for the user-facing feature description and roadmap, and `docs/` for developer documentation (architecture, audio pipeline, rendering, plugin system, macOS integration).
 
-Built with Xcode 26.6 / Swift 6.3 toolchain against the macOS 26 SDK, but the
-**deployment target is macOS 15.0** (Sequoia). One binary serves both: the only
+Built with Xcode 27.1 / Swift 6.4 toolchain against the macOS 27 SDK, but the
+**deployment target is macOS 15.0** (Sequoia). One binary serves 15, 26 and 27: the only
 macOS 26 API in the app is Liquid Glass, and it lives behind a single
 `#available` check in the `chromeGlass` modifier (`ContentView.swift`), which
 degrades to `.ultraThinMaterial` + hairline border + drop shadow on 15. **Never
@@ -176,7 +176,7 @@ Swift is formatted by **swift-format**, which ships inside the Xcode toolchain (
 
 ### CI
 
-`.github/workflows/healthcheck.yml` is the only workflow and runs on every pull request push, as two jobs mirroring the two projects in the repo: **`web`** on `ubuntu-latest` runs `npm ci && npm run check && npm run typecheck && npm run build` from inside `web/`, and **`apple`** on `macos-26` runs `make install && make healthcheck`. Keep `make healthcheck` as the single macOS entry point — new checks belong inside it, not as extra workflow steps, so that what CI runs is what a developer can run locally.
+`.github/workflows/healthcheck.yml` is the only workflow and runs on every pull request push, as two jobs mirroring the two projects in the repo: **`web`** on `ubuntu-latest` runs `npm ci && npm run check && npm run typecheck && npm run build` from inside `web/`, and **`apple`** on `xcode-27` (macOS 27, Xcode 27.1 selected by default) runs `make install && make healthcheck`. Keep `make healthcheck` as the single macOS entry point — new checks belong inside it, not as extra workflow steps, so that what CI runs is what a developer can run locally.
 
 Two things the runner needs that a developer's machine already has:
 
@@ -204,7 +204,7 @@ Two things the runner needs that a developer's machine already has:
 
 **Nothing plays until the welcome sheet is answered.** `AppState.onAppear` returns early while `showsWelcome` is true, and `completeWelcome()` starts the demo only when `firstRunDemoPending` is still set — i.e. only when the user clicked Continue without choosing a source. So the App Review path ("grants nothing, must still see it work") is Continue, not launch; `docs/app-store-metadata.md` says so and must stay in step. `WelcomeView.SourceRow` therefore calls `selectSource` **before** `completeWelcome`: the reverse order starts the demo and then immediately tears it down to switch sources.
 
-**Shaders compile at build time.** The Metal Toolchain component (26.6) is installed as of 2026-07, so `.metal` files build normally. All shader source lives in `Synesthia/Visualizers/Shaders.metal`, compiled into the app's default library and loaded via `device.makeDefaultLibrary()`. (Historical: the toolchain used to be missing, so shaders lived in a `ShaderSource.swift` string compiled at launch — don't resurrect that for built-ins; `makeLibrary(source:)` remains the intended path only for future external plugin bundles.)
+**Shaders compile at build time.** The Metal Toolchain is a separate download **per Xcode release** — it was installed for 26.6 in 2026-07 and had to be fetched again for 27.1 (`xcodebuild -downloadComponent MetalToolchain`; `-showComponent MetalToolchain` reports `Status: uninstalled` until then, and the build fails on `Shaders.metal` with nothing else wrong). Once it is present, `.metal` files build normally. All shader source lives in `Synesthia/Visualizers/Shaders.metal`, compiled into the app's default library and loaded via `device.makeDefaultLibrary()`. (Historical: the toolchain used to be missing, so shaders lived in a `ShaderSource.swift` string compiled at launch — don't resurrect that for built-ins; `makeLibrary(source:)` remains the intended path only for future external plugin bundles.)
 
 **ScreenCaptureKit audio extraction.** Use `sampleBuffer.withAudioBufferList` + `AVAudioPCMBuffer(pcmFormat:bufferListNoCopy:)` (the current code). Do NOT use `CMSampleBufferCopyPCMDataIntoAudioBufferList` into a fresh `AVAudioPCMBuffer` — its buffer list advertises `frameLength` (0) bytes, every copy fails with `err=-12731`, and the analyzer silently receives nothing. Also: even when only capturing audio, register a `.screen` stream output too, or SCK logs "stream output NOT found. Dropping frame" continuously.
 

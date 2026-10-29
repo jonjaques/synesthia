@@ -109,7 +109,10 @@ jobs:
 
   apple:
     name: Apple
-    runs-on: macos-26
+    # From Xcode 27 on, runner images are labeled by Xcode major rather than by
+    # macOS version: `xcode-27` is macOS 27 with the Xcode 27 family (GA
+    # 2026-10-15). There is no `macos-27` label to reach for.
+    runs-on: xcode-27
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
@@ -120,17 +123,18 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
 
-      # The project needs Xcode 26.6+ (builds against the macOS 26 SDK, Swift 6.3,
-      # swift-format from the toolchain) and the macos-26 image still defaults
-      # /Applications/Xcode.app to 26.5 — so pick the newest Xcode 26 it ships,
-      # and fall back to whatever is selected if the layout ever changes.
-      - name: Select Xcode
+      # The project builds with Xcode 27.1 (macOS 27 SDK, Swift 6.4, swift-format
+      # from the toolchain), which is what the xcode-27 image selects by default.
+      # Don't glob for the newest Xcode_27*.app the way the macos-26 job had to:
+      # the image also ships a 27.2 *release candidate*, and the newest is that.
+      # Fail loudly instead if the default ever stops being a 27.
+      - name: Check Xcode
         run: |
           set -euo pipefail
-          app=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1 || true)
-          if [[ -n "$app" ]]; then sudo xcode-select -s "$app"; fi
-          xcodebuild -version
+          version=$(xcodebuild -version)
+          echo "$version"
           swift --version
+          [[ "$version" == "Xcode 27."* ]] || { echo "::error::expected Xcode 27, got: $version"; exit 1; }
 
       # Shaders.metal compiles at build time, which needs the Metal Toolchain
       # component. It is a no-op when the image already has it; drop this step

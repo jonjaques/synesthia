@@ -98,7 +98,7 @@ is no dependency you have to hunt down.
 |                                 | Why                                                      | How                                            |
 | ------------------------------- | -------------------------------------------------------- | ---------------------------------------------- |
 | **macOS 15** (Sequoia) or later | the deployment target is 15.0                            | —                                              |
-| **Xcode 26.6+**                 | Swift 6.3 toolchain, `SDKROOT = macosx`                  | Mac App Store, or `brew install --cask xcodes` |
+| **Xcode 27.1+**                 | Swift 6.4 toolchain, macOS 27 SDK, `SDKROOT = macosx`    | Mac App Store, or `brew install --cask xcodes` |
 | Command line tools              | `xcodebuild`, `codesign`, `hdiutil`, `sips`, `afconvert` | `xcode-select --install`                       |
 | **Metal Toolchain**             | compiles `Shaders.metal` at build time                   | `xcodebuild -downloadComponent MetalToolchain` |
 | **Node ≥ 22.12**                | the website and the Cloudflare tooling                   | `brew install node`                            |
@@ -160,7 +160,7 @@ the repo:
 | Job     | Runner          | What it does                                                           |
 | ------- | --------------- | ---------------------------------------------------------------------- |
 | `web`   | `ubuntu-latest` | Everything from inside `web/`: `npm ci`, `check`, `typecheck`, `build` |
-| `apple` | `macos-26`      | `make install && make healthcheck`                                     |
+| `apple` | `xcode-27`      | `make install && make healthcheck`                                     |
 
 The runner has no signing identity, so the Makefile ad-hoc signs whenever `CI`
 is set — enough for the sandbox, and the real releases are signed by
