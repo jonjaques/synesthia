@@ -453,11 +453,20 @@ final class InputDeviceCapture: AudioSource {
         //
         // Delivered on `.main`, but hopped anyway rather than depending on
         // that (same reasoning as `NotificationRelay`).
+        //
+        // The hop is also why the handler checks *which* engine is running
+        // rather than merely that one is: a notification for this engine can
+        // still be in flight when a device switch has already replaced it, and
+        // acting on it would stop the healthy replacement and report a death
+        // that never happened. Same guard as `SystemAudioCapture`'s, and an
+        // `ObjectIdentifier` for the same reason — the engine isn't Sendable.
+        let started = ObjectIdentifier(engine)
         configurationObserver = NotificationCenter.default.addObserver(
             forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main
         ) { [weak self] _ in
             Task { @MainActor in
-                guard let self, self.isRunning else { return }
+                guard let self, let current = self.engine, ObjectIdentifier(current) == started
+                else { return }
                 self.stop()
                 self.onStopped?()
             }
@@ -526,6 +535,14 @@ final class FileSource {
         engine.connect(player, to: engine.mainMixerNode, format: file.processingFormat)
     }
 
+    /// Plays `url`, loading it first unless it is already the loaded file.
+    /// After a relaunch the bookmark restores the URL but nothing is loaded
+    /// yet, and the demo is only ever loaded on first play.
+    func play(url: URL) throws {
+        if currentURL != url { try load(url: url) }
+        try play()
+    }
+
     func play() throws {
         guard let file else { throw AudioSourceError.noFileLoaded }
         if !engine.isRunning {
@@ -565,10 +582,6 @@ final class FileSource {
         generation += 1
         hasQueuedAudio = false
         isPlaying = false
-    }
-
-    func togglePlayPause() throws {
-        if isPlaying { pause() } else { try play() }
     }
 
     /// Jump back to the start of the file (used as "previous/next track").
@@ -614,5 +627,16 @@ extension FileSource: RestartableSource {
 
     /// `pause()`, not `clearQueue()`: stopping this source means silencing it,
     /// and switching away and back should resume where it left off.
-    func stop() async { pause() }
+    ///
+    /// The engine is paused as well as the player. A running engine keeps
+    /// rendering — silence, once the player is paused — and the analyzer tap
+    /// on the mixer fires on every render, so a "stopped" demo would go on
+    /// appending zeros to the shared `AudioAnalyzer` in between the new
+    /// source's buffers. Pausing (unlike stopping) keeps the prepared graph and
+    /// the player's position, and `play()` restarts any engine that isn't
+    /// running.
+    func stop() async {
+        pause()
+        if engine.isRunning { engine.pause() }
+    }
 }

@@ -254,6 +254,8 @@ final class AppState {
         guard kind == sourceKind, isLive else { return }
         syncLiveState()
         refreshPermissions()
+        // An unplugged interface is the usual way an input dies.
+        if kind == .inputDevice { refreshInputDevices() }
         if let permission = kind.requiredPermission, !transport.isAvailable(kind) {
             blockedPermission = permission
         } else {
@@ -264,7 +266,7 @@ final class AppState {
     }
 
     func onAppear() {
-        inputDevices = AudioInputDeviceList.all()
+        refreshInputDevices()
         // Detection runs regardless of source and costs nothing — no
         // permission, no polling, one callback per track change.
         nowPlayingObserver.onTrackChange = { [weak self] player, track in
@@ -656,10 +658,7 @@ final class AppState {
             return
         }
         do {
-            if demoSource.currentURL != url {
-                try demoSource.load(url: url)
-            }
-            try demoSource.play()
+            try demoSource.play(url: url)
             statusMessage = nil
         } catch {
             setStatus("Couldn't play the demo track: \(error.localizedDescription)")
@@ -671,14 +670,33 @@ final class AppState {
     /// same three ways — a permission the user has to grant, a first attempt
     /// that a freshly granted permission loses, and everything else — so the
     /// reading of a failure lives in `PlaybackPolicy` and this performs it.
+    ///
+    /// The source is bound once, on entry. Every `await` below — the start
+    /// itself, the retry's 350 ms nap — is a window in which the user can
+    /// switch sources, and re-reading `activeSource` after one would act on
+    /// whichever source is current *then*: a system-audio retry turning into
+    /// a microphone prompt nobody asked for, or a "no file chosen" banner.
     private func startCapture(isRetry: Bool = false) async {
-        guard !activeSource.isRunning else { return }
+        let kind = sourceKind
+        let source = activeSource
+        guard !source.isRunning else { return }
+        defer { syncLiveState() }
         do {
-            try await activeSource.start()
+            try await source.start()
+            // Switched away mid-start. `handleSourceChange` ran its stop-all
+            // pass while this one wasn't running yet, so nothing else will
+            // stop it, and it would feed the analyzer under the new source.
+            guard sourceKind == kind else {
+                await source.stop()
+                return
+            }
             statusMessage = nil
             blockedPermission = nil
             refreshPermissions()
         } catch {
+            // The failure belongs to a source that is no longer selected;
+            // the new one has its own bring-up and its own way of failing.
+            guard sourceKind == kind else { return }
             // Before asking: the answer turns on whether the permission is in
             // hand *now*, which is exactly what a failed start casts doubt on.
             refreshPermissions()
@@ -687,12 +705,12 @@ final class AppState {
                 blockedPermission = permission
             case .retryQuietly:
                 try? await Task.sleep(for: .milliseconds(350))
+                guard sourceKind == kind else { return }
                 await startCapture(isRetry: true)
             case .banner(let message):
                 setStatus(message)
             }
         }
-        syncLiveState()
     }
 
     /// Plays the chosen file, or asks for one if there isn't one yet.
@@ -702,12 +720,7 @@ final class AppState {
             return
         }
         do {
-            // After a relaunch the bookmark restored fileURL, but the source
-            // has nothing loaded yet.
-            if fileSource.currentURL != fileURL {
-                try fileSource.load(url: fileURL)
-            }
-            try fileSource.play()
+            try fileSource.play(url: fileURL)
         } catch {
             setStatus(error.localizedDescription)
         }
@@ -813,12 +826,24 @@ final class AppState {
                 }
                 await startActiveSource()
             case .refreshDevices:
-                inputDevices = AudioInputDeviceList.all()
+                refreshInputDevices()
             case .loadAndPlayFile:
                 startFileSource()
             case .doNothing:
                 break
             }
+        }
+    }
+
+    /// Re-lists the input devices and lets go of a selection that is no
+    /// longer among them. Otherwise an unplugged interface stays in the
+    /// picker, and starting it again hands Core Audio a dead device ID —
+    /// which `AudioUnitSetProperty` refuses without a word, so the engine
+    /// opens the default input while the picker still names the old one.
+    private func refreshInputDevices() {
+        inputDevices = AudioInputDeviceList.all()
+        if let selected = selectedInputDeviceID, !inputDevices.contains(where: { $0.id == selected }) {
+            selectedInputDeviceID = nil
         }
     }
 

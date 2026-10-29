@@ -76,7 +76,7 @@ struct RenderScaleLadderTests {
         #expect(timer.drain(minimumSamples: 1) == nil)
     }
 
-    @Test func theTimerHonoursItsMinimumAndThenAverages() {
+    @Test func theTimerHonorsItsMinimumAndThenAverages() {
         let timer = GPUFrameTimer()
         for _ in 0..<9 { timer.record(0.01) }
         #expect(timer.drain(minimumSamples: 10) == nil, "nine samples is not a window")

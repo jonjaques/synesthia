@@ -126,7 +126,7 @@ struct PlaybackPolicyTests {
 
     /// Only the sources that ask the user for nothing come up on their own. A
     /// microphone that starts listening the moment the app opens is exactly
-    /// the behaviour the permission exists to prevent.
+    /// the behavior the permission exists to prevent.
     @Test func launchStartsOnlyTheSourcesThatNeedNoAsking() {
         #expect(policy(.demo).startupAction() == .start)
         #expect(policy(.systemAudio).startupAction() == .start)

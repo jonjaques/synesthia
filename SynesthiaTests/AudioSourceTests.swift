@@ -5,7 +5,7 @@ import Testing
 
 /// The `AudioSource` contract, pinned through the suite's own adapter.
 ///
-/// These are rules the three real engines have to honour and nothing else
+/// These are rules the three real engines have to honor and nothing else
 /// checks: `onStopped` means *died*, never *was stopped*, and only the sources
 /// the app plays itself answer to a restart. Both were live bugs before the
 /// interface existed — `AppState` had no way to ask an engine whether it was

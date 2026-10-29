@@ -159,9 +159,9 @@ struct FrameComposerTests {
     }
 
     /// A new visualizer starts its smoother from zero rather than inheriting
-    /// the level the previous one had drifted to. Behaviour this PR *adds* —
-    /// everything else about a visualizer switch (the render-scale ladder, the
-    /// GPU timer, the intro ramp) already resets.
+    /// the level the previous one had drifted to. Added when this moved out of
+    /// the coordinator — everything else about a visualizer switch (the
+    /// render-scale ladder, the GPU timer, the intro ramp) already resets.
     @Test func aVisualizerSwitchRestartsTheReduceMotionSmoother() {
         var composer = FrameComposer()
         for _ in 0..<120 { _ = compose(&composer, level: 1, reduceMotion: true) }
