@@ -287,7 +287,7 @@ string for any player, and **no Sparkle** — the store build must not ship an u
 ```
 SystemAudioCapture (ScreenCaptureKit)  ─┐
 InputDeviceCapture (AVAudioEngine tap) ─┼─▶ AudioAnalyzer ──▶ AudioSnapshot ──▶ MetalVisualizerView ──▶ active Visualizer
-FilePlayer (AVAudioEngine + tap)       ─┘    (vDSP FFT)       (lock-guarded)      (MTKView, 60 fps)      (Metal pipelines)
+FileSource (AVAudioEngine + tap)       ─┘    (vDSP FFT)       (lock-guarded)      (MTKView, 60 fps)      (Metal pipelines)
 
 NowPlayingObserver (distributed notifications, no permission) ──▶ title/artist/album/state
 PlayerRemote (Apple Events, opt-in, direct build)            ──▶ transport + cover art

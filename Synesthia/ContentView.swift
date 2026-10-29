@@ -701,7 +701,7 @@ struct ControlsPod: View {
                 // someone who has heard the loop enough times looks first.
                 if state.sourceKind == .demo {
                     Divider()
-                    Button(transport.captureMenuTitle) { appState.toggleCapture() }
+                    Button(transport.captureMenuTitle) { appState.toggleSource() }
                 }
             } label: {
                 PodMenuLabel(symbol: appState.sourceKind.symbol, title: appState.sourceKind.label)
@@ -766,7 +766,7 @@ struct CaptureButton: View {
         let active = transport.isLive
 
         Button {
-            appState.toggleCapture()
+            appState.toggleSource()
         } label: {
             Image(systemName: transport.captureSymbol)
                 // Active: white glyph inside a purple disc, like the menu bar chip.

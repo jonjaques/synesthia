@@ -31,7 +31,9 @@ shaders, Apple Events, sandboxing…) are introduced where they're used.
 - **[Decision records](adr/)** — choices that were made against a real alternative,
   where a reader would otherwise wonder why the code looks like this. The documents
   above explain the current design; these explain why it isn't the obvious one.
-- **[Plans](plans/)** — proposed refactors not yet carried out, one file each.
+- **Plans** (`docs/plans/`) — proposed refactors not yet carried out, one file each.
+  A carried-out plan is deleted rather than annotated, so this is always a list of
+  work still to do — and it is empty right now, hence no link.
 
 ## Process
 
@@ -45,6 +47,8 @@ shaders, Apple Events, sandboxing…) are introduced where they're used.
 Synesthia/
 ├── SynesthiaApp.swift            App entry point; window + menu commands
 ├── AppState.swift                Central state hub and composition root
+├── PlaybackPolicy.swift          Its decisions, extracted pure and testable
+├── TransportPresentation.swift   What the UI says about the current source
 ├── ContentView.swift             The window's UI: canvas + floating chrome
 ├── WelcomeView.swift             First-run explainer: sources and permissions
 ├── WindowChrome.swift            Strips the title bar off the AppKit window
@@ -63,6 +67,8 @@ Synesthia/
     ├── ParticleSystem.swift      GPU-resident particle simulation scaffolding
     ├── Shaders.metal             All GPU shader code (build-time compiled)
     ├── MetalVisualizerView.swift The render loop host
+    ├── FrameComposer.swift       Snapshot + tuning → VizUniforms, deterministic
+    ├── RenderScaleLadder.swift   Adaptive resolution, and the GPU-time measurement
     ├── FullscreenShaderVisualizer.swift
     │                             One fragment shader, nothing else — the shared
     │                             host for shader-only visualizers

@@ -118,7 +118,7 @@ struct WelcomeView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
-            } else if appState.sourceKind == .demo, appState.isDemoPlaying {
+            } else if appState.sourceKind == .demo, appState.isLive {
                 Text("The demo track is playing behind this window. Reopen this guide from the Help menu.")
                     .font(.caption)
                     .foregroundStyle(.secondary)

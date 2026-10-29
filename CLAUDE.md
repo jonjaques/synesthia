@@ -24,6 +24,10 @@ Synesthia/
 │                                 menu commands
 ├── AppState.swift                @Observable hub: source switching, transport, permissions status,
 │                                 now-playing merge + the opt-in player-control gate
+├── PlaybackPolicy.swift          The decisions AppState makes, as a pure value: how a failed
+│                                 start reads, what launch starts, how the welcome sheet ends
+├── TransportPresentation.swift   What the menu and chrome *say* about the current source, plus
+│                                 the one availability rule; pure, so it is assertable
 ├── ContentView.swift             Canvas + auto-hiding ControlsBar + NowPlayingBadge/ArtworkTile
 │                                 + OptionsPanel
 ├── SettingsView.swift            App-wide Settings window: Normalize Loudness toggle
@@ -37,7 +41,8 @@ Synesthia/
 │   │                             waveform, bass/mid/treble/level, beat envelope); slow auto-gain
 │   │                             normalizes source loudness (Normalize Loudness toggle)
 │   └── AudioSources.swift        AudioSourceKind, SystemAudioCapture (SCK), InputDeviceCapture,
-│                                 FilePlayer, CoreAudio input-device enumeration
+│                                 FileSource, the AudioSource interface, CoreAudio input-device
+│                                 enumeration
 ├── Music/
 │   ├── NowPlayingObserver.swift  MediaPlayer catalog (Music, Spotify), distributed-notification
 │   │                             observers, userInfo dialect parsing, multi-player arbitration.
@@ -52,13 +57,18 @@ Synesthia/
     │                             buffers, GPU seed/step kernels, instanced sprite draw
     ├── Shaders.metal             ALL shader functions incl. compute kernels, compiled at
     │                             build time (see below)
-    ├── MetalVisualizerView.swift MetalRenderContext (optional), MTKView host, uniforms per
-    │                             frame incl. derived frame state, occlusion pausing,
-    │                             adaptive render scale, Reduce Motion damping
+    ├── MetalVisualizerView.swift MetalRenderContext (optional), MTKView host, the frame loop:
+    │                             visualizer rebuild, occlusion pausing, frame rate, drawable
+    │                             size, command buffer
+    ├── FrameComposer.swift       Snapshot + Tuning → VizUniforms, plus the state that takes
+    │                             (hit edges, counters, Reduce Motion smoother). Takes the
+    │                             clock as values, so it is deterministic and testable
+    ├── RenderScaleLadder.swift   The adaptive-resolution decision + GPUFrameTimer
     └── {Nebula,Tunnel,Aurora,Bars}Visualizer.swift
 
 SynesthiaTests/                   Swift Testing bundle; AudioAnalyzer DSP, VizUniforms layout,
-                                  now-playing parsing/arbitration
+                                  now-playing parsing/arbitration, the audio-source contract,
+                                  PlaybackPolicy, FrameComposer, RenderScaleLadder
 Makefile                          Single entry point for every command (see below)
 VERSION                           "<marketing> (<build>)" — a mirror of project.pbxproj,
                                   rewritten and re-asserted by bump-version.sh
@@ -198,7 +208,7 @@ Two things the runner needs that a developer's machine already has:
 
 **ScreenCaptureKit audio extraction.** Use `sampleBuffer.withAudioBufferList` + `AVAudioPCMBuffer(pcmFormat:bufferListNoCopy:)` (the current code). Do NOT use `CMSampleBufferCopyPCMDataIntoAudioBufferList` into a fresh `AVAudioPCMBuffer` — its buffer list advertises `frameLength` (0) bytes, every copy fails with `err=-12731`, and the analyzer silently receives nothing. Also: even when only capturing audio, register a `.screen` stream output too, or SCK logs "stream output NOT found. Dropping frame" continuously.
 
-**AVFAudio callbacks must be built in a `nonisolated` context, or they trap.** `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` means a closure written inline inside a main-actor method is _itself_ inferred main-actor. AVAudioEngine calls tap blocks and `scheduleFile` completion handlers on a realtime audio thread, so Swift 6's isolation check fires and the app dies with `EXC_BREAKPOINT` in `swift_task_checkIsolatedSwift` — on the very first buffer, with a stack that blames AVFAudio rather than the closure. Build these blocks from a `nonisolated` factory (`makeAnalyzerTap`, `FilePlayer.loopCompletion()`), never inline. Wrapping the body in `Task { @MainActor in … }` does **not** help: the trap happens on entry, before the `Task` is ever reached. Spell the return type `@Sendable () -> Void`; the `AVAudioNodeCompletionHandler` typealias isn't marked `@Sendable` and the call site warns.
+**AVFAudio callbacks must be built in a `nonisolated` context, or they trap.** `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` means a closure written inline inside a main-actor method is _itself_ inferred main-actor. AVAudioEngine calls tap blocks and `scheduleFile` completion handlers on a realtime audio thread, so Swift 6's isolation check fires and the app dies with `EXC_BREAKPOINT` in `swift_task_checkIsolatedSwift` — on the very first buffer, with a stack that blames AVFAudio rather than the closure. Build these blocks from a `nonisolated` factory (`makeAnalyzerTap`, `FileSource.loopCompletion()`), never inline. Wrapping the body in `Task { @MainActor in … }` does **not** help: the trap happens on entry, before the `Task` is ever reached. Spell the return type `@Sendable () -> Void`; the `AVAudioNodeCompletionHandler` typealias isn't marked `@Sendable` and the call site warns.
 
 **Never pipe into `grep -q` in a `set -o pipefail` script.** `grep -q` exits the instant it matches, which closes the pipe, kills the producer with SIGPIPE (exit 141), and — because every release script sets `pipefail` — turns a _successful_ match into a failed pipeline. This has bitten twice, and the second time was worse than the first:
 

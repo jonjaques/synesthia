@@ -38,7 +38,7 @@ sequenceDiagram
     SCK->>TCC: is Screen & System Audio Recording granted?
     TCC-->>U: permission prompt (first time)
     U->>TCC: Allow
-    Note over App,SCK: the first startCapture after a fresh grant<br>can still fail — startSystemCapture retries once,<br>quietly, before surfacing anything
+    Note over App,SCK: the first startCapture after a fresh grant<br>can still fail — startCapture retries once,<br>quietly, before surfacing anything
     App->>SCK: start (second attempt) ✓
     Note over App: handlePlay avoids toggling a detected player<br>into pause on a later click — it only starts<br>playback when the player isn't already playing
 ```

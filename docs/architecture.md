@@ -17,7 +17,7 @@ flowchart LR
     subgraph sources["Audio sources (background threads)"]
         SCK["SystemAudioCapture<br>(ScreenCaptureKit)"]
         MIC["InputDeviceCapture<br>(AVAudioEngine tap)"]
-        FILE["FilePlayer<br>(AVAudioEngine + tap)"]
+        FILE["FileSource<br>(AVAudioEngine + tap)"]
     end
 
     subgraph analysis["Analysis (lock-guarded, any thread)"]
@@ -62,6 +62,7 @@ the audio threads cheap and the UI free of 90-times-a-second updates.
 | `AudioSnapshot`                           | One frame of analyzed audio (spectrum bands, waveform, loudness, beat…)        | Immutable value copy per frame     |
 | `VizUniforms`                             | The per-frame constants sent to the GPU (audio features + clock + user tuning) | Built fresh each frame             |
 | `AppState`                                | Which source/visualizer is active; transport state; error banners              | `@Observable`, main actor          |
+| `PlaybackPolicy`                          | `AppState`'s decisions without their effects: retry rule, first run, gating    | Immutable value, built per read    |
 | `VisualizerDescriptor`                    | Static identity + options + factory for one visualizer                         | Immutable                          |
 | `VisualizerTuning` / `VisualizerSettings` | Per-visualizer user settings, persisted to `UserDefaults`                      | `@Observable` store of value types |
 
