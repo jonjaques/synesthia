@@ -160,7 +160,6 @@ const softwareApplication = {
 	applicationSubCategory: 'Music visualizer',
 	operatingSystem: RELEASE.requires,
 	softwareVersion: RELEASE.version,
-	fileSize: RELEASE.size,
 	description: SITE.description,
 	url: Astro.site?.href,
 	image: abs('/img/og.png'),
@@ -230,7 +229,7 @@ const softwareApplication = {
 					</div>
 
 					<p class="spec mt-6">
-						Free · {RELEASE.requires} · {RELEASE.chip} · {RELEASE.size}
+						Free · {RELEASE.requires} · {RELEASE.chip}
 					</p>
 				</div>
 
@@ -430,7 +429,7 @@ const softwareApplication = {
 				</div>
 
 				<p class="spec mt-6">
-					Version {RELEASE.version} · {RELEASE.requires} · {RELEASE.size}
+					Version {RELEASE.version} · {RELEASE.requires}
 				</p>
 
 				<!-- Only worth saying when there is a choice to explain. -->

@@ -477,8 +477,7 @@ make bump ARGS=--dry-run  # preview
 The build number is always incremented by one, whatever the level. A trailing
 `.0` is dropped, so a minor bump renders `1.1`, not `1.1.0`. The script refuses
 to run if the nine copies have drifted apart, and updates `RELEASE.version` in
-`web/src/consts.ts` too. `RELEASE.size` is _not_ updated — the DMG's size is
-only known after `make direct`.
+`web/src/consts.ts` too.
 
 `make bump` is the whole cut, not just the numbers:
 

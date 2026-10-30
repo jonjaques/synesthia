@@ -41,9 +41,6 @@ reason. Do not pass `-y`. If you are running the bump on his behalf, show him th
 wait; the notes are what every existing user sees in the Sparkle update window, and they are
 the most-read prose the project produces.
 
-`RELEASE.size` in `web/src/consts.ts` is not updated by the bump — the DMG's size isn't known
-until step 3. Update it by hand afterwards if the site quotes it.
-
 ## 2. Get it onto main — with a real merge commit
 
 ```bash
