@@ -82,10 +82,11 @@ export const RELEASE = {
   // Release archives are universal (arm64 + x86_64); macOS 26 Tahoe is the
   // last release supporting Intel Macs, so they are still in scope.
   chip: "Apple silicon or Intel",
-  // The notarized, stapled, signed DMG from `make direct`: 4,584,336 bytes (1.2.2).
-  // Read it from `/download?json`, or `stat -f %z` — NOT from `du -h`, which
-  // reports allocated blocks and answered 5.1M for this very file.
-  size: "4.6 MB",
+  // There is deliberately no download size here. The site builds only when main
+  // changes, but a release is published by uploading to R2, so the size could
+  // only ever be typed in by hand and went stale every release (it said 4.4 MB
+  // while 4.6 MB shipped). `/download?json` reports the live size if one is
+  // ever needed.
 } as const;
 
 /**

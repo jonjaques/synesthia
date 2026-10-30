@@ -593,7 +593,4 @@ Next:
   make direct              # archive, sign, notarize, staple, DMG
   make appcast             # add it to the feed, with these notes embedded
   make publish-release     # upload to R2
-
-RELEASE.size in $CONSTS is not updated automatically — the DMG's
-size is only known after 'make direct' prints it.
 EOF

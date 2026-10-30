@@ -253,7 +253,6 @@ LEAK` form fails _open_ — the `MUSIC_APP_SOURCE` leak assertion was silently
 
 - [ ] **English only.** Fine for v1; the string-catalog migration is noted in `CLAUDE.md`
 - [ ] **Visualizer test coverage.** `AudioAnalyzer`, the `VizUniforms` contract and `FrameComposer` are covered; what is left is Bars' fader-desk state machine (see `docs/roadmap.md`), and rendering itself stays untested
-- [ ] **`RELEASE.size` is hand-maintained.** Only known after `make direct` prints it; `/download?json` reports it live if the site ever wants to read it
 
 ---
 

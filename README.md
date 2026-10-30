@@ -261,9 +261,8 @@ then the signed DMG itself. `publish-release` uploads artifacts **before** the
 appcast, because the appcast is the announcement: the moment it lists a
 version, installed copies start fetching that URL.
 
-Afterwards, update `RELEASE.size` in `web/src/consts.ts` from the byte count
-`make direct` printed, then commit and push — Cloudflare Pages deploys the site
-from git, while the release artifacts themselves live in R2 and need no rebuild.
+Nothing on the site needs editing afterwards: Cloudflare Pages deploys it from
+git, while the release artifacts themselves live in R2 and need no rebuild.
 
 ### 3. Release to the Mac App Store
 
