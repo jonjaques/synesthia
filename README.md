@@ -330,11 +330,13 @@ behind the ones that depend on Apple's rules. Roughly in order of promise:
 - **User-defined color palettes** (palettes are already per-visualizer).
 - **True external plugins**: load visualizers from
   `~/Library/Application Support/Synesthia/Plugins` via `register(_:)`.
-- **Screen saver target** reusing the same render stack.
+- **Screen saver target** reusing the same render stack — deprioritized; the
+  macOS 26 screen saver host is broken for third parties (see the assessment).
 - **String Catalog localization** — UI strings are currently literals; the
   project has `STRING_CATALOG_GENERATE_SYMBOLS` enabled and should migrate.
-- **Visualizer test coverage** — `SynesthiaTests` covers `AudioAnalyzer`
-  thoroughly; the Metal visualizers have none and are much harder to assert on.
+- **Visualizer test coverage** — `SynesthiaTests` covers `AudioAnalyzer`, the
+  `VizUniforms` layout and the frame composer; Bars' fader-desk simulation is the
+  remaining CPU-side visualizer state with no tests.
 
 ## License
 

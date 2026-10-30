@@ -2,7 +2,8 @@
 
 Working plan, not a record. Check items off; delete sections as they stop being
 true. Last reconciled against the repo and against Apple/Cloudflare on
-**2026-07-25**, after the direct download went live.
+**2026-07-25**, after the direct download went live; the status table below was
+re-checked on **2026-10-29**.
 
 This absorbed the former `docs/prerelease-report.md` — its decisions, findings
 and verification evidence are §2, §6 and §8 below, brought up to date. That file
@@ -15,7 +16,9 @@ works and `docs/app-store-metadata.md` for every listing field.
 ## Where things stand
 
 **The direct download has shipped.** `synesthia.app/download` serves a
-notarized, stapled, Gatekeeper-accepted 1.0, and Sparkle is wired end to end.
+notarized, stapled, Gatekeeper-accepted build — **1.2.1** is current, and §8's
+evidence was taken against 1.0 — and Sparkle is wired end to end. Each release is
+also mirrored to a GitHub Release (`make mirror-release`); R2 stays authoritative.
 The Mac App Store submission has not been made.
 
 |                        | Direct download                       | Mac App Store                             |
@@ -249,7 +252,7 @@ LEAK` form fails _open_ — the `MUSIC_APP_SOURCE` leak assertion was silently
 ## 7. Deliberately deferred
 
 - [ ] **English only.** Fine for v1; the string-catalog migration is noted in `CLAUDE.md`
-- [ ] **Visualizer test coverage.** `AudioAnalyzer` is covered; the Metal visualizers are much harder to assert on
+- [ ] **Visualizer test coverage.** `AudioAnalyzer`, the `VizUniforms` contract and `FrameComposer` are covered; what is left is Bars' fader-desk state machine (see `docs/roadmap.md`), and rendering itself stays untested
 - [ ] **`RELEASE.size` is hand-maintained.** Only known after `make direct` prints it; `/download?json` reports it live if the site ever wants to read it
 
 ---
