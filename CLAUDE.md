@@ -88,7 +88,7 @@ web/functions/                    Pages Functions: /appcast.xml, /download, /dow
 
 Data flow: audio threads → `AudioAnalyzer.appendMono` (NSLock) → render loop pulls `analyzer.latest()` each frame. Audio never publishes into SwiftUI; only `NowPlayingObserver`/`PlayerRemote`/`AppState` are observable.
 
-**Plugin contract**: a visualizer = class conforming to `Visualizer` + static `VisualizerDescriptor` (≤16 options, surfaced automatically in the UI and delivered as the shader's `p` array in declaration order) + shader functions in `Shaders.metal`. Register in `VisualizerRegistry`. A visualizer may encode compute passes as well as render passes — `GPUParticleSystem` is the reusable scaffolding for GPU-resident simulations (Nebula runs ~100k particles on it).
+**Plugin contract**: a visualizer = class conforming to `Visualizer` + static `VisualizerDescriptor` (≤16 options, surfaced automatically in the UI, each delivered to the `p[16]` slot it declares via `VisualizerOption.slot`) + shader functions in `Shaders.metal`. Register in `VisualizerRegistry`. A visualizer may encode compute passes as well as render passes — `GPUParticleSystem` is the reusable scaffolding for GPU-resident simulations (Nebula runs ~100k particles on it).
 
 `VizUniforms` in VisualizerCore.swift and the struct in Shaders.metal must stay
 byte-identical (currently 42 floats / 168 bytes). **Both sides now assert it** —
@@ -160,7 +160,7 @@ make publish-release  # upload DMGs + appcast + latest.json to R2 (publish-dry-r
 
 `ARGS=` forwards flags to the wrapped script (`make screenshots ARGS="--only nebula --1x"`). `BUILT_PRODUCTS_DIR` is resolved from `xcodebuild -showBuildSettings`, not globbed out of DerivedData, so `run`/`app-path` are correct for any configuration.
 
-`SynesthiaTests` is a **Swift Testing** bundle (`import Testing`, `@Test`, `#expect`), hosted by the app target, covering `AudioAnalyzer` and the `VizUniforms` byte layout / option-slot contract.
+`SynesthiaTests` is a **Swift Testing** bundle (`import Testing`, `@Test`, `#expect`), hosted by the app target, covering `AudioAnalyzer`, the `VizUniforms` byte layout / option-slot contract, and the pure seams listed under `SynesthiaTests/` above.
 
 ### Formatting
 
