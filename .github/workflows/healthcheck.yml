@@ -127,20 +127,35 @@ jobs:
       # from the toolchain), which is what the xcode-27 image selects by default.
       # Don't glob for the newest Xcode_27*.app the way the macos-26 job had to:
       # the image also ships a 27.2 *release candidate*, and the newest is that.
-      # Fail loudly instead if the default ever stops being a 27.
+      # Fail loudly instead if the default ever stops being a 27.1 or later 27.x.
+      # A bare `Xcode 27.*` glob would also wave through a 27.0, which README's
+      # "Xcode 27.1+" floor says is unsupported.
       - name: Check Xcode
         run: |
           set -euo pipefail
           version=$(xcodebuild -version)
           echo "$version"
           swift --version
-          [[ "$version" == "Xcode 27."* ]] || { echo "::error::expected Xcode 27, got: $version"; exit 1; }
+          [[ "$version" =~ ^Xcode\ 27\.([0-9]+) ]] && (( BASH_REMATCH[1] >= 1 )) ||
+            { echo "::error::expected Xcode 27.1 or later 27.x, got: $version"; exit 1; }
 
       # Shaders.metal compiles at build time, which needs the Metal Toolchain
-      # component. It is a no-op when the image already has it; drop this step
-      # if the runner images start shipping it unconditionally.
+      # component — a separate download per Xcode release, and the xcode-27
+      # image does not preinstall it. The download keeps `|| true` because it is
+      # meant to be a no-op when the component is already there, but its result
+      # is then asserted: swallowing a failed download only moves the failure to
+      # Shaders.metal deep in `make healthcheck`, where it reads as a shader bug.
+      # Captured into a variable and matched with a herestring, not piped into
+      # `grep -q`, for the pipefail/SIGPIPE reason in CLAUDE.md.
+      # Drop this step if the runner images start shipping it unconditionally.
       - name: Install the Metal toolchain
-        run: xcodebuild -downloadComponent MetalToolchain -quiet || true
+        run: |
+          set -euo pipefail
+          xcodebuild -downloadComponent MetalToolchain -quiet || true
+          status=$(xcodebuild -showComponent MetalToolchain 2>&1 || true)
+          echo "$status"
+          grep -q '^Status: installed' <<<"$status" ||
+            { echo "::error::Metal Toolchain is not installed after download"; exit 1; }
 
       # Sparkle is the only SPM dependency, and only the Direct target links it.
       - name: Cache SwiftPM
