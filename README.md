@@ -136,7 +136,7 @@ make run                  # build, then launch the app
 make build-direct         # the Sparkle-enabled build, for updater work
 make lint                 # check formatting
 make format               # fix what lint complains about
-make healthcheck          # run this before pushing: lint + test + build-direct
+make healthcheck          # run this before pushing: metal-toolchain + lint + test + build-direct
 ```
 
 `make lint` is formatting only: Prettier across everything outside `web/`, then

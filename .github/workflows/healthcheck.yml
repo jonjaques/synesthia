@@ -127,18 +127,28 @@ jobs:
       # from the toolchain), which is what the xcode-27 image selects by default.
       # Don't glob for the newest Xcode_27*.app the way the macos-26 job had to:
       # the image also ships a 27.2 *release candidate*, and the newest is that.
-      # Fail loudly instead if the default ever stops being a 27.
+      # Pinned to exactly 27.1.x rather than "27.1 or later": `xcodebuild
+      # -version` prints the same `Xcode 27.2` for that RC as for the eventual
+      # release, and the build-number suffix is no reliable tell either, so a
+      # floor would let the image quietly move CI onto a prerelease. When the
+      # default moves on, this fails loudly and the pin is raised on purpose.
       - name: Check Xcode
         run: |
           set -euo pipefail
           version=$(xcodebuild -version)
           echo "$version"
           swift --version
-          [[ "$version" == "Xcode 27."* ]] || { echo "::error::expected Xcode 27, got: $version"; exit 1; }
+          [[ "$(head -n1 <<<"$version")" =~ ^Xcode\ 27\.1(\.[0-9]+)?$ ]] ||
+            { echo "::error::expected Xcode 27.1.x (the pinned CI toolchain), got: $version"; exit 1; }
 
       # Shaders.metal compiles at build time, which needs the Metal Toolchain
-      # component. It is a no-op when the image already has it; drop this step
-      # if the runner images start shipping it unconditionally.
+      # component, a separate download per Xcode release that the image may or
+      # may not already carry. `|| true` keeps the download a no-op when it is
+      # already there. Whether it actually landed is asserted by `make
+      # healthcheck` itself (its `metal-toolchain` preflight), so the same check
+      # runs on a developer's machine, and a failed download still fails before
+      # anything compiles rather than as a confusing Shaders.metal error.
+      # Drop this step if the runner images start shipping it unconditionally.
       - name: Install the Metal toolchain
         run: xcodebuild -downloadComponent MetalToolchain -quiet || true
 

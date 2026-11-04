@@ -132,7 +132,7 @@ make clean            # xcodebuild clean + rm -rf build/
 make app-path         # print the built .app path for CONFIGURATION
 
 make install          # npm install at the root (Prettier only; web/ installs itself)
-make healthcheck      # the PR gate: lint + test + build-direct, in that order
+make healthcheck      # the PR gate: metal-toolchain + lint + test + build-direct, in that order
 make lint             # prettier --check, then `swift format lint --strict`
 make format           # prettier --write, then `swift format --in-place`
 
@@ -176,12 +176,12 @@ Swift is formatted by **swift-format**, which ships inside the Xcode toolchain (
 
 ### CI
 
-`.github/workflows/healthcheck.yml` is the only workflow and runs on every pull request push, as two jobs mirroring the two projects in the repo: **`web`** on `ubuntu-latest` runs `npm ci && npm run check && npm run typecheck && npm run build` from inside `web/`, and **`apple`** on `xcode-27` (macOS 27, Xcode 27.1 selected by default) runs `make install && make healthcheck`. Keep `make healthcheck` as the single macOS entry point — new checks belong inside it, not as extra workflow steps, so that what CI runs is what a developer can run locally.
+`.github/workflows/healthcheck.yml` is the only workflow and runs on every pull request push, as two jobs mirroring the two projects in the repo: **`web`** on `ubuntu-latest` runs `npm ci && npm run check && npm run typecheck && npm run build` from inside `web/`, and **`apple`** on `xcode-27` (macOS 27, Xcode 27.1 selected by default and asserted to be exactly 27.1.x, so the image's 27.2 RC can't slip in) runs `make install && make healthcheck`. Keep `make healthcheck` as the single macOS entry point — new checks belong inside it, not as extra workflow steps, so that what CI runs is what a developer can run locally.
 
 Two things the runner needs that a developer's machine already has:
 
 - **No signing identity.** `CODE_SIGN_STYLE=Automatic` + `DEVELOPMENT_TEAM` fails on a runner with no certificate or profile, so the Makefile appends `$(SIGNING)` — ad-hoc signing (`CODE_SIGN_IDENTITY=-`) — to `build`, `build-direct` and `test` whenever `CI` is set, which Actions does. Ad-hoc is enough for the sandbox to launch the test host; it disables the hardened runtime, which is why the real releases still go through `scripts/build-direct.sh` on a machine with the certificates.
-- **The Metal toolchain**, since `Shaders.metal` compiles at build time. The workflow runs `xcodebuild -downloadComponent MetalToolchain` before building; drop that step if the runner images start shipping it.
+- **The Metal toolchain**, since `Shaders.metal` compiles at build time. The workflow runs `xcodebuild -downloadComponent MetalToolchain` before building, and `make healthcheck` opens with a `metal-toolchain` preflight that asserts `xcodebuild -showComponent MetalToolchain` reports `Status: installed`, so a missing toolchain fails first and names its cause, on CI and locally alike, instead of surfacing later as a `Shaders.metal` error; drop the download step if the runner images start shipping it.
 
 ### Screenshots
 
