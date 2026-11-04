@@ -49,7 +49,7 @@ SIGNING := CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM= PROVISI
 endif
 
 .PHONY: help build bump build-direct run test clean app-path \
-        install healthcheck lint format \
+        install healthcheck metal-toolchain lint format \
         demo-track screenshots check-metadata \
         appstore appstore-upload direct direct-fast bump version \
         sparkle-keys appcast publish-release publish-dry-run \
@@ -94,7 +94,23 @@ install: ## Install npm dependencies: root formatting tools
 # The PR quality gate: what .github/workflows/healthcheck.yml runs on the
 # macOS side, as `make install && make healthcheck`. Order matters — the cheap
 # check fails first. `web/` is its own project and is gated separately.
-healthcheck: lint test build-direct ## Everything a PR has to pass: lint, tests, both builds
+healthcheck: metal-toolchain lint test build-direct ## Everything a PR has to pass: toolchain, lint, tests, both builds
+
+# Shaders.metal compiles at build time, and without the Metal Toolchain the
+# build fails on it with nothing to say the toolchain is the cause; it reads as
+# a shader bug. The component is a separate download per Xcode release, so a
+# fresh Xcode always starts without it. Checked rather than downloaded here: the
+# download is large and the machine's owner decides when to take it (CI does it
+# in its own step). Output is captured and matched with a herestring, not piped
+# into `grep -q`, for the pipefail/SIGPIPE reason in CLAUDE.md.
+metal-toolchain: ## Fail fast if this Xcode's Metal Toolchain is not installed
+	@out=$$(xcodebuild -showComponent MetalToolchain 2>&1 || true); \
+	if ! grep -q '^Status: installed' <<<"$$out"; then \
+		echo "$$out" >&2; \
+		echo "error: the Metal Toolchain is not installed for this Xcode;" \
+			"run: xcodebuild -downloadComponent MetalToolchain" >&2; \
+		exit 1; \
+	fi
 
 lint: ## Check formatting without writing: Prettier, then swift-format --strict
 	npm run format:check && $(SWIFT_FORMAT) lint --configuration .swift-format \
